@@ -5,7 +5,6 @@ import pandas as pd
 import os
 import requests
 from dotenv import load_dotenv
-from src.smc_engine import analyze_smc
 
 # =========================
 # CONFIG
@@ -372,98 +371,42 @@ def buscar_order_block(df, evento):
     }
 
 
-def detectar_barrida_previa(df, evento, direccion, lookback=40, symbol=None, timeframe=None):
+def detectar_barrida_previa(df, evento, direccion, lookback=40):
     idx = evento["index"]
     inicio = max(0, idx - lookback)
     tramo = df.iloc[inicio:idx].copy()
 
-    # Debug para Boom 900 Index y M15
-    debug_enabled = symbol == "Boom 900 Index" and timeframe == "M15"
-    
-    if debug_enabled:
-        print("\n" + "="*80)
-        print("DEBUG detectar_barrida_previa (Python)")
-        print("="*80)
-        print(f"Evento usado: {evento.get('evento', 'N/A')}")
-        print(f"Index del evento: {idx}")
-        print(f"Timestamp del evento: {evento.get('time', 'N/A')}")
-        print(f"Dirección: {direccion}")
-        print(f"Lookback usado: {lookback}")
-        print(f"Inicio del tramo: {inicio}")
-        print(f"Cantidad de velas del tramo: {len(tramo)}")
-        print("="*80)
-
     if len(tramo) < 10:
-        if debug_enabled:
-            print("RESULTADO: No hay suficientes velas (< 10)")
-            print("="*80 + "\n")
         return None
 
     if direccion == "ALCISTA":
         for j in range(5, len(tramo)):
             minimo_anterior = tramo["low"].iloc[:j].min()
             vela = tramo.iloc[j]
-            
-            if debug_enabled:
-                condicion = vela["low"] < minimo_anterior and vela["close"] > minimo_anterior
-                print(f"\nj={j} (índice en tramo):")
-                print(f"  timestamp: {vela['time']}")
-                print(f"  low: {vela['low']:.5f}")
-                print(f"  high: {vela['high']:.5f}")
-                print(f"  close: {vela['close']:.5f}")
-                print(f"  minimoAnterior: {minimo_anterior:.5f}")
-                print(f"  Condición: low < minimoAnterior AND close > minimoAnterior")
-                print(f"  Evaluación: {vela['low']:.5f} < {minimo_anterior:.5f} = {vela['low'] < minimo_anterior}")
-                print(f"              {vela['close']:.5f} > {minimo_anterior:.5f} = {vela['close'] > minimo_anterior}")
-                print(f"  Resultado: {condicion}")
 
             if vela["low"] < minimo_anterior and vela["close"] > minimo_anterior:
-                resultado = {
+                return {
                     "time": vela["time"],
                     "tipo": "BARRIDA_BAJISTA_PREVIA",
                     "nivel": float(minimo_anterior),
                     "low": float(vela["low"]),
                     "close": float(vela["close"])
                 }
-                if debug_enabled:
-                    print(f"\n✓ BARRIDA DETECTADA en j={j}")
-                    print("="*80 + "\n")
-                return resultado
 
     else:
         for j in range(5, len(tramo)):
             maximo_anterior = tramo["high"].iloc[:j].max()
             vela = tramo.iloc[j]
-            
-            if debug_enabled:
-                condicion = vela["high"] > maximo_anterior and vela["close"] < maximo_anterior
-                print(f"\nj={j} (índice en tramo):")
-                print(f"  timestamp: {vela['time']}")
-                print(f"  low: {vela['low']:.5f}")
-                print(f"  high: {vela['high']:.5f}")
-                print(f"  close: {vela['close']:.5f}")
-                print(f"  maximoAnterior: {maximo_anterior:.5f}")
-                print(f"  Condición: high > maximoAnterior AND close < maximoAnterior")
-                print(f"  Evaluación: {vela['high']:.5f} > {maximo_anterior:.5f} = {vela['high'] > maximo_anterior}")
-                print(f"              {vela['close']:.5f} < {maximo_anterior:.5f} = {vela['close'] < maximo_anterior}")
-                print(f"  Resultado: {condicion}")
 
             if vela["high"] > maximo_anterior and vela["close"] < maximo_anterior:
-                resultado = {
+                return {
                     "time": vela["time"],
                     "tipo": "BARRIDA_ALCISTA_PREVIA",
                     "nivel": float(maximo_anterior),
                     "high": float(vela["high"]),
                     "close": float(vela["close"])
                 }
-                if debug_enabled:
-                    print(f"\n✓ BARRIDA DETECTADA en j={j}")
-                    print("="*80 + "\n")
-                return resultado
 
-    if debug_enabled:
-        print("\nRESULTADO: No se detectó barrida")
-        print("="*80 + "\n")
     return None
 
 
@@ -502,7 +445,7 @@ def crear_zona_m15(df_m15, eventos_m15, fvgs_m15, symbol, precio_actual):
         ]
 
         fvg = fvgs_validos[-1] if fvgs_validos else None
-        barrida = detectar_barrida_previa(df_m15, ultimo_evento, direccion, symbol=symbol, timeframe="M15")
+        barrida = detectar_barrida_previa(df_m15, ultimo_evento, direccion)
 
         zona_desde = None
         zona_hasta = None
@@ -624,33 +567,15 @@ def analizar_smc_pro(symbol):
     if df_h1.empty or df_m15.empty:
         return "No se pudo obtener data H1/M15.\n"
 
-    # =========================
-    # NUEVA LÓGICA: Motor SMC modular
-    # =========================
-    smc_result = analyze_smc(df_h1, df_m15, df_m1 if not df_m1.empty else None)
-    
-    # Extraer resultados del análisis SMC
-    tendencia_h1 = smc_result["tendencia_h1"]
-    tendencia_m15 = smc_result["tendencia_m15"]
-    eventos_h1 = smc_result["eventos_h1"]
-    eventos_m15 = smc_result["eventos_m15"]
-    fvgs_m15 = smc_result["fvgs_m15"]
-    precio_actual = smc_result["precio_actual"]
-    
-    # =========================
-    # LÓGICA ANTIGUA (comentada como fallback)
-    # =========================
-    # swings_h1 = detectar_swings(df_h1, SWING_LOOKBACK)
-    # eventos_h1, tendencia_h1 = detectar_estructura(df_h1, swings_h1)
+    swings_h1 = detectar_swings(df_h1, SWING_LOOKBACK)
+    eventos_h1, tendencia_h1 = detectar_estructura(df_h1, swings_h1)
 
-    # swings_m15 = detectar_swings(df_m15, SWING_LOOKBACK)
-    # eventos_m15, tendencia_m15 = detectar_estructura(df_m15, swings_m15)
+    swings_m15 = detectar_swings(df_m15, SWING_LOOKBACK)
+    eventos_m15, tendencia_m15 = detectar_estructura(df_m15, swings_m15)
 
-    # fvgs_m15 = detectar_fvg(df_m15)
+    fvgs_m15 = detectar_fvg(df_m15)
 
-    # precio_actual = float(df_m15["close"].iloc[-1])
-    # =========================
-    
+    precio_actual = float(df_m15["close"].iloc[-1])
     zona = crear_zona_m15(df_m15, eventos_m15, fvgs_m15, symbol, precio_actual)
     zona_m1 = crear_zona_fina_m1(df_m1, zona, symbol, M1_VELAS_ZONA)
 
