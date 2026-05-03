@@ -136,8 +136,8 @@ function updateTable(candles) {
         row.innerHTML = `
             <td>${formatTimestamp(candle.timestamp)}</td>
             <td>${formatPrice(candle.open)}</td>
-            <td class="bullish">${formatPrice(candle.high)}</td>
-            <td class="bearish">${formatPrice(candle.low)}</td>
+            <td>${formatPrice(candle.high)}</td>
+            <td>${formatPrice(candle.low)}</td>
             <td class="${closeClass}">${formatPrice(candle.close)}</td>
             <td>${formatVolume(candle.tick_volume)}</td>
         `;
