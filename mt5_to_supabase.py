@@ -10,8 +10,9 @@ Mini app visual para Windows con sistema de bandeja.
 import os
 import sys
 import time
+import math
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 import MetaTrader5 as mt5
 import pandas as pd
 import requests
@@ -74,6 +75,28 @@ UPDATE_CANDLES_BY_TIMEFRAME = {
     "M1": 20,
     "M15": 10,
     "H1": 5
+}
+
+# Configuración de recuperación automática por timeframe
+RECOVERY_CONFIG = {
+    "M1": {
+        "divisor": 1,      # Minutos por vela
+        "margen": 20,      # Velas extra de seguridad
+        "minimo": 20,      # Mínimo de velas a recuperar
+        "maximo": 10000    # Máximo de velas a recuperar
+    },
+    "M15": {
+        "divisor": 15,
+        "margen": 10,
+        "minimo": 10,
+        "maximo": 2000
+    },
+    "H1": {
+        "divisor": 60,
+        "margen": 5,
+        "minimo": 5,
+        "maximo": 700
+    }
 }
 
 # Intervalo de sincronización (3 minutos)
@@ -425,13 +448,14 @@ class CollectorGUI:
             symbol_uploaded = 0
             
             for tf_name, tf_mt5 in TIMEFRAMES.items():
-                # Consultar último timestamp
-                last_timestamp = get_last_timestamp_from_supabase(symbol, tf_name)
+                # 1. Consultar último timestamp en Supabase
+                last_timestamp_supabase = get_last_timestamp_from_supabase(symbol, tf_name)
                 
-                # Carga inicial o actualización con UPSERT
-                if last_timestamp is None:
+                # Carga inicial o actualización con recuperación automática
+                if last_timestamp_supabase is None:
                     # Carga inicial: obtener histórico completo
                     num_candles = INITIAL_CANDLES_BY_TIMEFRAME[tf_name]
+                    self.log(f"│  🔄 [{tf_name}] Carga inicial: {num_candles} velas", "info")
                     df = self.read_candles(symbol, tf_name, tf_mt5, num_candles)
                     
                     if df is None:
@@ -448,16 +472,68 @@ class CollectorGUI:
                     else:
                         self.log(f"│  ❌ [{tf_name}] Error en carga inicial", "error")
                 else:
-                    # Actualización: leer últimas N velas y hacer UPSERT
-                    # Esto actualizará velas existentes (si cambiaron) e insertará nuevas
-                    num_candles = UPDATE_CANDLES_BY_TIMEFRAME[tf_name]
+                    # 2. Leer última vela disponible desde MT5
+                    if not mt5.symbol_select(symbol, True):
+                        self.log(f"│  ⚠️ No se pudo seleccionar: {symbol}", "warning")
+                        continue
+                    
+                    last_mt5_rates = mt5.copy_rates_from_pos(symbol, tf_mt5, 0, 1)
+                    
+                    if last_mt5_rates is None or len(last_mt5_rates) == 0:
+                        self.log(f"│  ⚠️ [{tf_name}] No hay velas disponibles en MT5", "warning")
+                        continue
+                    
+                    # 3. Tomar timestamp de última vela MT5
+                    last_timestamp_mt5 = int(last_mt5_rates[0]["time"])
+                    
+                    # Convertir last_timestamp_supabase a timestamp Unix
+                    # Manejar timestamps ISO con o sin 'Z'
+                    timestamp_str = last_timestamp_supabase.replace('Z', '+00:00') if 'Z' in last_timestamp_supabase else last_timestamp_supabase
+                    last_timestamp_supabase_unix = int(datetime.fromisoformat(timestamp_str).timestamp())
+                    
+                    # Log de timestamps
+                    self.log(f"│  📅 [{tf_name}] Última Supabase: {last_timestamp_supabase}", "info")
+                    self.log(f"│  📅 [{tf_name}] Última MT5: {datetime.fromtimestamp(last_timestamp_mt5, tz=timezone.utc).strftime('%Y-%m-%dT%H:%M:%S')}Z", "info")
+                    
+                    # 4. Comparar: diferencia en segundos
+                    diferencia_segundos = last_timestamp_mt5 - last_timestamp_supabase_unix
+                    diferencia_minutos = diferencia_segundos / 60.0
+                    
+                    # Validar que la diferencia no sea negativa
+                    if diferencia_segundos < 0:
+                        self.log(f"│  ⚠️ [{tf_name}] MT5 tiene timestamp anterior a Supabase. Usando mínimo configurado.", "warning")
+                        num_candles = RECOVERY_CONFIG[tf_name]["minimo"]
+                    else:
+                        # 5. Calcular velas faltantes según timeframe
+                        config = RECOVERY_CONFIG.get(tf_name)
+                        if config is None:
+                            self.log(f"│  ⚠️ [{tf_name}] Configuración no encontrada", "warning")
+                            continue
+                        
+                        # Usar ceil para asegurar que se cubren todas las velas parciales
+                        velas_faltantes = math.ceil(diferencia_minutos / config["divisor"])
+                        
+                        # 6. Agregar margen
+                        num_candles = velas_faltantes + config["margen"]
+                        
+                        # 7. Aplicar mínimos
+                        if num_candles < config["minimo"]:
+                            num_candles = config["minimo"]
+                        
+                        # 8. Aplicar máximos
+                        if num_candles > config["maximo"]:
+                            num_candles = config["maximo"]
+                    
+                    # Log de recuperación
+                    self.log(f"│  🔄 [{tf_name}] Recuperación: leyendo {num_candles} velas", "info")
+                    
+                    # 9. Leer esa cantidad desde MT5
                     df = self.read_candles(symbol, tf_name, tf_mt5, num_candles)
                     
                     if df is None:
                         continue
                     
-                    # No filtramos por timestamp, enviamos todas las velas leídas
-                    # UPSERT actualizará las existentes e insertará las nuevas
+                    # 10. Mandar todas esas velas a Supabase con UPSERT
                     candles_batch = []
                     for _, row in df.iterrows():
                         candle = format_candle_for_supabase(symbol, tf_name, row)
