@@ -562,21 +562,21 @@ function crearZonaFinaM1(candlesM1, zonaM15, symbol) {
     const precioActual = parseFloat(candlesM1[candlesM1.length - 1].close);
     const direccionOperativa = direccionOperativaPorIndice(symbol);
 
-    // Filtrar velas cercanas y almacenar índice original para evitar indexOf
-    const cercanas = [];
+    // Filtrar índices de velas dentro de zona (equivalente a pandas iloc)
+    const indicesCercanos = [];
     for (let i = 0; i < candlesM1.length; i++) {
         const c = candlesM1[i];
         if (c.high >= zonaM15.zona_desde && c.low <= zonaM15.zona_hasta) {
-            cercanas.push({ candle: c, originalIndex: i });
+            indicesCercanos.push(i);
         }
     }
 
     let tramo;
     let confirmacion;
 
-    if (cercanas.length > 0) {
-        const lastCercana = cercanas[cercanas.length - 1];
-        const idx = lastCercana.originalIndex;
+    if (indicesCercanos.length > 0) {
+        // Usar el último índice válido directamente
+        const idx = indicesCercanos[indicesCercanos.length - 1];
         const inicio = Math.max(0, idx - M1_VELAS_ZONA + 1);
         tramo = candlesM1.slice(inicio, idx + 1);
         confirmacion = 'M1 dentro/cerca de zona madre M15';
