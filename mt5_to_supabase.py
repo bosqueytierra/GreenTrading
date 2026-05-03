@@ -29,9 +29,15 @@ if not SUPABASE_URL or not SUPABASE_ANON_KEY:
 # Configuración
 SYMBOLS = [
     "Boom 1000 Index",
+    "Boom 900 Index",
+    "Boom 600 Index",
     "Boom 500 Index",
+    "Boom 300 Index",
     "Crash 1000 Index",
-    "Crash 500 Index"
+    "Crash 900 Index",
+    "Crash 600 Index",
+    "Crash 500 Index",
+    "Crash 300 Index"
 ]
 
 TIMEFRAMES = {
@@ -43,24 +49,18 @@ TIMEFRAMES = {
 # Número de velas a recolectar por cada símbolo/timeframe
 NUM_CANDLES = 100
 
+# Intervalo de sincronización (3 minutos)
+SYNC_INTERVAL_SECONDS = 180
+
 
 def connect_mt5():
     """Conectar a MetaTrader5"""
-    print("🔌 Conectando a MetaTrader5...")
-    
     if not mt5.initialize():
-        print("❌ Error al inicializar MT5")
         error = mt5.last_error()
-        print(f"   Código de error: {error}")
+        print(f"❌ Error MT5: {error}")
         return False
     
-    terminal_info = mt5.terminal_info()
-    account_info = mt5.account_info()
-    
-    print(f"✅ Conectado a MT5")
-    print(f"   Terminal: {terminal_info.name if terminal_info else 'N/A'}")
-    print(f"   Cuenta: {account_info.login if account_info else 'N/A'}")
-    
+    print("✅ MT5 conectado")
     return True
 
 
@@ -82,14 +82,12 @@ def read_candles(symbol, timeframe_name, timeframe_mt5, num_candles):
     
     # Intentar seleccionar el símbolo
     if not mt5.symbol_select(symbol, True):
-        print(f"⚠️  No se pudo seleccionar símbolo: {symbol}")
         return None
     
     # Obtener las velas
     rates = mt5.copy_rates_from_pos(symbol, timeframe_mt5, 0, num_candles)
     
     if rates is None or len(rates) == 0:
-        print(f"⚠️  No hay datos para {symbol} en {timeframe_name}")
         return None
     
     # Convertir a DataFrame
@@ -119,7 +117,6 @@ def upload_to_supabase(candles_data):
     """Subir velas a Supabase tabla market_candles"""
     
     if not candles_data:
-        print("⚠️  No hay datos para subir")
         return False
     
     url = f"{SUPABASE_URL}/rest/v1/market_candles"
@@ -135,60 +132,35 @@ def upload_to_supabase(candles_data):
         response = requests.post(url, headers=headers, json=candles_data)
         
         if response.status_code in [200, 201]:
-            print(f"   ✅ Subidas {len(candles_data)} velas a Supabase")
             return True
         else:
-            print(f"   ❌ Error al subir: {response.status_code}")
-            print(f"   Respuesta: {response.text[:200]}")
             return False
     
     except Exception as e:
-        print(f"   ❌ Excepción al subir: {e}")
         return False
 
 
 def collect_and_upload():
     """Proceso principal: recolectar y subir velas"""
     
-    print("\n" + "="*60)
-    print("🚀 INICIANDO RECOLECCIÓN DE VELAS MT5 → SUPABASE")
-    print("="*60 + "\n")
-    
-    # Conectar a MT5
-    if not connect_mt5():
-        return False
-    
     # Verificar símbolos disponibles
-    print("\n📊 Verificando símbolos disponibles...")
     available_symbols = get_available_symbols()
-    print(f"   Encontrados {len(available_symbols)} símbolos Boom/Crash:")
-    for sym in available_symbols:
-        print(f"   - {sym}")
     
     # Determinar qué símbolos usar
     symbols_to_use = []
     for symbol in SYMBOLS:
         if symbol in available_symbols:
             symbols_to_use.append(symbol)
-        else:
-            print(f"⚠️  Símbolo {symbol} no disponible, se omitirá")
     
     if not symbols_to_use:
-        print("❌ No hay símbolos disponibles para recolectar")
-        mt5.shutdown()
+        print("❌ No hay símbolos disponibles")
         return False
-    
-    print(f"\n📈 Símbolos a procesar: {len(symbols_to_use)}")
     
     # Recolectar velas
     total_uploaded = 0
     
     for symbol in symbols_to_use:
-        print(f"\n📌 Procesando: {symbol}")
-        
         for tf_name, tf_mt5 in TIMEFRAMES.items():
-            print(f"   ⏰ Timeframe: {tf_name}")
-            
             # Leer velas
             df = read_candles(symbol, tf_name, tf_mt5, NUM_CANDLES)
             
@@ -205,28 +177,39 @@ def collect_and_upload():
             if upload_to_supabase(candles_batch):
                 total_uploaded += len(candles_batch)
     
-    # Cerrar conexión MT5
-    mt5.shutdown()
-    print("\n" + "="*60)
-    print(f"✅ PROCESO COMPLETADO")
-    print(f"   Total de velas subidas: {total_uploaded}")
-    print("="*60 + "\n")
-    
+    print(f"✅ Subidas {total_uploaded} velas - {datetime.now().strftime('%H:%M:%S')}")
     return True
+
+
+def run_forever():
+    """Ejecutar recolección en loop cada SYNC_INTERVAL_SECONDS"""
+    print(f"🔄 Iniciando recolector (intervalo: {SYNC_INTERVAL_SECONDS}s)")
+    
+    # Conectar a MT5 una sola vez al inicio
+    if not connect_mt5():
+        print("❌ No se pudo conectar a MT5")
+        return
+    
+    try:
+        while True:
+            try:
+                collect_and_upload()
+            except Exception as e:
+                print(f"⚠️ Error en ciclo: {e}")
+            
+            # Esperar antes del próximo ciclo
+            time.sleep(SYNC_INTERVAL_SECONDS)
+    
+    except KeyboardInterrupt:
+        print("\n⚠️ Detenido por usuario")
+    finally:
+        mt5.shutdown()
+        print("✅ MT5 cerrado")
 
 
 def main():
     """Función principal"""
-    try:
-        collect_and_upload()
-    except KeyboardInterrupt:
-        print("\n\n⚠️  Proceso interrumpido por el usuario")
-        mt5.shutdown()
-        sys.exit(0)
-    except Exception as e:
-        print(f"\n❌ ERROR INESPERADO: {e}")
-        mt5.shutdown()
-        sys.exit(1)
+    run_forever()
 
 
 if __name__ == "__main__":
