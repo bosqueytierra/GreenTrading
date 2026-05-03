@@ -236,8 +236,9 @@ function startAutoRefresh() {
 // SMC M15 SETUPS TRACKING
 // ========================================
 
-async function getActiveSetup(symbol) {
-    const url = `${SUPABASE_URL}/rest/v1/smc_m15_setups?symbol=eq.${encodeURIComponent(symbol)}&estado=eq.ACTIVA&order=created_at.desc&limit=1`;
+async function getAllActiveSetups(symbol) {
+    // Get all setups with estado ACTIVA or EN_ZONA for this symbol
+    const url = `${SUPABASE_URL}/rest/v1/smc_m15_setups?symbol=eq.${encodeURIComponent(symbol)}&estado=in.(ACTIVA,EN_ZONA)&order=created_at.desc`;
     
     const response = await fetch(url, {
         method: 'GET',
@@ -253,7 +254,7 @@ async function getActiveSetup(symbol) {
     }
     
     const data = await response.json();
-    return data.length > 0 ? data[0] : null;
+    return data;
 }
 
 async function createSetup(setupData) {
@@ -306,15 +307,7 @@ async function closeSetup(id, motivo) {
     });
 }
 
-function zonesAreEqual(zone1, zone2) {
-    if (!zone1 || !zone2) return false;
-    
-    // Compare zones with a small tolerance (0.00001 for precision)
-    const tolerance = 0.00001;
-    return Math.abs(zone1.zona_desde - zone2.zona_desde) < tolerance &&
-           Math.abs(zone1.zona_hasta - zone2.zona_hasta) < tolerance &&
-           zone1.direccion === zone2.direccion;
-}
+
 
 async function trackZoneHistory(symbol, analysis) {
     try {
@@ -328,11 +321,18 @@ async function trackZoneHistory(symbol, analysis) {
         // Get tipo_indice (Boom or Crash)
         const tipoIndice = symbol.includes('Boom') ? 'Boom' : 'Crash';
         
-        // Check for active setup
-        const activeSetup = await getActiveSetup(symbol);
+        // Get all active/in-zone setups for this symbol
+        const existingSetups = await getAllActiveSetups(symbol);
         
-        if (!activeSetup) {
-            // No active setup, create new one
+        // Check if this exact zone already exists
+        const zoneExists = existingSetups.some(setup => 
+            setup.zona_desde === zonaM15.zona_desde &&
+            setup.zona_hasta === zonaM15.zona_hasta &&
+            setup.direccion === zonaM15.direccion
+        );
+        
+        // If zone doesn't exist, create new setup
+        if (!zoneExists) {
             const newSetup = {
                 symbol: symbol,
                 tipo_indice: tipoIndice,
@@ -351,7 +351,7 @@ async function trackZoneHistory(symbol, analysis) {
                 tp_price: null,
                 sl_price: null,
                 ratio_rr: null,
-                max_reaccion_puntos: 0,
+                max_reaccion_puntos: null,
                 resultado_puntos: null,
                 fecha_cierre: null,
                 motivo_cierre: null
@@ -359,63 +359,35 @@ async function trackZoneHistory(symbol, analysis) {
             
             await createSetup(newSetup);
             console.log(`✓ Nuevo setup ACTIVO creado para ${symbol}`);
+        }
+        
+        // Update all existing setups (check if price is in zone, update max_reaccion)
+        for (const setup of existingSetups) {
+            const isInZone = currentPrice >= setup.zona_desde && currentPrice <= setup.zona_hasta;
             
-        } else {
-            // Active setup exists
-            const activeZone = {
-                zona_desde: activeSetup.zona_desde,
-                zona_hasta: activeSetup.zona_hasta,
-                direccion: activeSetup.direccion
+            const updateData = {
+                updated_at: new Date().toISOString()
             };
             
-            if (zonesAreEqual(activeZone, zonaM15)) {
-                // Same zone, update updated_at and max_reaccion_puntos
-                const distanceFromZone = zonaM15.direccion === 'ALCISTA' 
-                    ? Math.max(0, currentPrice - zonaM15.zona_hasta)
-                    : Math.max(0, zonaM15.zona_desde - currentPrice);
+            // Check if we need to change from ACTIVA to EN_ZONA
+            if (setup.estado === 'ACTIVA' && isInZone) {
+                updateData.estado = 'EN_ZONA';
+                console.log(`✓ Setup ${setup.id} cambió a EN_ZONA para ${symbol}`);
+            }
+            
+            // Calculate max_reaccion_puntos only if estado is EN_ZONA
+            if (setup.estado === 'EN_ZONA' || (setup.estado === 'ACTIVA' && isInZone)) {
+                const distanceFromZone = setup.direccion === 'ALCISTA' 
+                    ? Math.max(0, currentPrice - setup.zona_hasta)
+                    : Math.max(0, setup.zona_desde - currentPrice);
                 
-                const newMaxReaccion = Math.max(activeSetup.max_reaccion_puntos || 0, distanceFromZone);
-                
-                await updateSetup(activeSetup.id, {
-                    updated_at: new Date().toISOString(),
-                    max_reaccion_puntos: newMaxReaccion,
-                    score: zonaM15.score // Update score in case it changed
-                });
-                
-                console.log(`✓ Setup actualizado para ${symbol} - max_reaccion: ${newMaxReaccion.toFixed(5)}`);
-                
-            } else {
-                // Different zone detected, close previous and create new
-                await closeSetup(activeSetup.id, 'Nueva zona detectada');
-                console.log(`✓ Setup anterior cerrado para ${symbol} - Nueva zona detectada`);
-                
-                // Create new setup
-                const newSetup = {
-                    symbol: symbol,
-                    tipo_indice: tipoIndice,
-                    direccion: zonaM15.direccion,
-                    zona_desde: zonaM15.zona_desde,
-                    zona_hasta: zonaM15.zona_hasta,
-                    zona_size_puntos: Math.abs(zonaM15.zona_hasta - zonaM15.zona_desde),
-                    precio_actual_detectado: currentPrice,
-                    precio_entrada_referencia: zonaM15.direccion === 'ALCISTA' ? zonaM15.zona_hasta : zonaM15.zona_desde,
-                    score: zonaM15.score,
-                    evento: zonaM15.evento ? zonaM15.evento.evento : null,
-                    ob: zonaM15.ob ? true : false,
-                    fvg: zonaM15.fvg ? true : false,
-                    barrida: zonaM15.barrida ? true : false,
-                    estado: 'ACTIVA',
-                    tp_price: null,
-                    sl_price: null,
-                    ratio_rr: null,
-                    max_reaccion_puntos: 0,
-                    resultado_puntos: null,
-                    fecha_cierre: null,
-                    motivo_cierre: null
-                };
-                
-                await createSetup(newSetup);
-                console.log(`✓ Nuevo setup ACTIVO creado para ${symbol}`);
+                const currentMaxReaccion = setup.max_reaccion_puntos || 0;
+                updateData.max_reaccion_puntos = Math.max(currentMaxReaccion, distanceFromZone);
+            }
+            
+            // Only update if there are changes
+            if (Object.keys(updateData).length > 1) { // More than just updated_at
+                await updateSetup(setup.id, updateData);
             }
         }
         
@@ -1571,6 +1543,10 @@ function createHistoryRow(setup) {
         case 'ACTIVA':
             estadoClass += 'status-activa';
             break;
+        case 'EN_ZONA':
+            estadoClass += 'status-esperando';
+            estadoText = 'EN ZONA';
+            break;
         case 'DESCARTADA':
             estadoClass += 'status-descartada';
             break;
@@ -1592,17 +1568,16 @@ function createHistoryRow(setup) {
     // Resultado puntos
     const resultadoPuntos = setup.resultado_puntos != null ? formatPrice(setup.resultado_puntos) : '--';
     
-    // Max reaccion - show "--" if setup is ACTIVA and not touched/evaluated
+    // Max reaccion - show "--" if estado is ACTIVA, only show value for EN_ZONA and other states
     let maxReaccion = '--';
     if (setup.estado === 'ACTIVA') {
-        // For active setups, only show value if it's been touched (max_reaccion_puntos > 0)
-        if (setup.max_reaccion_puntos != null && setup.max_reaccion_puntos > 0) {
-            maxReaccion = formatPrice(setup.max_reaccion_puntos);
-        } else {
-            maxReaccion = '--';
-        }
+        // For ACTIVA setups, always show "--" (as per requirement)
+        maxReaccion = '--';
+    } else if (setup.estado === 'EN_ZONA') {
+        // For EN_ZONA setups, calculate and show max_reaccion_puntos
+        maxReaccion = setup.max_reaccion_puntos != null ? formatPrice(setup.max_reaccion_puntos) : '--';
     } else {
-        // For non-active setups, show the value if available
+        // For other states (TP, SL, DESCARTADA), show the value if available
         maxReaccion = setup.max_reaccion_puntos != null ? formatPrice(setup.max_reaccion_puntos) : '--';
     }
     
