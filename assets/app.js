@@ -146,6 +146,198 @@ function startAutoRefresh() {
     }, AUTO_REFRESH_SECONDS * 1000);
 }
 
+// ========================================
+// SMC M15 SETUPS TRACKING
+// ========================================
+
+async function getActiveSetup(symbol) {
+    const url = `${SUPABASE_URL}/rest/v1/smc_m15_setups?symbol=eq.${encodeURIComponent(symbol)}&estado=eq.ACTIVA&order=created_at.desc&limit=1`;
+    
+    const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json'
+        }
+    });
+    
+    if (!response.ok) {
+        throw new Error(`Error HTTP: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    return data.length > 0 ? data[0] : null;
+}
+
+async function createSetup(setupData) {
+    const url = `${SUPABASE_URL}/rest/v1/smc_m15_setups`;
+    
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation'
+        },
+        body: JSON.stringify(setupData)
+    });
+    
+    if (!response.ok) {
+        throw new Error(`Error HTTP: ${response.status}`);
+    }
+    
+    return await response.json();
+}
+
+async function updateSetup(id, updateData) {
+    const url = `${SUPABASE_URL}/rest/v1/smc_m15_setups?id=eq.${id}`;
+    
+    const response = await fetch(url, {
+        method: 'PATCH',
+        headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation'
+        },
+        body: JSON.stringify(updateData)
+    });
+    
+    if (!response.ok) {
+        throw new Error(`Error HTTP: ${response.status}`);
+    }
+    
+    return await response.json();
+}
+
+async function closeSetup(id, motivo) {
+    return await updateSetup(id, {
+        estado: 'DESCARTADA',
+        fecha_cierre: new Date().toISOString(),
+        motivo_cierre: motivo
+    });
+}
+
+function zonesAreEqual(zone1, zone2) {
+    if (!zone1 || !zone2) return false;
+    
+    // Compare zones with a small tolerance (0.00001 for precision)
+    const tolerance = 0.00001;
+    return Math.abs(zone1.zona_desde - zone2.zona_desde) < tolerance &&
+           Math.abs(zone1.zona_hasta - zone2.zona_hasta) < tolerance &&
+           zone1.direccion === zone2.direccion;
+}
+
+async function trackZoneHistory(symbol, analysis) {
+    try {
+        const zonaM15 = analysis.smc.zonaM15;
+        const currentPrice = analysis.currentPrice;
+        
+        if (!zonaM15 || !zonaM15.es_util) {
+            return; // Only track useful zones
+        }
+        
+        // Get tipo_indice (Boom or Crash)
+        const tipoIndice = symbol.includes('Boom') ? 'Boom' : 'Crash';
+        
+        // Check for active setup
+        const activeSetup = await getActiveSetup(symbol);
+        
+        if (!activeSetup) {
+            // No active setup, create new one
+            const newSetup = {
+                symbol: symbol,
+                tipo_indice: tipoIndice,
+                direccion: zonaM15.direccion,
+                zona_desde: zonaM15.zona_desde,
+                zona_hasta: zonaM15.zona_hasta,
+                zona_size_puntos: Math.abs(zonaM15.zona_hasta - zonaM15.zona_desde),
+                precio_actual_detectado: currentPrice,
+                precio_entrada_referencia: zonaM15.direccion === 'ALCISTA' ? zonaM15.zona_hasta : zonaM15.zona_desde,
+                score: zonaM15.score,
+                evento: zonaM15.evento ? zonaM15.evento.evento : null,
+                ob: zonaM15.ob ? true : false,
+                fvg: zonaM15.fvg ? true : false,
+                barrida: zonaM15.barrida ? true : false,
+                estado: 'ACTIVA',
+                tp_price: null,
+                sl_price: null,
+                ratio_rr: null,
+                max_reaccion_puntos: 0,
+                resultado_puntos: null,
+                fecha_cierre: null,
+                motivo_cierre: null
+            };
+            
+            await createSetup(newSetup);
+            console.log(`✓ Nuevo setup ACTIVO creado para ${symbol}`);
+            
+        } else {
+            // Active setup exists
+            const activeZone = {
+                zona_desde: activeSetup.zona_desde,
+                zona_hasta: activeSetup.zona_hasta,
+                direccion: activeSetup.direccion
+            };
+            
+            if (zonesAreEqual(activeZone, zonaM15)) {
+                // Same zone, update updated_at and max_reaccion_puntos
+                const distanceFromZone = zonaM15.direccion === 'ALCISTA' 
+                    ? Math.max(0, currentPrice - zonaM15.zona_hasta)
+                    : Math.max(0, zonaM15.zona_desde - currentPrice);
+                
+                const newMaxReaccion = Math.max(activeSetup.max_reaccion_puntos || 0, distanceFromZone);
+                
+                await updateSetup(activeSetup.id, {
+                    updated_at: new Date().toISOString(),
+                    max_reaccion_puntos: newMaxReaccion,
+                    score: zonaM15.score // Update score in case it changed
+                });
+                
+                console.log(`✓ Setup actualizado para ${symbol} - max_reaccion: ${newMaxReaccion.toFixed(5)}`);
+                
+            } else {
+                // Different zone detected, close previous and create new
+                await closeSetup(activeSetup.id, 'Nueva zona detectada');
+                console.log(`✓ Setup anterior cerrado para ${symbol} - Nueva zona detectada`);
+                
+                // Create new setup
+                const newSetup = {
+                    symbol: symbol,
+                    tipo_indice: tipoIndice,
+                    direccion: zonaM15.direccion,
+                    zona_desde: zonaM15.zona_desde,
+                    zona_hasta: zonaM15.zona_hasta,
+                    zona_size_puntos: Math.abs(zonaM15.zona_hasta - zonaM15.zona_desde),
+                    precio_actual_detectado: currentPrice,
+                    precio_entrada_referencia: zonaM15.direccion === 'ALCISTA' ? zonaM15.zona_hasta : zonaM15.zona_desde,
+                    score: zonaM15.score,
+                    evento: zonaM15.evento ? zonaM15.evento.evento : null,
+                    ob: zonaM15.ob ? true : false,
+                    fvg: zonaM15.fvg ? true : false,
+                    barrida: zonaM15.barrida ? true : false,
+                    estado: 'ACTIVA',
+                    tp_price: null,
+                    sl_price: null,
+                    ratio_rr: null,
+                    max_reaccion_puntos: 0,
+                    resultado_puntos: null,
+                    fecha_cierre: null,
+                    motivo_cierre: null
+                };
+                
+                await createSetup(newSetup);
+                console.log(`✓ Nuevo setup ACTIVO creado para ${symbol}`);
+            }
+        }
+        
+    } catch (error) {
+        console.error(`Error tracking zone history for ${symbol}:`, error);
+    }
+}
+
 async function fetchAllIndices() {
     updateLastUpdateTime();
     
@@ -157,6 +349,11 @@ async function fetchAllIndices() {
         try {
             const analysis = await fetchAndAnalyzeSymbol(symbol);
             results[symbol] = analysis;
+            
+            // Track zone history for SMC M15 PRO
+            if (analysis && !analysis.error && analysis.smc && analysis.smc.zonaM15) {
+                await trackZoneHistory(symbol, analysis);
+            }
         } catch (error) {
             console.error(`Error fetching ${symbol}:`, error);
             results[symbol] = {
@@ -169,6 +366,9 @@ async function fetchAllIndices() {
     // Update tables
     updateBoomTable(results);
     updateCrashTable(results);
+    
+    // Update history table
+    await updateHistoryTable();
 }
 
 async function fetchAndAnalyzeSymbol(symbol) {
@@ -1022,6 +1222,127 @@ function updateLastUpdateTime() {
     if (elem) {
         elem.textContent = `Última actualización: ${timeString}`;
     }
+}
+
+// ========================================
+// HISTORY TABLE FUNCTIONS
+// ========================================
+
+async function fetchSetupHistory(limit = 50) {
+    const url = `${SUPABASE_URL}/rest/v1/smc_m15_setups?order=created_at.desc&limit=${limit}`;
+    
+    const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json'
+        }
+    });
+    
+    if (!response.ok) {
+        throw new Error(`Error HTTP: ${response.status}`);
+    }
+    
+    return await response.json();
+}
+
+async function updateHistoryTable() {
+    try {
+        const setups = await fetchSetupHistory();
+        const tbody = document.getElementById('historyTableBody');
+        
+        if (!tbody) return; // Table not in DOM yet
+        
+        tbody.innerHTML = '';
+        
+        if (setups.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="11" class="loading">No hay datos históricos</td></tr>';
+            return;
+        }
+        
+        setups.forEach(setup => {
+            const row = createHistoryRow(setup);
+            tbody.appendChild(row);
+        });
+        
+    } catch (error) {
+        console.error('Error updating history table:', error);
+        const tbody = document.getElementById('historyTableBody');
+        if (tbody) {
+            tbody.innerHTML = '<tr><td colspan="11" class="loading">Error cargando historial</td></tr>';
+        }
+    }
+}
+
+function createHistoryRow(setup) {
+    const tr = document.createElement('tr');
+    
+    // Format date
+    const fecha = setup.created_at ? new Date(setup.created_at).toLocaleString('es-ES', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+    }) : '--';
+    
+    // Zone text
+    const zonaText = `${formatPrice(setup.zona_desde)} - ${formatPrice(setup.zona_hasta)}`;
+    
+    // Direction class
+    const direccionClass = setup.direccion === 'ALCISTA' ? 'direction-alcista' : 'direction-bajista';
+    
+    // Score class
+    let scoreClass = 'score-low';
+    if (setup.score >= 8) scoreClass = 'score-high';
+    else if (setup.score >= 5) scoreClass = 'score-medium';
+    
+    // Estado class
+    let estadoClass = 'status-badge ';
+    let estadoText = setup.estado || '--';
+    
+    switch (setup.estado) {
+        case 'ACTIVA':
+            estadoClass += 'status-activa';
+            break;
+        case 'DESCARTADA':
+            estadoClass += 'status-descartada';
+            break;
+        case 'TP':
+            estadoClass += 'status-tp';
+            break;
+        case 'SL':
+            estadoClass += 'status-sl';
+            break;
+        default:
+            estadoClass += 'status-descartado';
+    }
+    
+    // OB, FVG, Barrida
+    const obText = setup.ob ? 'SÍ' : 'NO';
+    const fvgText = setup.fvg ? 'SÍ' : 'NO';
+    const barridaText = setup.barrida ? 'SÍ' : 'NO';
+    
+    // Resultado puntos and max reaccion
+    const resultadoPuntos = setup.resultado_puntos != null ? formatPrice(setup.resultado_puntos) : '--';
+    const maxReaccion = setup.max_reaccion_puntos != null ? formatPrice(setup.max_reaccion_puntos) : '--';
+    
+    tr.innerHTML = `
+        <td class="time-cell">${fecha}</td>
+        <td>${setup.symbol || '--'}</td>
+        <td class="direction-cell ${direccionClass}">${setup.direccion || '--'}</td>
+        <td class="zone-cell">${zonaText}</td>
+        <td class="score-cell ${scoreClass}">${setup.score || 0}</td>
+        <td class="${setup.ob ? 'indicator-yes' : 'indicator-no'}">${obText}</td>
+        <td class="${setup.fvg ? 'indicator-yes' : 'indicator-no'}">${fvgText}</td>
+        <td class="${setup.barrida ? 'indicator-yes' : 'indicator-no'}">${barridaText}</td>
+        <td><span class="${estadoClass}">${estadoText}</span></td>
+        <td class="price-cell">${resultadoPuntos}</td>
+        <td class="price-cell">${maxReaccion}</td>
+    `;
+    
+    return tr;
 }
 
 // Cleanup
