@@ -10,6 +10,7 @@ Mini app visual para Windows con sistema de bandeja.
 import os
 import sys
 import time
+import math
 import threading
 from datetime import datetime, timezone
 import MetaTrader5 as mt5
@@ -486,7 +487,9 @@ class CollectorGUI:
                     last_timestamp_mt5 = int(last_mt5_rates[0]["time"])
                     
                     # Convertir last_timestamp_supabase a timestamp Unix
-                    last_timestamp_supabase_unix = int(datetime.fromisoformat(last_timestamp_supabase.replace('Z', '+00:00')).timestamp())
+                    # Manejar timestamps ISO con o sin 'Z'
+                    timestamp_str = last_timestamp_supabase.replace('Z', '+00:00') if 'Z' in last_timestamp_supabase else last_timestamp_supabase
+                    last_timestamp_supabase_unix = int(datetime.fromisoformat(timestamp_str).timestamp())
                     
                     # Log de timestamps
                     self.log(f"│  📅 [{tf_name}] Última Supabase: {last_timestamp_supabase}", "info")
@@ -507,10 +510,11 @@ class CollectorGUI:
                             self.log(f"│  ⚠️ [{tf_name}] Configuración no encontrada", "warning")
                             continue
                         
-                        velas_faltantes = diferencia_minutos / config["divisor"]
+                        # Usar ceil para asegurar que se cubren todas las velas parciales
+                        velas_faltantes = math.ceil(diferencia_minutos / config["divisor"])
                         
                         # 6. Agregar margen
-                        num_candles = int(velas_faltantes) + config["margen"]
+                        num_candles = velas_faltantes + config["margen"]
                         
                         # 7. Aplicar mínimos
                         if num_candles < config["minimo"]:
