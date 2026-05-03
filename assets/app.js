@@ -324,25 +324,84 @@ async function trackZoneHistory(symbol, analysis) {
         // Get all active/in-zone setups for this symbol
         const existingSetups = await getAllActiveSetups(symbol);
         
+        // Calculate new zone boundaries
+        const newZonaDesde = zonaM15.zona_desde;
+        const newZonaHasta = zonaM15.zona_hasta;
+        const newZonaSize = Math.abs(newZonaHasta - newZonaDesde);
+        
         // Check if this exact zone already exists (with tolerance for floating-point precision)
         const tolerance = 0.00001;
-        const zoneExists = existingSetups.some(setup => 
-            Math.abs(setup.zona_desde - zonaM15.zona_desde) < tolerance &&
-            Math.abs(setup.zona_hasta - zonaM15.zona_hasta) < tolerance &&
+        const exactZoneExists = existingSetups.some(setup => 
+            Math.abs(setup.zona_desde - newZonaDesde) < tolerance &&
+            Math.abs(setup.zona_hasta - newZonaHasta) < tolerance &&
             setup.direccion === zonaM15.direccion
         );
         
-        // If zone doesn't exist, create new setup
-        if (!zoneExists) {
+        // Check for containment or strong overlap with existing zones
+        let matchingSetup = null;
+        
+        if (!exactZoneExists) {
+            for (const setup of existingSetups) {
+                // Check if new zone is contained within existing zone
+                const isContained = newZonaDesde >= setup.zona_desde && newZonaHasta <= setup.zona_hasta;
+                
+                // Check for strong overlap (>= 70%)
+                const overlap = Math.min(newZonaHasta, setup.zona_hasta) - Math.max(newZonaDesde, setup.zona_desde);
+                const existingZonaSize = Math.abs(setup.zona_hasta - setup.zona_desde);
+                const minSize = Math.min(newZonaSize, existingZonaSize);
+                const overlapRatio = overlap > 0 ? overlap / minSize : 0;
+                
+                if (isContained || overlapRatio >= 0.70) {
+                    matchingSetup = setup;
+                    console.log(`✓ Nueva zona ${isContained ? 'contenida' : 'solapa ' + (overlapRatio * 100).toFixed(1) + '%'} en setup existente ${setup.id} para ${symbol}`);
+                    break;
+                }
+            }
+        }
+        
+        // If we found a matching setup (contained or overlapped), update it instead of creating new
+        if (matchingSetup) {
+            const isInZone = currentPrice >= matchingSetup.zona_desde && currentPrice <= matchingSetup.zona_hasta;
+            
+            const updateData = {
+                updated_at: new Date().toISOString(),
+                score: zonaM15.score,
+                ob: zonaM15.ob ? true : false,
+                fvg: zonaM15.fvg ? true : false,
+                barrida: zonaM15.barrida ? true : false
+            };
+            
+            // Change to EN_ZONA if price is in zone
+            if (matchingSetup.estado === 'ACTIVA' && isInZone) {
+                updateData.estado = 'EN_ZONA';
+                console.log(`✓ Setup ${matchingSetup.id} cambió a EN_ZONA para ${symbol}`);
+            }
+            
+            // Calculate max_reaccion_puntos if EN_ZONA
+            const isOrWillBeEnZona = (matchingSetup.estado === 'ACTIVA' && isInZone) || matchingSetup.estado === 'EN_ZONA';
+            if (isOrWillBeEnZona) {
+                const distanceFromZone = matchingSetup.direccion === 'ALCISTA' 
+                    ? Math.max(0, currentPrice - matchingSetup.zona_hasta)
+                    : Math.max(0, matchingSetup.zona_desde - currentPrice);
+                
+                const currentMaxReaccion = (matchingSetup.estado === 'ACTIVA') ? 0 : (matchingSetup.max_reaccion_puntos || 0);
+                updateData.max_reaccion_puntos = Math.max(currentMaxReaccion, distanceFromZone);
+            }
+            
+            await updateSetup(matchingSetup.id, updateData);
+            console.log(`✓ Setup ${matchingSetup.id} actualizado (mantiene zona original) para ${symbol}`);
+        }
+        // If zone doesn't exist and not contained/overlapped, create new setup
+        else if (!exactZoneExists) {
             const newSetup = {
                 symbol: symbol,
                 tipo_indice: tipoIndice,
                 direccion: zonaM15.direccion,
-                zona_desde: zonaM15.zona_desde,
-                zona_hasta: zonaM15.zona_hasta,
-                zona_size_puntos: Math.abs(zonaM15.zona_hasta - zonaM15.zona_desde),
+                zona_desde: newZonaDesde,
+                zona_hasta: newZonaHasta,
+                zona_size_puntos: newZonaSize,
                 precio_actual_detectado: currentPrice,
-                precio_entrada_referencia: zonaM15.direccion === 'ALCISTA' ? zonaM15.zona_hasta : zonaM15.zona_desde,
+                precio_entrada_referencia: zonaM15.direccion === 'ALCISTA' ? newZonaHasta : newZonaDesde,
                 score: zonaM15.score,
                 evento: zonaM15.evento ? zonaM15.evento.evento : null,
                 ob: zonaM15.ob ? true : false,
@@ -362,8 +421,13 @@ async function trackZoneHistory(symbol, analysis) {
             console.log(`✓ Nuevo setup ACTIVO creado para ${symbol}`);
         }
         
-        // Update all existing setups (check if price is in zone, update max_reaccion)
+        // Update all OTHER existing setups (check if price is in zone, update max_reaccion)
         for (const setup of existingSetups) {
+            // Skip the matching setup as we already updated it above
+            if (matchingSetup && setup.id === matchingSetup.id) {
+                continue;
+            }
+            
             const isInZone = currentPrice >= setup.zona_desde && currentPrice <= setup.zona_hasta;
             
             const updateData = {
