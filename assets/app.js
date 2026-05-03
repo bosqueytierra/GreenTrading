@@ -665,12 +665,33 @@ function buscarOrderBlock(candles, evento) {
     }
 }
 
-function detectarBarridaPrevia(candles, evento, direccion, lookback = BARRIDA_LOOKBACK) {
+function detectarBarridaPrevia(candles, evento, direccion, lookback = BARRIDA_LOOKBACK, symbol = null, timeframe = null) {
     const idx = evento.index;
     const inicio = Math.max(0, idx - lookback);
     const tramo = candles.slice(inicio, idx);
 
+    // Debug para Boom 900 Index y M15
+    const debugEnabled = symbol === 'Boom 900 Index' && timeframe === 'M15';
+    
+    if (debugEnabled) {
+        console.log('\n' + '='.repeat(80));
+        console.log('DEBUG detectarBarridaPrevia (JavaScript)');
+        console.log('='.repeat(80));
+        console.log(`Evento usado: ${evento.evento || 'N/A'}`);
+        console.log(`Index del evento: ${idx}`);
+        console.log(`Timestamp del evento: ${evento.timestamp || 'N/A'}`);
+        console.log(`Dirección: ${direccion}`);
+        console.log(`Lookback usado: ${lookback}`);
+        console.log(`Inicio del tramo: ${inicio}`);
+        console.log(`Cantidad de velas del tramo: ${tramo.length}`);
+        console.log('='.repeat(80));
+    }
+
     if (tramo.length < MIN_SEGMENT_LENGTH) {
+        if (debugEnabled) {
+            console.log(`RESULTADO: No hay suficientes velas (< ${MIN_SEGMENT_LENGTH})`);
+            console.log('='.repeat(80) + '\n');
+        }
         return null;
     }
 
@@ -678,34 +699,76 @@ function detectarBarridaPrevia(candles, evento, direccion, lookback = BARRIDA_LO
         for (let j = 5; j < tramo.length; j++) {
             const minimoAnterior = Math.min(...tramo.slice(0, j).map(c => c.low));
             const vela = tramo[j];
+            
+            if (debugEnabled) {
+                const condicion = vela.low < minimoAnterior && vela.close > minimoAnterior;
+                console.log(`\nj=${j} (índice en tramo):`);
+                console.log(`  timestamp: ${vela.timestamp}`);
+                console.log(`  low: ${parseFloat(vela.low).toFixed(5)}`);
+                console.log(`  high: ${parseFloat(vela.high).toFixed(5)}`);
+                console.log(`  close: ${parseFloat(vela.close).toFixed(5)}`);
+                console.log(`  minimoAnterior: ${minimoAnterior.toFixed(5)}`);
+                console.log(`  Condición: low < minimoAnterior AND close > minimoAnterior`);
+                console.log(`  Evaluación: ${parseFloat(vela.low).toFixed(5)} < ${minimoAnterior.toFixed(5)} = ${vela.low < minimoAnterior}`);
+                console.log(`              ${parseFloat(vela.close).toFixed(5)} > ${minimoAnterior.toFixed(5)} = ${vela.close > minimoAnterior}`);
+                console.log(`  Resultado: ${condicion}`);
+            }
 
             if (vela.low < minimoAnterior && vela.close > minimoAnterior) {
-                return {
+                const resultado = {
                     timestamp: vela.timestamp,
                     tipo: 'BARRIDA_BAJISTA_PREVIA',
                     nivel: minimoAnterior,
                     low: parseFloat(vela.low),
                     close: parseFloat(vela.close)
                 };
+                if (debugEnabled) {
+                    console.log(`\n✓ BARRIDA DETECTADA en j=${j}`);
+                    console.log('='.repeat(80) + '\n');
+                }
+                return resultado;
             }
         }
     } else {
         for (let j = 5; j < tramo.length; j++) {
             const maximoAnterior = Math.max(...tramo.slice(0, j).map(c => c.high));
             const vela = tramo[j];
+            
+            if (debugEnabled) {
+                const condicion = vela.high > maximoAnterior && vela.close < maximoAnterior;
+                console.log(`\nj=${j} (índice en tramo):`);
+                console.log(`  timestamp: ${vela.timestamp}`);
+                console.log(`  low: ${parseFloat(vela.low).toFixed(5)}`);
+                console.log(`  high: ${parseFloat(vela.high).toFixed(5)}`);
+                console.log(`  close: ${parseFloat(vela.close).toFixed(5)}`);
+                console.log(`  maximoAnterior: ${maximoAnterior.toFixed(5)}`);
+                console.log(`  Condición: high > maximoAnterior AND close < maximoAnterior`);
+                console.log(`  Evaluación: ${parseFloat(vela.high).toFixed(5)} > ${maximoAnterior.toFixed(5)} = ${vela.high > maximoAnterior}`);
+                console.log(`              ${parseFloat(vela.close).toFixed(5)} < ${maximoAnterior.toFixed(5)} = ${vela.close < maximoAnterior}`);
+                console.log(`  Resultado: ${condicion}`);
+            }
 
             if (vela.high > maximoAnterior && vela.close < maximoAnterior) {
-                return {
+                const resultado = {
                     timestamp: vela.timestamp,
                     tipo: 'BARRIDA_ALCISTA_PREVIA',
                     nivel: maximoAnterior,
                     high: parseFloat(vela.high),
                     close: parseFloat(vela.close)
                 };
+                if (debugEnabled) {
+                    console.log(`\n✓ BARRIDA DETECTADA en j=${j}`);
+                    console.log('='.repeat(80) + '\n');
+                }
+                return resultado;
             }
         }
     }
 
+    if (debugEnabled) {
+        console.log('\nRESULTADO: No se detectó barrida');
+        console.log('='.repeat(80) + '\n');
+    }
     return null;
 }
 
@@ -742,7 +805,7 @@ function crearZonaM15(candlesM15, eventosM15, fvgsM15, symbol, precioActual) {
         });
 
         const fvg = fvgsValidos.length > 0 ? fvgsValidos[fvgsValidos.length - 1] : null;
-        const barrida = detectarBarridaPrevia(candlesM15, ultimoEvento, direccion);
+        const barrida = detectarBarridaPrevia(candlesM15, ultimoEvento, direccion, BARRIDA_LOOKBACK, symbol, 'M15');
 
         let zonaDesde = null;
         let zonaHasta = null;
