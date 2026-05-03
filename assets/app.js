@@ -89,6 +89,12 @@ async function fetchData(isAutoRefresh = false) {
             fetchCandles(symbol, 'M1', 10000)
         ]);
 
+        // Log para debugging: cantidad de velas obtenidas
+        console.log('=== VELAS OBTENIDAS ===');
+        console.log('Velas H1:', candlesH1 ? candlesH1.length : 0);
+        console.log('Velas M15:', candlesM15 ? candlesM15.length : 0);
+        console.log('Velas M1:', candlesM1 ? candlesM1.length : 0);
+
         // Validar que al menos tenemos datos M15 (crítico para análisis)
         // H1 y M1 son opcionales pero mejoran el análisis
         if (!candlesM15 || candlesM15.length === 0) {
@@ -127,7 +133,15 @@ async function fetchData(isAutoRefresh = false) {
 
         // Ejecutar análisis SMC (requiere M15 como mínimo, H1 es opcional para tendencia)
         if (candlesM15 && candlesM15.length > 0) {
+            console.log('=== EJECUTANDO ANÁLISIS SMC ===');
             const smcResult = analyzeSMC(candlesH1, candlesM15, candlesM1, symbol);
+            console.log('Resultado SMC:', smcResult);
+            console.log('Tendencia H1:', smcResult.tendenciaH1);
+            console.log('Tendencia M15:', smcResult.tendenciaM15);
+            console.log('Dirección operativa:', smcResult.direccionOperativa);
+            console.log('Zona M15:', smcResult.zonaM15);
+            console.log('Zona M1:', smcResult.zonaM1);
+            console.log('Estado:', smcResult.estado);
             updateSMCDisplay(smcResult);
         } else {
             clearSMCDisplay();
@@ -618,33 +632,48 @@ function crearZonaFinaM1(candlesM1, zonaM15, symbol) {
 }
 
 function analyzeSMC(candlesH1, candlesM15, candlesM1, symbol) {
+    console.log('--- Iniciando analyzeSMC ---');
+    console.log('Symbol:', symbol);
+    
     // Análisis H1 (opcional)
     let swingsH1 = [];
     let eventosH1 = [];
     let tendenciaH1 = null;
     
     if (candlesH1 && candlesH1.length > 0) {
+        console.log('Analizando H1 con', candlesH1.length, 'velas');
         swingsH1 = detectarSwings(candlesH1);
+        console.log('Swings H1 detectados:', swingsH1.length);
         const resultH1 = detectarEstructura(candlesH1, swingsH1);
         eventosH1 = resultH1.eventos;
         tendenciaH1 = resultH1.tendencia;
+        console.log('Eventos H1:', eventosH1.length, 'Tendencia H1:', tendenciaH1);
+    } else {
+        console.log('Sin datos H1 para análisis');
     }
 
     // Análisis M15 (requerido)
+    console.log('Analizando M15 con', candlesM15.length, 'velas');
     const swingsM15 = detectarSwings(candlesM15);
+    console.log('Swings M15 detectados:', swingsM15.length);
     const { eventos: eventosM15, tendencia: tendenciaM15 } = detectarEstructura(candlesM15, swingsM15);
+    console.log('Eventos M15:', eventosM15.length, 'Tendencia M15:', tendenciaM15);
 
     // FVGs M15
     const fvgsM15 = detectarFVG(candlesM15);
+    console.log('FVGs M15 detectados:', fvgsM15.length);
 
     // Precio actual
     const precioActual = candlesM15.length > 0 ? parseFloat(candlesM15[candlesM15.length - 1].close) : null;
+    console.log('Precio actual:', precioActual);
 
     // Zona M15
     const zonaM15 = crearZonaM15(candlesM15, eventosM15, fvgsM15, symbol, precioActual);
+    console.log('Zona M15 creada:', zonaM15 ? 'SÍ' : 'NO', zonaM15);
 
     // Zona M1
     const zonaM1 = candlesM1 && candlesM1.length > 0 ? crearZonaFinaM1(candlesM1, zonaM15, symbol) : null;
+    console.log('Zona M1 creada:', zonaM1 ? 'SÍ' : 'NO', zonaM1);
 
     // Estado
     let estado = '--';
@@ -655,6 +684,7 @@ function analyzeSMC(candlesH1, candlesM15, candlesM1, symbol) {
             estado = 'PRECIO_FUERA_DE_ZONA';
         }
     }
+    console.log('Estado final:', estado);
 
     return {
         tendenciaH1: tendenciaH1 || '--',
@@ -703,6 +733,9 @@ function updateTable(candles) {
 }
 
 function updateSMCDisplay(smcResult) {
+    console.log('--- Actualizando display SMC ---');
+    console.log('smcResult recibido:', smcResult);
+    
     // Tendencias
     document.getElementById('smcTendenciaH1').textContent = smcResult.tendenciaH1 || '--';
     document.getElementById('smcTendenciaM15').textContent = smcResult.tendenciaM15 || '--';
@@ -728,6 +761,7 @@ function updateSMCDisplay(smcResult) {
     // Zona M15
     if (smcResult.zonaM15) {
         const zona = smcResult.zonaM15;
+        console.log('Actualizando zona M15:', zona);
         document.getElementById('smcZonaM15Desde').textContent = formatPrice(zona.zona_desde);
         document.getElementById('smcZonaM15Hasta').textContent = formatPrice(zona.zona_hasta);
         document.getElementById('smcScore').textContent = zona.score || '0';
@@ -735,6 +769,7 @@ function updateSMCDisplay(smcResult) {
         document.getElementById('smcFVG').textContent = zona.fvg ? '✅ SÍ' : '❌ NO';
         document.getElementById('smcBarrida').textContent = zona.barrida ? '✅ SÍ' : '❌ NO';
     } else {
+        console.log('No hay zona M15 para actualizar');
         document.getElementById('smcZonaM15Desde').textContent = '--';
         document.getElementById('smcZonaM15Hasta').textContent = '--';
         document.getElementById('smcScore').textContent = '--';
@@ -746,15 +781,18 @@ function updateSMCDisplay(smcResult) {
     // Zona M1
     if (smcResult.zonaM1) {
         const zona = smcResult.zonaM1;
+        console.log('Actualizando zona M1:', zona);
         document.getElementById('smcZonaM1Desde').textContent = formatPrice(zona.zona_m1_desde);
         document.getElementById('smcZonaM1Hasta').textContent = formatPrice(zona.zona_m1_hasta);
     } else {
+        console.log('No hay zona M1 para actualizar');
         document.getElementById('smcZonaM1Desde').textContent = '--';
         document.getElementById('smcZonaM1Hasta').textContent = '--';
     }
 
     // Estado
     document.getElementById('smcEstado').textContent = smcResult.estado;
+    console.log('Display SMC actualizado correctamente');
 }
 
 function clearSMCDisplay() {
