@@ -324,10 +324,11 @@ async function trackZoneHistory(symbol, analysis) {
         // Get all active/in-zone setups for this symbol
         const existingSetups = await getAllActiveSetups(symbol);
         
-        // Check if this exact zone already exists
+        // Check if this exact zone already exists (with tolerance for floating-point precision)
+        const tolerance = 0.00001;
         const zoneExists = existingSetups.some(setup => 
-            setup.zona_desde === zonaM15.zona_desde &&
-            setup.zona_hasta === zonaM15.zona_hasta &&
+            Math.abs(setup.zona_desde - zonaM15.zona_desde) < tolerance &&
+            Math.abs(setup.zona_hasta - zonaM15.zona_hasta) < tolerance &&
             setup.direccion === zonaM15.direccion
         );
         
@@ -382,7 +383,8 @@ async function trackZoneHistory(symbol, analysis) {
                     ? Math.max(0, currentPrice - setup.zona_hasta)
                     : Math.max(0, setup.zona_desde - currentPrice);
                 
-                const currentMaxReaccion = setup.max_reaccion_puntos || 0;
+                // For ACTIVA->EN_ZONA transition, start from 0. For existing EN_ZONA, use current value
+                const currentMaxReaccion = setup.max_reaccion_puntos !== null ? setup.max_reaccion_puntos : 0;
                 updateData.max_reaccion_puntos = Math.max(currentMaxReaccion, distanceFromZone);
             }
             
