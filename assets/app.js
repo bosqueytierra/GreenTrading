@@ -9,9 +9,15 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 // Variables globales
 let autoRefreshInterval = null;
 const AUTO_REFRESH_SECONDS = 30;
+
+// Configuración SMC
 const SWING_LOOKBACK = 3;
-const CLOSE_BREAK = true;
+const CLOSE_BREAK = true; // Si true, usa precio de cierre para detectar ruptura; si false, usa high/low
 const M1_VELAS_ZONA = 15;
+const ORDER_BLOCK_LOOKBACK = 20; // Velas a revisar hacia atrás para buscar Order Blocks
+const BARRIDA_LOOKBACK = 40; // Velas a revisar para detectar barridas
+const MIN_SEGMENT_LENGTH = 10; // Longitud mínima de segmento para análisis de barrida
+const BARRIDA_INITIAL_OFFSET = 5; // Inicio del análisis de barrida desde la vela N
 
 // Inicializar cuando el DOM esté listo
 document.addEventListener('DOMContentLoaded', () => {
@@ -101,10 +107,18 @@ async function fetchData(isAutoRefresh = false) {
         }
 
         // Actualizar display con la última vela del timeframe seleccionado
-        const currentCandles = timeframe === 'H1' ? candlesH1 : (timeframe === 'M15' ? candlesM15 : candlesM1);
+        let currentCandles;
+        if (timeframe === 'H1') {
+            currentCandles = candlesH1;
+        } else if (timeframe === 'M15') {
+            currentCandles = candlesM15;
+        } else {
+            currentCandles = candlesM1;
+        }
+        
         if (currentCandles && currentCandles.length > 0) {
-            updateDisplay(currentCandles[0], symbol, timeframe);
-            updateTable(currentCandles.slice(0, 10));
+            updateDisplay(currentCandles[currentCandles.length - 1], symbol, timeframe);
+            updateTable(currentCandles.slice(-10).reverse());
         }
 
         // Ejecutar análisis SMC
@@ -157,7 +171,15 @@ async function fetchCandles(symbol, timeframe, limit) {
 function calculateMedian(values) {
     if (values.length === 0) return 0;
     const sorted = values.slice().sort((a, b) => a - b);
-    return sorted[Math.floor(sorted.length / 2)];
+    const mid = Math.floor(sorted.length / 2);
+    
+    // For even-length arrays, return average of two middle elements
+    if (sorted.length % 2 === 0) {
+        return (sorted[mid - 1] + sorted[mid]) / 2;
+    }
+    
+    // For odd-length arrays, return middle element
+    return sorted[mid];
 }
 
 // =========================
@@ -324,7 +346,7 @@ function buscarOrderBlock(candles, evento) {
     const idx = evento.index;
     const direccion = evento.evento.includes('ALCISTA') ? 'ALCISTA' : 'BAJISTA';
 
-    const inicio = Math.max(0, idx - 20);
+    const inicio = Math.max(0, idx - ORDER_BLOCK_LOOKBACK);
     const tramo = candles.slice(inicio, idx);
 
     if (direccion === 'ALCISTA') {
@@ -356,17 +378,17 @@ function buscarOrderBlock(candles, evento) {
     }
 }
 
-function detectarBarridaPrevia(candles, evento, direccion, lookback = 40) {
+function detectarBarridaPrevia(candles, evento, direccion, lookback = BARRIDA_LOOKBACK) {
     const idx = evento.index;
     const inicio = Math.max(0, idx - lookback);
     const tramo = candles.slice(inicio, idx);
 
-    if (tramo.length < 10) {
+    if (tramo.length < MIN_SEGMENT_LENGTH) {
         return null;
     }
 
     if (direccion === 'ALCISTA') {
-        for (let j = 5; j < tramo.length; j++) {
+        for (let j = BARRIDA_INITIAL_OFFSET; j < tramo.length; j++) {
             const minimoAnterior = Math.min(...tramo.slice(0, j).map(c => c.low));
             const vela = tramo[j];
 
@@ -381,7 +403,7 @@ function detectarBarridaPrevia(candles, evento, direccion, lookback = 40) {
             }
         }
     } else {
-        for (let j = 5; j < tramo.length; j++) {
+        for (let j = BARRIDA_INITIAL_OFFSET; j < tramo.length; j++) {
             const maximoAnterior = Math.max(...tramo.slice(0, j).map(c => c.high));
             const vela = tramo[j];
 
