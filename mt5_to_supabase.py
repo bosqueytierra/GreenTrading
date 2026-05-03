@@ -74,6 +74,12 @@ def get_available_symbols():
         if "Boom" in name or "Crash" in name or "boom" in name or "crash" in name:
             available.append(name)
     
+    print(f"🔍 Símbolos Boom/Crash encontrados: {len(available)}")
+    if available:
+        print(f"📋 Nombres: {', '.join(available)}")
+    else:
+        print("⚠️ No se encontraron símbolos Boom/Crash")
+    
     return available
 
 
@@ -82,13 +88,19 @@ def read_candles(symbol, timeframe_name, timeframe_mt5, num_candles):
     
     # Intentar seleccionar el símbolo
     if not mt5.symbol_select(symbol, True):
+        print(f"❌ No se pudo seleccionar símbolo: {symbol}")
         return None
+    
+    print(f"✅ Símbolo seleccionado: {symbol} [{timeframe_name}]")
     
     # Obtener las velas
     rates = mt5.copy_rates_from_pos(symbol, timeframe_mt5, 0, num_candles)
     
     if rates is None or len(rates) == 0:
+        print(f"⚠️ MT5 no devolvió velas para {symbol} [{timeframe_name}]")
         return None
+    
+    print(f"📊 MT5 devolvió {len(rates)} velas para {symbol} [{timeframe_name}]")
     
     # Convertir a DataFrame
     df = pd.DataFrame(rates)
@@ -134,9 +146,13 @@ def upload_to_supabase(candles_data):
         if response.status_code in [200, 201]:
             return True
         else:
+            print(f"❌ Supabase rechazó la subida")
+            print(f"   Status: {response.status_code}")
+            print(f"   Response: {response.text}")
             return False
     
     except Exception as e:
+        print(f"❌ Error al subir a Supabase: {e}")
         return False
 
 
