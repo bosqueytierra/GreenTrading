@@ -377,19 +377,21 @@ async function trackZoneHistory(symbol, analysis) {
             }
             
             // Calculate max_reaccion_puntos only if estado is EN_ZONA (current or new)
-            const willBeEnZona = (setup.estado === 'ACTIVA' && isInZone) || setup.estado === 'EN_ZONA';
-            if (willBeEnZona) {
+            const isOrWillBeEnZona = (setup.estado === 'ACTIVA' && isInZone) || setup.estado === 'EN_ZONA';
+            if (isOrWillBeEnZona) {
                 const distanceFromZone = setup.direccion === 'ALCISTA' 
                     ? Math.max(0, currentPrice - setup.zona_hasta)
                     : Math.max(0, setup.zona_desde - currentPrice);
                 
-                // For ACTIVA->EN_ZONA transition, start from 0. For existing EN_ZONA, use current value
-                const currentMaxReaccion = setup.max_reaccion_puntos !== null ? setup.max_reaccion_puntos : 0;
+                // For ACTIVA->EN_ZONA transition, always start from 0
+                // For existing EN_ZONA, use current value (or 0 if null from old data)
+                const currentMaxReaccion = (setup.estado === 'ACTIVA') ? 0 : (setup.max_reaccion_puntos || 0);
                 updateData.max_reaccion_puntos = Math.max(currentMaxReaccion, distanceFromZone);
             }
             
-            // Only update if there are changes
-            if (Object.keys(updateData).length > 1) { // More than just updated_at
+            // Only update if there are meaningful changes (estado or max_reaccion_puntos)
+            const hasMeaningfulChanges = updateData.estado !== undefined || updateData.max_reaccion_puntos !== undefined;
+            if (hasMeaningfulChanges) {
                 await updateSetup(setup.id, updateData);
             }
         }
