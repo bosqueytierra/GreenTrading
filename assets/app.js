@@ -307,7 +307,32 @@ async function closeSetup(id, motivo) {
     });
 }
 
-
+async function getSetupEnZona(symbol) {
+    // Get the most recent EN_ZONA setup for this symbol
+    const url = `${SUPABASE_URL}/rest/v1/smc_m15_setups?symbol=eq.${encodeURIComponent(symbol)}&estado=eq.EN_ZONA&order=created_at.desc&limit=1`;
+    
+    try {
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            console.error(`Error fetching EN_ZONA setup for ${symbol}: ${response.status}`);
+            return null;
+        }
+        
+        const data = await response.json();
+        return data.length > 0 ? data[0] : null;
+    } catch (error) {
+        console.error(`Error fetching EN_ZONA setup for ${symbol}:`, error);
+        return null;
+    }
+}
 
 async function trackZoneHistory(symbol, analysis) {
     try {
@@ -491,8 +516,8 @@ async function fetchAllIndices() {
     }
     
     // Update tables
-    updateBoomTable(results);
-    updateCrashTable(results);
+    await updateBoomTable(results);
+    await updateCrashTable(results);
     
     // Don't update history table here - only when user navigates to history view
 }
@@ -671,27 +696,27 @@ async function fetchCandles(symbol, timeframe, limit) {
     return data.reverse();
 }
 
-function updateBoomTable(results) {
+async function updateBoomTable(results) {
     const tbody = document.getElementById('boomTableBody');
     tbody.innerHTML = '';
     
-    ALL_INDICES.boom.forEach(symbol => {
-        const row = createTableRow(symbol, results[symbol]);
+    for (const symbol of ALL_INDICES.boom) {
+        const row = await createTableRow(symbol, results[symbol]);
         tbody.appendChild(row);
-    });
+    }
 }
 
-function updateCrashTable(results) {
+async function updateCrashTable(results) {
     const tbody = document.getElementById('crashTableBody');
     tbody.innerHTML = '';
     
-    ALL_INDICES.crash.forEach(symbol => {
-        const row = createTableRow(symbol, results[symbol]);
+    for (const symbol of ALL_INDICES.crash) {
+        const row = await createTableRow(symbol, results[symbol]);
         tbody.appendChild(row);
-    });
+    }
 }
 
-function createTableRow(symbol, data) {
+async function createTableRow(symbol, data) {
     const tr = document.createElement('tr');
     
     if (!data || data.error) {
@@ -704,6 +729,34 @@ function createTableRow(symbol, data) {
     
     const smc = data.smc;
     
+    // Check for existing EN_ZONA setup
+    const setupEnZona = await getSetupEnZona(symbol);
+    
+    // Decide which data source to use for display
+    let displayZonaDesde, displayZonaHasta, displayDireccion, displayScore, displayOB, displayFVG, displayBarrida, displayEstado;
+    
+    if (setupEnZona) {
+        // Use EN_ZONA setup data for display
+        displayZonaDesde = setupEnZona.zona_desde;
+        displayZonaHasta = setupEnZona.zona_hasta;
+        displayDireccion = setupEnZona.direccion;
+        displayScore = setupEnZona.score;
+        displayOB = setupEnZona.ob;
+        displayFVG = setupEnZona.fvg;
+        displayBarrida = setupEnZona.barrida;
+        displayEstado = 'EN_ZONA';
+    } else {
+        // Use current analysis data
+        displayZonaDesde = smc.zonaM15 ? smc.zonaM15.zona_desde : null;
+        displayZonaHasta = smc.zonaM15 ? smc.zonaM15.zona_hasta : null;
+        displayDireccion = smc.direccionOperativa || '--';
+        displayScore = smc.zonaM15 ? smc.zonaM15.score : 0;
+        displayOB = smc.zonaM15 && smc.zonaM15.ob ? true : false;
+        displayFVG = smc.zonaM15 && smc.zonaM15.fvg ? true : false;
+        displayBarrida = smc.zonaM15 && smc.zonaM15.barrida ? true : false;
+        displayEstado = smc.estado || '--';
+    }
+    
     // Get last event M15
     let lastEventM15 = '--';
     if (smc.eventosM15 && smc.eventosM15.length > 0) {
@@ -713,24 +766,24 @@ function createTableRow(symbol, data) {
     
     // Zone M15 with individual boxes
     let zonaM15HTML = '<span class="zone-cell">--</span>';
-    if (smc.zonaM15) {
+    if (displayZonaDesde !== null && displayZonaHasta !== null) {
         zonaM15HTML = `
             <div class="zone-boxes">
                 <div class="zone-price-row">
                     <span class="zone-label">Desde:</span>
-                    <span class="zone-price">${formatPrice(smc.zonaM15.zona_desde)}</span>
-                    <button class="copy-btn" onclick="copyToClipboard('${smc.zonaM15.zona_desde}', this)">📋</button>
+                    <span class="zone-price">${formatPrice(displayZonaDesde)}</span>
+                    <button class="copy-btn" onclick="copyToClipboard('${displayZonaDesde}', this)">📋</button>
                 </div>
                 <div class="zone-price-row">
                     <span class="zone-label">Hasta:</span>
-                    <span class="zone-price">${formatPrice(smc.zonaM15.zona_hasta)}</span>
-                    <button class="copy-btn" onclick="copyToClipboard('${smc.zonaM15.zona_hasta}', this)">📋</button>
+                    <span class="zone-price">${formatPrice(displayZonaHasta)}</span>
+                    <button class="copy-btn" onclick="copyToClipboard('${displayZonaHasta}', this)">📋</button>
                 </div>
             </div>
         `;
     }
     
-    // Zone M1 with individual boxes
+    // Zone M1 with individual boxes (keep using current analysis for M1)
     let zonaM1HTML = '<span class="zone-cell">--</span>';
     if (smc.zonaM1) {
         zonaM1HTML = `
@@ -750,20 +803,20 @@ function createTableRow(symbol, data) {
     }
     
     // Score
-    const score = smc.zonaM15 ? smc.zonaM15.score : 0;
+    const score = displayScore;
     let scoreClass = 'score-low';
     if (score >= 8) scoreClass = 'score-high';
     else if (score >= 5) scoreClass = 'score-medium';
     
     // OB, FVG, Barrida
-    const ob = smc.zonaM15 && smc.zonaM15.ob ? 'SÍ' : 'NO';
-    const fvg = smc.zonaM15 && smc.zonaM15.fvg ? 'SÍ' : 'NO';
-    const barrida = smc.zonaM15 && smc.zonaM15.barrida ? 'SÍ' : 'NO';
+    const ob = displayOB ? 'SÍ' : 'NO';
+    const fvg = displayFVG ? 'SÍ' : 'NO';
+    const barrida = displayBarrida ? 'SÍ' : 'NO';
     
     // Estado
-    let estadoText = smc.estado || '--';
+    let estadoText = displayEstado;
     let estadoClass = 'status-badge ';
-    if (estadoText.includes('DENTRO')) {
+    if (estadoText === 'EN_ZONA' || estadoText.includes('DENTRO')) {
         estadoClass += 'status-esperando';
         estadoText = 'En Zona';
     } else if (estadoText.includes('FUERA')) {
@@ -780,7 +833,7 @@ function createTableRow(symbol, data) {
     const tendM15Class = getTrendClass(tendM15);
     
     // Dirección
-    const direccion = smc.direccionOperativa || '--';
+    const direccion = displayDireccion;
     const direccionClass = direccion === 'ALCISTA' ? 'direction-alcista' : 'direction-bajista';
     
     tr.innerHTML = `
