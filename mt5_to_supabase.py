@@ -53,25 +53,11 @@ INITIAL_CANDLES_BY_TIMEFRAME = {
     "H1": 700
 }
 
-# Configuración de margen de seguridad por timeframe
-SAFETY_MARGIN = {
-    "M1": 10,
-    "M15": 5,
-    "H1": 3
-}
-
-# Configuración de mínimo de lectura por timeframe
-MIN_CANDLES_TO_READ = {
+# Configuración de velas fijas para actualización (cuando hay histórico)
+UPDATE_CANDLES_BY_TIMEFRAME = {
     "M1": 20,
     "M15": 10,
     "H1": 5
-}
-
-# Minutos por vela según timeframe
-MINUTES_PER_CANDLE = {
-    "M1": 1,
-    "M15": 15,
-    "H1": 60
 }
 
 # Intervalo de sincronización (3 minutos)
@@ -128,37 +114,7 @@ def get_last_timestamp_from_supabase(symbol, timeframe):
         return None
 
 
-def calculate_candles_to_read(last_timestamp, timeframe_name):
-    """
-    Calcular cuántas velas leer según el tiempo transcurrido desde el último timestamp.
-    
-    Args:
-        last_timestamp: timestamp ISO string del último dato guardado
-        timeframe_name: nombre del timeframe (M1, M15, H1)
-    
-    Returns:
-        Número de velas a leer con margen de seguridad aplicado
-    """
-    # Convertir last_timestamp a datetime UTC-aware
-    last_dt = pd.to_datetime(last_timestamp, utc=True)
-    now_dt = pd.Timestamp.now(tz='UTC')
-    
-    # Calcular minutos transcurridos
-    elapsed_minutes = (now_dt - last_dt).total_seconds() / 60.0
-    
-    # Obtener minutos por vela según timeframe
-    minutes_per_candle = MINUTES_PER_CANDLE[timeframe_name]
-    
-    # Calcular velas estimadas
-    estimated_candles = int(elapsed_minutes / minutes_per_candle)
-    
-    # Agregar margen de seguridad
-    candles_with_margin = estimated_candles + SAFETY_MARGIN[timeframe_name]
-    
-    # Aplicar mínimo
-    final_candles = max(candles_with_margin, MIN_CANDLES_TO_READ[timeframe_name])
-    
-    return final_candles
+
 
 
 
@@ -269,10 +225,10 @@ def collect_and_upload():
                     total_uploaded += len(candles_batch)
                     print(f"✅ Carga inicial: {symbol} [{tf_name}] - {len(candles_batch)} velas")
             
-            # 3. Si SÍ existe último timestamp: calcular dinámicamente cuántas velas leer
+            # 3. Si SÍ existe último timestamp: usar lectura fija según timeframe
             else:
-                # Calcular cuántas velas leer según tiempo transcurrido
-                num_candles = calculate_candles_to_read(last_timestamp, tf_name)
+                # Usar lectura fija segura por ciclo
+                num_candles = UPDATE_CANDLES_BY_TIMEFRAME[tf_name]
                 df = read_candles(symbol, tf_name, tf_mt5, num_candles)
                 
                 if df is None:
