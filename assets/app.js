@@ -186,12 +186,136 @@ async function fetchAndAnalyzeSymbol(symbol) {
         };
     }
     
+    // Debug logging for Boom 1000 Index
+    if (symbol === 'Boom 1000 Index') {
+        console.log('========================================');
+        console.log('DEBUG BOOM 1000 INDEX - fetchAndAnalyzeSymbol');
+        console.log('========================================');
+        
+        // Timestamps and quantities
+        if (candlesH1 && candlesH1.length > 0) {
+            console.log('H1 Candles:');
+            console.log('  Cantidad:', candlesH1.length);
+            console.log('  Primera vela timestamp:', candlesH1[0].timestamp);
+            console.log('  Última vela timestamp:', candlesH1[candlesH1.length - 1].timestamp);
+        }
+        
+        if (candlesM15 && candlesM15.length > 0) {
+            console.log('M15 Candles:');
+            console.log('  Cantidad:', candlesM15.length);
+            console.log('  Primera vela timestamp:', candlesM15[0].timestamp);
+            console.log('  Última vela timestamp:', candlesM15[candlesM15.length - 1].timestamp);
+        }
+        
+        if (candlesM1 && candlesM1.length > 0) {
+            console.log('M1 Candles:');
+            console.log('  Cantidad:', candlesM1.length);
+            console.log('  Primera vela timestamp:', candlesM1[0].timestamp);
+            console.log('  Última vela timestamp:', candlesM1[candlesM1.length - 1].timestamp);
+        }
+    }
+    
     // Perform SMC analysis
     const smcResult = analyzeSMC(candlesH1, candlesM15, candlesM1, symbol);
     
     // Get current price
     const currentPrice = candlesM15[candlesM15.length - 1].close;
     const timestamp = candlesM15[candlesM15.length - 1].timestamp;
+    
+    // Debug logging for Boom 1000 Index - SMC Results
+    if (symbol === 'Boom 1000 Index') {
+        console.log('Precio Actual:', currentPrice);
+        console.log('');
+        
+        // Last M15 event used for zone
+        if (smcResult.eventosM15 && smcResult.eventosM15.length > 0) {
+            const lastEvent = smcResult.eventosM15[smcResult.eventosM15.length - 1];
+            console.log('Último evento M15 (general):');
+            console.log('  Tipo:', lastEvent.evento);
+            console.log('  Index:', lastEvent.index);
+            console.log('  Timestamp:', lastEvent.timestamp);
+            console.log('  Nivel roto:', lastEvent.nivel_roto);
+        }
+        
+        // Final M15 zone
+        if (smcResult.zonaM15) {
+            console.log('');
+            console.log('Zona M15 Final:');
+            console.log('  Dirección:', smcResult.zonaM15.direccion);
+            console.log('  Zona desde:', smcResult.zonaM15.zona_desde);
+            console.log('  Zona hasta:', smcResult.zonaM15.zona_hasta);
+            console.log('  Score:', smcResult.zonaM15.score);
+            console.log('  Es útil:', smcResult.zonaM15.es_util);
+            console.log('  Motivo:', smcResult.zonaM15.motivo);
+            console.log('  Dirección operativa:', smcResult.zonaM15.direccion_operativa);
+            console.log('');
+            console.log('Evento M15 usado para zona:');
+            console.log('  Tipo:', smcResult.zonaM15.evento.evento);
+            console.log('  Index:', smcResult.zonaM15.debug_evento_usado_index);
+            console.log('  Timestamp:', smcResult.zonaM15.debug_evento_usado_timestamp);
+            console.log('  Nivel roto:', smcResult.zonaM15.evento.nivel_roto);
+            
+            // OB used
+            console.log('');
+            if (smcResult.zonaM15.ob) {
+                console.log('OB usado:');
+                console.log('  Tipo:', smcResult.zonaM15.ob.tipo);
+                console.log('  Desde:', smcResult.zonaM15.ob.desde);
+                console.log('  Hasta:', smcResult.zonaM15.ob.hasta);
+                console.log('  Timestamp:', smcResult.zonaM15.ob.timestamp);
+            } else {
+                console.log('OB usado: NO');
+            }
+            
+            // FVG used
+            console.log('');
+            if (smcResult.zonaM15.fvg) {
+                console.log('FVG usado:');
+                console.log('  Tipo:', smcResult.zonaM15.fvg.tipo);
+                console.log('  Desde:', smcResult.zonaM15.fvg.desde);
+                console.log('  Hasta:', smcResult.zonaM15.fvg.hasta);
+                console.log('  Index:', smcResult.zonaM15.fvg.index);
+                console.log('  Timestamp:', smcResult.zonaM15.fvg.timestamp);
+            } else {
+                console.log('FVG usado: NO');
+            }
+            
+            // Barrida used
+            console.log('');
+            if (smcResult.zonaM15.barrida) {
+                console.log('Barrida usada:');
+                console.log('  Tipo:', smcResult.zonaM15.barrida.tipo);
+                console.log('  Nivel:', smcResult.zonaM15.barrida.nivel);
+                console.log('  Timestamp:', smcResult.zonaM15.barrida.timestamp);
+                if (smcResult.zonaM15.barrida.low !== undefined) {
+                    console.log('  Low:', smcResult.zonaM15.barrida.low);
+                }
+                if (smcResult.zonaM15.barrida.high !== undefined) {
+                    console.log('  High:', smcResult.zonaM15.barrida.high);
+                }
+                console.log('  Close:', smcResult.zonaM15.barrida.close);
+            } else {
+                console.log('Barrida usada: NO');
+            }
+        } else {
+            console.log('');
+            console.log('Zona M15 Final: NO SE CREÓ');
+        }
+        
+        // M1 zone info
+        if (smcResult.zonaM1) {
+            console.log('');
+            console.log('Zona M1:');
+            console.log('  Desde:', smcResult.zonaM1.zona_m1_desde);
+            console.log('  Hasta:', smcResult.zonaM1.zona_m1_hasta);
+            console.log('  Confirmación:', smcResult.zonaM1.m1_confirmacion);
+            console.log('  Velas M1 usadas:', smcResult.zonaM1.velas_m1_usadas);
+            console.log('  Precio dentro M1:', smcResult.zonaM1.precio_dentro_m1);
+        }
+        
+        console.log('========================================');
+        console.log('');
+    }
     
     return {
         symbol,
@@ -638,23 +762,17 @@ function crearZonaM15(candlesM15, eventosM15, fvgsM15, symbol, precioActual) {
             continue;
         }
 
-        const zona = {
-            direccion: direccion,
-            evento: ultimoEvento,
-            ob: ob,
-            fvg: fvg,
-            barrida: barrida,
-            zona_desde: zonaDesde,
-            zona_hasta: zonaHasta,
-            score: 0
-        };
-
         let esUtil = true;
+        let motivo = '';
 
         if (direccionOperativa === 'ALCISTA') {
             esUtil = zonaHasta <= precioActual;
+            motivo = esUtil ? 'Zona alcista debajo del precio actual' : 'Zona alcista sobre el precio actual';
         } else if (direccionOperativa === 'BAJISTA') {
             esUtil = zonaDesde >= precioActual;
+            motivo = esUtil ? 'Zona bajista sobre el precio actual' : 'Zona bajista debajo del precio actual';
+        } else {
+            motivo = 'Sin dirección operativa definida';
         }
 
         let score = 0;
@@ -677,8 +795,21 @@ function crearZonaM15(candlesM15, eventosM15, fvgsM15, symbol, precioActual) {
             score += 2;
         }
 
-        zona.score = score;
-        zona.es_util = esUtil;
+        const zona = {
+            direccion: direccion,
+            evento: ultimoEvento,
+            ob: ob,
+            fvg: fvg,
+            barrida: barrida,
+            zona_desde: zonaDesde,
+            zona_hasta: zonaHasta,
+            score: score,
+            es_util: esUtil,
+            motivo: motivo,
+            direccion_operativa: direccionOperativa,
+            debug_evento_usado_index: ultimoEvento.index,
+            debug_evento_usado_timestamp: ultimoEvento.timestamp
+        };
 
         if (esUtil) {
             return zona;
@@ -705,13 +836,16 @@ function crearZonaFinaM1(candlesM1, zonaM15, symbol) {
     }
 
     let tramo;
+    let confirmacion;
 
     if (indicesCercanos.length > 0) {
         const idx = indicesCercanos[indicesCercanos.length - 1];
         const inicio = Math.max(0, idx - M1_VELAS_ZONA + 1);
         tramo = candlesM1.slice(inicio, idx + 1);
+        confirmacion = 'M1 dentro/cerca de zona madre M15';
     } else {
         tramo = candlesM1.slice(-M1_VELAS_ZONA);
+        confirmacion = 'M1 últimas velas cercanas al precio actual';
     }
 
     if (tramo.length === 0) {
@@ -735,9 +869,14 @@ function crearZonaFinaM1(candlesM1, zonaM15, symbol) {
         [zonaDesde, zonaHasta] = [zonaHasta, zonaDesde];
     }
 
+    const precioDentroM1 = precioActual >= zonaDesde && precioActual <= zonaHasta;
+
     return {
         zona_m1_desde: zonaDesde,
-        zona_m1_hasta: zonaHasta
+        zona_m1_hasta: zonaHasta,
+        m1_confirmacion: confirmacion,
+        velas_m1_usadas: M1_VELAS_ZONA,
+        precio_dentro_m1: precioDentroM1
     };
 }
 
