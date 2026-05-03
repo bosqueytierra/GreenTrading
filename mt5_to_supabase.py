@@ -46,11 +46,19 @@ TIMEFRAMES = {
     "H1": mt5.TIMEFRAME_H1
 }
 
-# Número de velas a recolectar por cada símbolo/timeframe
-NUM_CANDLES = 100
+# Configuración de velas por timeframe para carga inicial
+INITIAL_CANDLES_BY_TIMEFRAME = {
+    "M1": 10000,
+    "M15": 2000,
+    "H1": 700
+}
 
-# Número de velas a leer cuando ya existe historial
-NUM_CANDLES_UPDATE = 200
+# Configuración de velas por timeframe para actualizaciones
+UPDATE_CANDLES_BY_TIMEFRAME = {
+    "M1": 500,
+    "M15": 200,
+    "H1": 100
+}
 
 # Intervalo de sincronización (3 minutos)
 SYNC_INTERVAL_SECONDS = 180
@@ -128,7 +136,8 @@ def read_candles(symbol, timeframe_name, timeframe_mt5, num_candles):
     
     # Convertir a DataFrame
     df = pd.DataFrame(rates)
-    df["time"] = pd.to_datetime(df["time"], unit="s")
+    # Convertir time a UTC-aware datetime para compatibilidad con Supabase
+    df["time"] = pd.to_datetime(df["time"], unit="s", utc=True)
     
     return df
 
@@ -194,9 +203,10 @@ def collect_and_upload():
             # 1. Consultar el último timestamp guardado en Supabase
             last_timestamp = get_last_timestamp_from_supabase(symbol, tf_name)
             
-            # 2. Si NO existe último timestamp: subir carga inicial de 100 velas
+            # 2. Si NO existe último timestamp: subir carga inicial usando configuración por timeframe
             if last_timestamp is None:
-                df = read_candles(symbol, tf_name, tf_mt5, NUM_CANDLES)
+                num_candles = INITIAL_CANDLES_BY_TIMEFRAME[tf_name]
+                df = read_candles(symbol, tf_name, tf_mt5, num_candles)
                 
                 if df is None:
                     continue
@@ -212,15 +222,16 @@ def collect_and_upload():
                     total_uploaded += len(candles_batch)
                     print(f"✅ Carga inicial: {symbol} [{tf_name}] - {len(candles_batch)} velas")
             
-            # 3. Si SÍ existe último timestamp: leer 200 velas y filtrar las nuevas
+            # 3. Si SÍ existe último timestamp: leer velas según configuración y filtrar las nuevas
             else:
-                df = read_candles(symbol, tf_name, tf_mt5, NUM_CANDLES_UPDATE)
+                num_candles = UPDATE_CANDLES_BY_TIMEFRAME[tf_name]
+                df = read_candles(symbol, tf_name, tf_mt5, num_candles)
                 
                 if df is None:
                     continue
                 
-                # Convertir last_timestamp a datetime para comparación
-                last_dt = pd.to_datetime(last_timestamp)
+                # Convertir last_timestamp a datetime UTC-aware para comparación
+                last_dt = pd.to_datetime(last_timestamp, utc=True)
                 
                 # Filtrar solo velas con timestamp > último guardado
                 df_new = df[df["time"] > last_dt]
