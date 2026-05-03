@@ -417,7 +417,7 @@ class CollectorGUI:
         return True
     
     def collect_and_upload(self):
-        """Proceso principal: recolectar y subir velas"""
+        """Proceso principal: recolectar y subir velas con UPSERT"""
         total_uploaded = 0
         
         for symbol in SYMBOLS:
@@ -428,8 +428,9 @@ class CollectorGUI:
                 # Consultar último timestamp
                 last_timestamp = get_last_timestamp_from_supabase(symbol, tf_name)
                 
-                # Carga inicial o actualización
+                # Carga inicial o actualización con UPSERT
                 if last_timestamp is None:
+                    # Carga inicial: obtener histórico completo
                     num_candles = INITIAL_CANDLES_BY_TIMEFRAME[tf_name]
                     df = self.read_candles(symbol, tf_name, tf_mt5, num_candles)
                     
@@ -447,29 +448,26 @@ class CollectorGUI:
                     else:
                         self.log(f"│  ❌ [{tf_name}] Error en carga inicial", "error")
                 else:
+                    # Actualización: leer últimas N velas y hacer UPSERT
+                    # Esto actualizará velas existentes (si cambiaron) e insertará nuevas
                     num_candles = UPDATE_CANDLES_BY_TIMEFRAME[tf_name]
                     df = self.read_candles(symbol, tf_name, tf_mt5, num_candles)
                     
                     if df is None:
                         continue
                     
-                    last_dt = pd.to_datetime(last_timestamp, utc=True)
-                    df_new = df[df["time"] > last_dt]
-                    
-                    if len(df_new) == 0:
-                        self.log(f"│  ℹ [{tf_name}] Sin velas nuevas", "info")
-                        continue
-                    
+                    # NO filtramos por timestamp, enviamos todas las velas leídas
+                    # UPSERT actualizará las existentes e insertará las nuevas
                     candles_batch = []
-                    for _, row in df_new.iterrows():
+                    for _, row in df.iterrows():
                         candle = format_candle_for_supabase(symbol, tf_name, row)
                         candles_batch.append(candle)
                     
                     if upload_to_supabase(candles_batch):
                         symbol_uploaded += len(candles_batch)
-                        self.log(f"│  ✅ [{tf_name}] {len(candles_batch)} velas nuevas", "success")
+                        self.log(f"│  ✅ [{tf_name}] UPSERT: {len(candles_batch)} velas procesadas", "success")
                     else:
-                        self.log(f"│  ❌ [{tf_name}] Error al subir", "error")
+                        self.log(f"│  ❌ [{tf_name}] Error al hacer UPSERT", "error")
             
             total_uploaded += symbol_uploaded
             self.log(f"│  📊 Subtotal {symbol}: {symbol_uploaded} velas", "info")
@@ -591,25 +589,28 @@ def format_candle_for_supabase(symbol, timeframe, row):
 
 
 def upload_to_supabase(candles_data):
-    """Subir velas a Supabase tabla market_candles usando POST normal"""
+    """Subir velas a Supabase tabla market_candles usando UPSERT para actualizar velas existentes"""
     
     if not candles_data:
         return False
     
-    # POST normal sin upsert
+    # POST con UPSERT: actualiza si existe (on_conflict) o inserta si no existe
     url = f"{SUPABASE_URL}/rest/v1/market_candles"
     
     headers = {
         "apikey": SUPABASE_ANON_KEY,
         "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
         "Content-Type": "application/json",
-        "Prefer": "return=minimal"
+        # resolution=merge-duplicates hace que actualice en lugar de rechazar duplicados
+        "Prefer": "return=minimal,resolution=merge-duplicates"
     }
     
     try:
         response = requests.post(url, headers=headers, json=candles_data)
         
         # Considerar éxito si el status es 200, 201 o 204
+        # 200/201: velas insertadas/actualizadas exitosamente
+        # 204: operación exitosa sin contenido
         if response.status_code in [200, 201, 204]:
             return True
         else:
