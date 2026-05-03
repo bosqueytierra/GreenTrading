@@ -64,23 +64,7 @@ def connect_mt5():
     return True
 
 
-def get_available_symbols():
-    """Obtener símbolos disponibles de Boom/Crash"""
-    all_symbols = mt5.symbols_get()
-    available = []
-    
-    for symbol_obj in all_symbols:
-        name = symbol_obj.name
-        if "Boom" in name or "Crash" in name or "boom" in name or "crash" in name:
-            available.append(name)
-    
-    print(f"🔍 Símbolos Boom/Crash encontrados: {len(available)}")
-    if available:
-        print(f"📋 Nombres: {', '.join(available)}")
-    else:
-        print("⚠️ No se encontraron símbolos Boom/Crash")
-    
-    return available
+
 
 
 def read_candles(symbol, timeframe_name, timeframe_mt5, num_candles):
@@ -91,8 +75,6 @@ def read_candles(symbol, timeframe_name, timeframe_mt5, num_candles):
         print(f"❌ No se pudo seleccionar símbolo: {symbol}")
         return None
     
-    print(f"✅ Símbolo seleccionado: {symbol} [{timeframe_name}]")
-    
     # Obtener las velas
     rates = mt5.copy_rates_from_pos(symbol, timeframe_mt5, 0, num_candles)
     
@@ -100,7 +82,7 @@ def read_candles(symbol, timeframe_name, timeframe_mt5, num_candles):
         print(f"⚠️ MT5 no devolvió velas para {symbol} [{timeframe_name}]")
         return None
     
-    print(f"📊 MT5 devolvió {len(rates)} velas para {symbol} [{timeframe_name}]")
+    print(f"📊 {symbol} [{timeframe_name}]: {len(rates)} velas")
     
     # Convertir a DataFrame
     df = pd.DataFrame(rates)
@@ -159,23 +141,11 @@ def upload_to_supabase(candles_data):
 def collect_and_upload():
     """Proceso principal: recolectar y subir velas"""
     
-    # Verificar símbolos disponibles
-    available_symbols = get_available_symbols()
-    
-    # Determinar qué símbolos usar
-    symbols_to_use = []
-    for symbol in SYMBOLS:
-        if symbol in available_symbols:
-            symbols_to_use.append(symbol)
-    
-    if not symbols_to_use:
-        print("❌ No hay símbolos disponibles")
-        return False
-    
+    # Usar directamente la lista SYMBOLS sin filtrar
     # Recolectar velas
     total_uploaded = 0
     
-    for symbol in symbols_to_use:
+    for symbol in SYMBOLS:
         for tf_name, tf_mt5 in TIMEFRAMES.items():
             # Leer velas
             df = read_candles(symbol, tf_name, tf_mt5, NUM_CANDLES)
