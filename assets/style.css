@@ -1,14 +1,29 @@
 :root {
-    --bg-primary: #0d1117;
-    --bg-secondary: #161b22;
-    --bg-tertiary: #21262d;
-    --border-color: #30363d;
-    --text-primary: #c9d1d9;
-    --text-secondary: #8b949e;
-    --accent-green: #3fb950;
-    --accent-blue: #58a6ff;
-    --accent-red: #f85149;
-    --shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    /* Light theme - Alinear style */
+    --bg-primary: #f5f7fa;
+    --bg-secondary: #ffffff;
+    --bg-tertiary: #fafbfc;
+    --border-color: #e1e4e8;
+    --text-primary: #24292e;
+    --text-secondary: #586069;
+    --text-tertiary: #6a737d;
+    --accent-green: #22c55e;
+    --accent-green-hover: #16a34a;
+    --accent-green-light: #dcfce7;
+    --accent-red: #ef4444;
+    --accent-red-light: #fee2e2;
+    --accent-blue: #3b82f6;
+    --accent-yellow: #fbbf24;
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.07);
+    --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
+    
+    /* Login theme - Dark */
+    --login-bg: #1a1d29;
+    --login-card-bg: #23272f;
+    --login-border: #30363d;
+    --login-text: #e6e8eb;
+    --login-text-secondary: #9ca3af;
 }
 
 * {
@@ -22,48 +37,210 @@ body {
     background-color: var(--bg-primary);
     color: var(--text-primary);
     line-height: 1.6;
+    min-height: 100vh;
+}
+
+/* ========================================
+   LOGIN SCREEN - Dark Theme
+   ======================================== */
+
+.login-screen {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    background: linear-gradient(135deg, #1a1d29 0%, #2d3748 100%);
+    background-image: 
+        radial-gradient(at 20% 30%, rgba(34, 197, 94, 0.15) 0px, transparent 50%),
+        radial-gradient(at 80% 70%, rgba(59, 130, 246, 0.15) 0px, transparent 50%);
+    padding: 20px;
+}
+
+.login-card {
+    background: var(--login-card-bg);
+    border-radius: 16px;
+    padding: 48px 40px;
+    width: 100%;
+    max-width: 420px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+    border: 1px solid var(--login-border);
+}
+
+.login-logo {
+    text-align: center;
+    margin-bottom: 32px;
+}
+
+.login-logo img {
+    height: 64px;
+    width: auto;
+}
+
+.login-card h2 {
+    color: var(--login-text);
+    font-size: 28px;
+    font-weight: 700;
+    text-align: center;
+    margin-bottom: 32px;
+}
+
+.form-group {
+    margin-bottom: 24px;
+}
+
+.form-group label {
+    display: block;
+    color: var(--login-text-secondary);
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 8px;
+}
+
+.form-group input {
+    width: 100%;
+    padding: 12px 16px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--login-border);
+    border-radius: 8px;
+    color: var(--login-text);
+    font-size: 15px;
+    transition: all 0.2s;
+}
+
+.form-group input:focus {
+    outline: none;
+    border-color: var(--accent-green);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.form-group input::placeholder {
+    color: #6b7280;
+}
+
+.login-error {
+    color: var(--accent-red);
+    font-size: 14px;
+    margin-bottom: 16px;
+    text-align: center;
+    min-height: 20px;
+}
+
+.login-btn {
+    width: 100%;
+    padding: 14px;
+    background: var(--accent-green);
+    border: none;
+    border-radius: 8px;
+    color: white;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.login-btn:hover {
+    background: var(--accent-green-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3);
+}
+
+.login-btn:active {
+    transform: translateY(0);
+}
+
+/* ========================================
+   DASHBOARD SCREEN - Light Theme
+   ======================================== */
+
+.dashboard-screen {
+    background-color: var(--bg-primary);
+    min-height: 100vh;
+}
+
+.dashboard-screen {
+    background-color: var(--bg-primary);
+    min-height: 100vh;
 }
 
 .container {
-    max-width: 1400px;
+    max-width: 1600px;
     margin: 0 auto;
-    padding: 20px;
+    padding: 0;
 }
 
+/* ========================================
+   HEADER
+   ======================================== */
+
 .header {
-    text-align: center;
-    padding: 30px 0;
-    border-bottom: 2px solid var(--border-color);
-    margin-bottom: 30px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    padding: 20px 32px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: var(--shadow-sm);
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.header-logo {
+    height: 40px;
+    width: auto;
 }
 
 .header h1 {
-    font-size: 2.5rem;
-    margin-bottom: 10px;
-    color: var(--accent-green);
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text-primary);
 }
 
-.last-update {
-    color: var(--text-secondary);
-    font-size: 0.9rem;
-}
-
-.last-update span {
-    color: var(--accent-blue);
-    font-weight: 600;
-}
-
-.controls {
+.header-right {
     display: flex;
-    gap: 20px;
-    justify-content: center;
+    align-items: center;
+    gap: 16px;
+}
+
+.user-info {
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.logout-btn {
+    padding: 8px 16px;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.logout-btn:hover {
+    background: var(--bg-tertiary);
+    border-color: var(--text-secondary);
+    color: var(--text-primary);
+}
+
+/* ========================================
+   CONTROLS BAR
+   ======================================== */
+
+.controls-bar {
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    padding: 20px 32px;
+    display: flex;
+    gap: 24px;
     align-items: center;
     flex-wrap: wrap;
-    margin-bottom: 20px;
-    padding: 20px;
-    background-color: var(--bg-secondary);
-    border-radius: 12px;
-    border: 1px solid var(--border-color);
 }
 
 .control-group {
@@ -75,217 +252,145 @@ body {
 .control-group label {
     font-weight: 600;
     color: var(--text-secondary);
+    font-size: 14px;
 }
 
 select {
-    padding: 10px 15px;
+    padding: 10px 16px;
     background-color: var(--bg-tertiary);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: 8px;
     color: var(--text-primary);
-    font-size: 1rem;
+    font-size: 14px;
     cursor: pointer;
-    transition: all 0.3s ease;
+    transition: all 0.2s;
+    font-weight: 500;
 }
 
 select:hover {
-    border-color: var(--accent-blue);
+    border-color: var(--accent-green);
 }
 
 select:focus {
     outline: none;
     border-color: var(--accent-green);
+    box-shadow: 0 0 0 3px var(--accent-green-light);
 }
 
 .refresh-btn {
     padding: 10px 20px;
     background-color: var(--accent-green);
     border: none;
-    border-radius: 6px;
+    border-radius: 8px;
     color: white;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.3s ease;
-    font-size: 1rem;
+    transition: all 0.2s;
+    font-size: 14px;
 }
 
 .refresh-btn:hover {
-    background-color: #2ea043;
-    transform: scale(1.05);
+    background-color: var(--accent-green-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(34, 197, 94, 0.2);
 }
 
 .refresh-btn:active {
-    transform: scale(0.98);
+    transform: translateY(0);
 }
 
-.status-bar {
+.status-info {
+    margin-left: auto;
     display: flex;
-    justify-content: space-between;
+    gap: 16px;
     align-items: center;
-    padding: 12px 20px;
-    background-color: var(--bg-tertiary);
-    border-radius: 6px;
-    margin-bottom: 30px;
-    border: 1px solid var(--border-color);
 }
 
-#statusMessage {
-    color: var(--text-secondary);
-    font-size: 0.9rem;
+.last-update-time {
+    color: var(--text-tertiary);
+    font-size: 13px;
 }
 
-.auto-refresh-on {
+.auto-refresh-indicator {
     color: var(--accent-green);
     font-weight: 600;
-    font-size: 0.9rem;
+    font-size: 13px;
 }
 
-.smc-section {
-    margin-bottom: 40px;
+/* ========================================
+   INDICES SECTIONS
+   ======================================== */
+
+.indices-section {
+    padding: 32px;
 }
 
-.smc-section h2 {
-    margin-bottom: 20px;
-    color: var(--accent-green);
-    font-size: 1.8rem;
-}
-
-.smc-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 15px;
-    margin-bottom: 30px;
-}
-
-.smc-card {
-    background-color: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 15px;
-    box-shadow: var(--shadow);
-    transition: all 0.3s ease;
-}
-
-.smc-card:hover {
-    transform: translateY(-3px);
-    border-color: var(--accent-blue);
-}
-
-.smc-card.span-2 {
-    grid-column: span 2;
-}
-
-.smc-card-title {
-    color: var(--text-secondary);
-    font-size: 0.8rem;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 8px;
-}
-
-.smc-card-value {
-    font-size: 1.4rem;
+.section-title {
+    font-size: 20px;
     font-weight: 700;
-    color: var(--text-primary);
-}
-
-.smc-card-value.small {
-    font-size: 1rem;
-    font-weight: 600;
-}
-
-.dashboard {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 20px;
-    margin-bottom: 40px;
-}
-
-.card {
-    background-color: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    padding: 25px;
-    box-shadow: var(--shadow);
-    transition: all 0.3s ease;
-}
-
-.card:hover {
-    transform: translateY(-5px);
-    border-color: var(--accent-blue);
-}
-
-.card-title {
-    color: var(--text-secondary);
-    font-size: 0.9rem;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    margin-bottom: 10px;
-}
-
-.card-value {
-    font-size: 1.8rem;
-    font-weight: 700;
-    color: var(--text-primary);
-}
-
-.card-value.price {
-    color: var(--accent-green);
-}
-
-.card-value.timestamp {
-    font-size: 1.2rem;
-    color: var(--accent-blue);
-}
-
-.candles-section {
-    margin-bottom: 40px;
-}
-
-.candles-section h2 {
     margin-bottom: 20px;
-    color: var(--accent-green);
-    font-size: 1.8rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
+
+.boom-title {
+    color: var(--accent-green);
+}
+
+.crash-title {
+    color: var(--accent-red);
+}
+
+/* ========================================
+   TABLE STYLES
+   ======================================== */
 
 .table-container {
-    overflow-x: auto;
-    background-color: var(--bg-secondary);
+    background: var(--bg-secondary);
     border-radius: 12px;
+    overflow: hidden;
+    box-shadow: var(--shadow-md);
     border: 1px solid var(--border-color);
 }
 
-table {
+.indices-table {
     width: 100%;
     border-collapse: collapse;
 }
 
-thead {
-    background-color: var(--bg-tertiary);
+.indices-table thead {
+    background: var(--bg-tertiary);
 }
 
-th {
-    padding: 15px;
+.indices-table th {
+    padding: 16px 12px;
     text-align: left;
     font-weight: 600;
     color: var(--text-secondary);
     text-transform: uppercase;
-    font-size: 0.85rem;
-    letter-spacing: 1px;
+    font-size: 11px;
+    letter-spacing: 0.5px;
     border-bottom: 2px solid var(--border-color);
+    white-space: nowrap;
 }
 
-td {
-    padding: 15px;
+.indices-table td {
+    padding: 16px 12px;
     border-bottom: 1px solid var(--border-color);
     color: var(--text-primary);
+    font-size: 13px;
 }
 
-tr:hover {
-    background-color: var(--bg-tertiary);
+.indices-table tbody tr {
+    transition: background-color 0.2s;
 }
 
-tbody tr:last-child td {
+.indices-table tbody tr:hover {
+    background: var(--bg-tertiary);
+}
+
+.indices-table tbody tr:last-child td {
     border-bottom: none;
 }
 
@@ -293,34 +398,161 @@ tbody tr:last-child td {
     text-align: center;
     color: var(--text-secondary);
     font-style: italic;
+    padding: 32px !important;
 }
 
-.bullish {
+/* Table cell specific styles */
+.index-name {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.trend-bull {
     color: var(--accent-green);
     font-weight: 600;
 }
 
-.bearish {
+.trend-bear {
     color: var(--accent-red);
     font-weight: 600;
 }
 
+.trend-neutral {
+    color: var(--text-tertiary);
+    font-weight: 500;
+}
+
+.direction-cell {
+    font-weight: 600;
+}
+
+.direction-alcista {
+    color: var(--accent-green);
+}
+
+.direction-bajista {
+    color: var(--accent-red);
+}
+
+.score-cell {
+    font-weight: 700;
+    font-size: 15px;
+}
+
+.score-high {
+    color: var(--accent-green);
+}
+
+.score-medium {
+    color: var(--accent-yellow);
+}
+
+.score-low {
+    color: var(--text-tertiary);
+}
+
+.indicator-yes {
+    color: var(--accent-green);
+    font-weight: 600;
+}
+
+.indicator-no {
+    color: var(--text-tertiary);
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.status-esperando {
+    background: var(--accent-green-light);
+    color: var(--accent-green);
+}
+
+.status-activo {
+    background: var(--accent-green-light);
+    color: var(--accent-green);
+}
+
+.status-vigilancia {
+    background: #fef3c7;
+    color: #d97706;
+}
+
+.status-descartado {
+    background: var(--accent-red-light);
+    color: var(--accent-red);
+}
+
+.price-cell {
+    font-weight: 600;
+    color: var(--accent-blue);
+    font-family: 'Courier New', monospace;
+}
+
+.time-cell {
+    color: var(--text-tertiary);
+    font-size: 12px;
+}
+
+.zone-cell {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+/* ========================================
+   FOOTER
+   ======================================== */
+
 .footer {
     text-align: center;
-    padding: 30px 0;
-    border-top: 2px solid var(--border-color);
-    color: var(--text-secondary);
-    font-size: 0.9rem;
+    padding: 24px;
+    color: var(--text-tertiary);
+    font-size: 13px;
+    border-top: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+}
+
+/* ========================================
+   RESPONSIVE DESIGN
+   ======================================== */
+
+@media (max-width: 1024px) {
+    .indices-table {
+        font-size: 12px;
+    }
+    
+    .indices-table th,
+    .indices-table td {
+        padding: 12px 8px;
+    }
 }
 
 @media (max-width: 768px) {
-    .header h1 {
-        font-size: 2rem;
+    .header {
+        flex-direction: column;
+        gap: 16px;
+        padding: 16px;
     }
     
-    .controls {
+    .header-left {
         flex-direction: column;
-        gap: 15px;
+        gap: 12px;
+    }
+    
+    .header h1 {
+        font-size: 20px;
+    }
+    
+    .controls-bar {
+        flex-direction: column;
+        align-items: stretch;
+        padding: 16px;
     }
     
     .control-group {
@@ -328,16 +560,34 @@ tbody tr:last-child td {
         justify-content: space-between;
     }
     
-    .dashboard {
-        grid-template-columns: 1fr;
+    .status-info {
+        margin-left: 0;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
     }
     
-    .status-bar {
-        flex-direction: column;
-        gap: 10px;
-        text-align: center;
+    .indices-section {
+        padding: 16px;
+    }
+    
+    .section-title {
+        font-size: 18px;
+    }
+    
+    .table-container {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    .indices-table {
+        min-width: 1200px;
     }
 }
+
+/* ========================================
+   ANIMATIONS
+   ======================================== */
 
 @keyframes fadeIn {
     from {
@@ -350,6 +600,25 @@ tbody tr:last-child td {
     }
 }
 
-.card, .table-container {
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.table-container {
+    animation: fadeIn 0.4s ease-in-out;
+}
+
+.indices-table tbody tr {
+    animation: slideIn 0.3s ease-in-out;
+}
+
+.login-card {
     animation: fadeIn 0.5s ease-in-out;
 }

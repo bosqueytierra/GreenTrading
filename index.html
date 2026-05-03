@@ -7,166 +7,124 @@
     <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
-    <div class="container">
-        <header class="header">
-            <h1>🌿 GreenTrading Dashboard</h1>
-            <div class="last-update">
-                Última actualización: <span id="lastUpdate">--</span>
+    <!-- Login Screen -->
+    <div id="loginScreen" class="login-screen">
+        <div class="login-card">
+            <div class="login-logo">
+                <img src="graficos/Green.png" alt="GreenTrading Logo">
             </div>
-        </header>
-
-        <div class="controls">
-            <div class="control-group">
-                <label for="symbolSelect">Símbolo:</label>
-                <select id="symbolSelect">
-                    <option value="Boom 1000 Index">Boom 1000 Index</option>
-                    <option value="Boom 900 Index">Boom 900 Index</option>
-                    <option value="Boom 600 Index">Boom 600 Index</option>
-                    <option value="Boom 500 Index">Boom 500 Index</option>
-                    <option value="Boom 300 Index">Boom 300 Index</option>
-                    <option value="Crash 1000 Index">Crash 1000 Index</option>
-                    <option value="Crash 900 Index">Crash 900 Index</option>
-                    <option value="Crash 600 Index">Crash 600 Index</option>
-                    <option value="Crash 500 Index">Crash 500 Index</option>
-                    <option value="Crash 300 Index">Crash 300 Index</option>
-                </select>
-            </div>
-
-            <div class="control-group">
-                <label for="timeframeSelect">Timeframe:</label>
-                <select id="timeframeSelect">
-                    <option value="M1">M1</option>
-                    <option value="M15" selected>M15</option>
-                    <option value="H1">H1</option>
-                </select>
-            </div>
-
-            <button id="refreshBtn" class="refresh-btn">🔄 Actualizar</button>
+            <h2>Iniciar Sesión</h2>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="username">Usuario</label>
+                    <input type="text" id="username" name="username" placeholder="Ingrese su usuario" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">Contraseña</label>
+                    <input type="password" id="password" name="password" placeholder="Ingrese su contraseña" required>
+                </div>
+                <div id="loginError" class="login-error"></div>
+                <button type="submit" class="login-btn">Ingresar</button>
+            </form>
         </div>
+    </div>
 
-        <div class="status-bar">
-            <span id="statusMessage">Iniciando...</span>
-            <span id="autoRefreshIndicator" class="auto-refresh-on">Auto-refresh: ON</span>
+    <!-- Dashboard (hidden by default) -->
+    <div id="dashboardScreen" class="dashboard-screen" style="display: none;">
+        <div class="container">
+            <header class="header">
+                <div class="header-left">
+                    <img src="graficos/Green.png" alt="GreenTrading" class="header-logo">
+                    <h1>GreenTrading Dashboard</h1>
+                </div>
+                <div class="header-right">
+                    <span class="user-info" id="userInfo">Usuario</span>
+                    <button id="logoutBtn" class="logout-btn">Cerrar sesión</button>
+                </div>
+            </header>
+
+            <div class="controls-bar">
+                <div class="control-group">
+                    <label for="strategySelect">Estrategia:</label>
+                    <select id="strategySelect">
+                        <option value="SMC_M15_PRO" selected>SMC M15 PRO</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <button id="refreshBtn" class="refresh-btn">🔄 Actualizar Todo</button>
+                </div>
+                <div class="status-info">
+                    <span id="lastUpdate" class="last-update-time">Última actualización: --</span>
+                    <span class="auto-refresh-indicator">Auto-refresh: 30s</span>
+                </div>
+            </div>
+
+            <div class="indices-section">
+                <h2 class="section-title boom-title">📈 Índices Boom</h2>
+                <div class="table-container">
+                    <table class="indices-table">
+                        <thead>
+                            <tr>
+                                <th>Índice</th>
+                                <th>Tendencia H1</th>
+                                <th>Tendencia M15</th>
+                                <th>Dirección</th>
+                                <th>Último Evento M15</th>
+                                <th>Zona Madre M15</th>
+                                <th>Zona Fina M1</th>
+                                <th>Score</th>
+                                <th>OB</th>
+                                <th>FVG</th>
+                                <th>Barrida</th>
+                                <th>Estado</th>
+                                <th>Precio</th>
+                                <th>Actualización</th>
+                            </tr>
+                        </thead>
+                        <tbody id="boomTableBody">
+                            <tr>
+                                <td colspan="14" class="loading">Cargando datos...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="indices-section">
+                <h2 class="section-title crash-title">📉 Índices Crash</h2>
+                <div class="table-container">
+                    <table class="indices-table">
+                        <thead>
+                            <tr>
+                                <th>Índice</th>
+                                <th>Tendencia H1</th>
+                                <th>Tendencia M15</th>
+                                <th>Dirección</th>
+                                <th>Último Evento M15</th>
+                                <th>Zona Madre M15</th>
+                                <th>Zona Fina M1</th>
+                                <th>Score</th>
+                                <th>OB</th>
+                                <th>FVG</th>
+                                <th>Barrida</th>
+                                <th>Estado</th>
+                                <th>Precio</th>
+                                <th>Actualización</th>
+                            </tr>
+                        </thead>
+                        <tbody id="crashTableBody">
+                            <tr>
+                                <td colspan="14" class="loading">Cargando datos...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <footer class="footer">
+                <p>GreenTrading © 2026 | Auto-refresh: 30 segundos | MT5 sync: cada 3 minutos</p>
+            </footer>
         </div>
-
-        <div class="smc-section">
-            <h2>📊 Análisis SMC</h2>
-            <div class="smc-grid">
-                <div class="smc-card">
-                    <div class="smc-card-title">Tendencia H1</div>
-                    <div class="smc-card-value" id="smcTendenciaH1">--</div>
-                </div>
-                <div class="smc-card">
-                    <div class="smc-card-title">Tendencia M15</div>
-                    <div class="smc-card-value" id="smcTendenciaM15">--</div>
-                </div>
-                <div class="smc-card">
-                    <div class="smc-card-title">Dirección Buscada</div>
-                    <div class="smc-card-value" id="smcDireccion">--</div>
-                </div>
-                <div class="smc-card">
-                    <div class="smc-card-title">Score</div>
-                    <div class="smc-card-value" id="smcScore">--</div>
-                </div>
-                <div class="smc-card">
-                    <div class="smc-card-title">Último Evento H1</div>
-                    <div class="smc-card-value small" id="smcEventoH1">--</div>
-                </div>
-                <div class="smc-card">
-                    <div class="smc-card-title">Último Evento M15</div>
-                    <div class="smc-card-value small" id="smcEventoM15">--</div>
-                </div>
-                <div class="smc-card span-2">
-                    <div class="smc-card-title">Zona Madre M15</div>
-                    <div class="smc-card-value small">
-                        Desde: <span id="smcZonaM15Desde">--</span><br>
-                        Hasta: <span id="smcZonaM15Hasta">--</span>
-                    </div>
-                </div>
-                <div class="smc-card span-2">
-                    <div class="smc-card-title">Zona Fina M1</div>
-                    <div class="smc-card-value small">
-                        Desde: <span id="smcZonaM1Desde">--</span><br>
-                        Hasta: <span id="smcZonaM1Hasta">--</span>
-                    </div>
-                </div>
-                <div class="smc-card">
-                    <div class="smc-card-title">Order Block</div>
-                    <div class="smc-card-value" id="smcOB">--</div>
-                </div>
-                <div class="smc-card">
-                    <div class="smc-card-title">FVG</div>
-                    <div class="smc-card-value" id="smcFVG">--</div>
-                </div>
-                <div class="smc-card">
-                    <div class="smc-card-title">Barrida</div>
-                    <div class="smc-card-value" id="smcBarrida">--</div>
-                </div>
-                <div class="smc-card">
-                    <div class="smc-card-title">Estado</div>
-                    <div class="smc-card-value" id="smcEstado">--</div>
-                </div>
-            </div>
-        </div>
-
-        <div class="dashboard">
-            <div class="card">
-                <div class="card-title">Símbolo</div>
-                <div class="card-value" id="displaySymbol">--</div>
-            </div>
-
-            <div class="card">
-                <div class="card-title">Timeframe</div>
-                <div class="card-value" id="displayTimeframe">--</div>
-            </div>
-
-            <div class="card">
-                <div class="card-title">Precio Close</div>
-                <div class="card-value price" id="closePrice">--</div>
-            </div>
-
-            <div class="card">
-                <div class="card-title">High</div>
-                <div class="card-value price" id="highPrice">--</div>
-            </div>
-
-            <div class="card">
-                <div class="card-title">Low</div>
-                <div class="card-value price" id="lowPrice">--</div>
-            </div>
-
-            <div class="card">
-                <div class="card-title">Timestamp</div>
-                <div class="card-value timestamp" id="timestamp">--</div>
-            </div>
-        </div>
-
-        <div class="candles-section">
-            <h2>Últimas 10 Velas</h2>
-            <div class="table-container">
-                <table id="candlesTable">
-                    <thead>
-                        <tr>
-                            <th>Timestamp</th>
-                            <th>Open</th>
-                            <th>High</th>
-                            <th>Low</th>
-                            <th>Close</th>
-                            <th>Volumen</th>
-                        </tr>
-                    </thead>
-                    <tbody id="candlesTableBody">
-                        <tr>
-                            <td colspan="6" class="loading">Cargando datos...</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <footer class="footer">
-            <p>GreenTrading © 2026 | Dashboard auto-refresh: 30 segundos | MT5 sync: cada 3 minutos</p>
-        </footer>
     </div>
 
     <script src="assets/app.js"></script>
