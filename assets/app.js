@@ -573,6 +573,9 @@ async function fetchAndAnalyzeSymbol(symbol) {
     const currentPrice = candlesM15[candlesM15.length - 1].close;
     const timestamp = candlesM15[candlesM15.length - 1].timestamp;
     
+    // Check for EN_ZONA setup - this locks the dashboard display
+    const setupEnZona = await getSetupEnZona(symbol);
+    
     // Debug logging for Boom 1000 Index - SMC Results
     if (symbol === 'Boom 1000 Index') {
         console.log('Precio Actual:', currentPrice);
@@ -668,12 +671,19 @@ async function fetchAndAnalyzeSymbol(symbol) {
         console.log('');
     }
     
-    return {
+    const result = {
         symbol,
         currentPrice,
         timestamp,
         smc: smcResult
     };
+    
+    // Attach locked setup if exists
+    if (setupEnZona) {
+        result.lockedSetup = setupEnZona;
+    }
+    
+    return result;
 }
 
 async function fetchCandles(symbol, timeframe, limit) {
@@ -729,8 +739,8 @@ async function createTableRow(symbol, data) {
     
     const smc = data.smc;
     
-    // Check for existing EN_ZONA setup
-    const setupEnZona = await getSetupEnZona(symbol);
+    // Use lockedSetup if attached (EN_ZONA setup from fetchAndAnalyzeSymbol)
+    const setupEnZona = data.lockedSetup || null;
     
     // Decide which data source to use for display
     let displayZonaDesde, displayZonaHasta, displayDireccion, displayScore, displayOB, displayFVG, displayBarrida, displayEstado;
