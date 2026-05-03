@@ -670,16 +670,42 @@ function createTableRow(symbol, data) {
         lastEventM15 = `${evento.evento}`;
     }
     
-    // Zone M15
-    let zonaM15Text = '--';
+    // Zone M15 with individual boxes
+    let zonaM15HTML = '<span class="zone-cell">--</span>';
     if (smc.zonaM15) {
-        zonaM15Text = `${formatPrice(smc.zonaM15.zona_desde)} - ${formatPrice(smc.zonaM15.zona_hasta)}`;
+        zonaM15HTML = `
+            <div class="zone-boxes">
+                <div class="zone-price-row">
+                    <span class="zone-label">Desde:</span>
+                    <span class="zone-price">${formatPrice(smc.zonaM15.zona_desde)}</span>
+                    <button class="copy-btn" onclick="copyToClipboard('${smc.zonaM15.zona_desde}', this)">📋</button>
+                </div>
+                <div class="zone-price-row">
+                    <span class="zone-label">Hasta:</span>
+                    <span class="zone-price">${formatPrice(smc.zonaM15.zona_hasta)}</span>
+                    <button class="copy-btn" onclick="copyToClipboard('${smc.zonaM15.zona_hasta}', this)">📋</button>
+                </div>
+            </div>
+        `;
     }
     
-    // Zone M1
-    let zonaM1Text = '--';
+    // Zone M1 with individual boxes
+    let zonaM1HTML = '<span class="zone-cell">--</span>';
     if (smc.zonaM1) {
-        zonaM1Text = `${formatPrice(smc.zonaM1.zona_m1_desde)} - ${formatPrice(smc.zonaM1.zona_m1_hasta)}`;
+        zonaM1HTML = `
+            <div class="zone-boxes">
+                <div class="zone-price-row">
+                    <span class="zone-label">Desde:</span>
+                    <span class="zone-price">${formatPrice(smc.zonaM1.zona_m1_desde)}</span>
+                    <button class="copy-btn" onclick="copyToClipboard('${smc.zonaM1.zona_m1_desde}', this)">📋</button>
+                </div>
+                <div class="zone-price-row">
+                    <span class="zone-label">Hasta:</span>
+                    <span class="zone-price">${formatPrice(smc.zonaM1.zona_m1_hasta)}</span>
+                    <button class="copy-btn" onclick="copyToClipboard('${smc.zonaM1.zona_m1_hasta}', this)">📋</button>
+                </div>
+            </div>
+        `;
     }
     
     // Score
@@ -722,8 +748,8 @@ function createTableRow(symbol, data) {
         <td class="${tendM15Class}">${tendM15}</td>
         <td class="direction-cell ${direccionClass}">${direccion}</td>
         <td>${lastEventM15}</td>
-        <td class="zone-cell">${zonaM15Text}</td>
-        <td class="zone-cell">${zonaM1Text}</td>
+        <td>${zonaM15HTML}</td>
+        <td>${zonaM1HTML}</td>
         <td class="score-cell ${scoreClass}">${score}</td>
         <td class="${ob === 'SÍ' ? 'indicator-yes' : 'indicator-no'}">${ob}</td>
         <td class="${fvg === 'SÍ' ? 'indicator-yes' : 'indicator-no'}">${fvg}</td>
@@ -1310,8 +1336,41 @@ function updateLastUpdateTime() {
 }
 
 // ========================================
+// COPY TO CLIPBOARD
+// ========================================
+
+function copyToClipboard(value, button) {
+    // Get just the numeric value without formatting
+    const numericValue = parseFloat(value).toString();
+    
+    // Copy to clipboard
+    navigator.clipboard.writeText(numericValue).then(() => {
+        // Visual feedback
+        const originalHTML = button.innerHTML;
+        button.innerHTML = '✓';
+        button.classList.add('copied');
+        
+        setTimeout(() => {
+            button.innerHTML = originalHTML;
+            button.classList.remove('copied');
+        }, 1500);
+    }).catch(err => {
+        console.error('Error copying to clipboard:', err);
+        alert('Error al copiar');
+    });
+}
+
+// ========================================
 // HISTORY TABLE FUNCTIONS
 // ========================================
+
+// Global variables for filtering
+let allSetups = [];
+let currentFilters = {
+    symbol: 'todos',
+    estado: 'todos',
+    direccion: 'todos'
+};
 
 async function fetchSetupHistory(limit = 50) {
     const url = `${SUPABASE_URL}/rest/v1/smc_m15_setups?order=created_at.desc&limit=${limit}`;
@@ -1330,6 +1389,83 @@ async function fetchSetupHistory(limit = 50) {
     }
     
     return await response.json();
+}
+
+function initializeHistoryFilters() {
+    // Symbol filters
+    const symbolFilters = document.querySelectorAll('#symbolFilters .filter-btn');
+    symbolFilters.forEach(btn => {
+        btn.addEventListener('click', () => {
+            // Remove active from all
+            symbolFilters.forEach(b => b.classList.remove('active'));
+            // Add active to clicked
+            btn.classList.add('active');
+            // Update filter
+            currentFilters.symbol = btn.getAttribute('data-filter');
+            // Apply filters
+            applyFilters();
+        });
+    });
+    
+    // Estado filters
+    const estadoFilters = document.querySelectorAll('#estadoFilters .filter-btn');
+    estadoFilters.forEach(btn => {
+        btn.addEventListener('click', () => {
+            estadoFilters.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentFilters.estado = btn.getAttribute('data-filter');
+            applyFilters();
+        });
+    });
+    
+    // Direccion filters
+    const direccionFilters = document.querySelectorAll('#direccionFilters .filter-btn');
+    direccionFilters.forEach(btn => {
+        btn.addEventListener('click', () => {
+            direccionFilters.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentFilters.direccion = btn.getAttribute('data-filter');
+            applyFilters();
+        });
+    });
+}
+
+function applyFilters() {
+    const tbody = document.getElementById('historyTableBody');
+    if (!tbody) return;
+    
+    // Filter setups
+    let filteredSetups = allSetups.filter(setup => {
+        // Symbol filter
+        if (currentFilters.symbol !== 'todos' && setup.symbol !== currentFilters.symbol) {
+            return false;
+        }
+        
+        // Estado filter
+        if (currentFilters.estado !== 'todos' && setup.estado !== currentFilters.estado) {
+            return false;
+        }
+        
+        // Direccion filter
+        if (currentFilters.direccion !== 'todos' && setup.direccion !== currentFilters.direccion) {
+            return false;
+        }
+        
+        return true;
+    });
+    
+    // Update table
+    tbody.innerHTML = '';
+    
+    if (filteredSetups.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="11" class="loading">No hay datos con los filtros seleccionados</td></tr>';
+        return;
+    }
+    
+    filteredSetups.forEach(setup => {
+        const row = createHistoryRow(setup);
+        tbody.appendChild(row);
+    });
 }
 
 async function updateHistoryTable() {
@@ -1360,17 +1496,30 @@ async function updateHistoryTable() {
         
         const setups = await fetchSetupHistory();
         
-        tbody.innerHTML = '';
+        // Store all setups globally
+        allSetups = setups;
         
-        if (setups.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="11" class="loading">No hay datos históricos</td></tr>';
-            return;
+        // Initialize filters if not already done
+        if (!document.querySelector('#symbolFilters .filter-btn[data-filter="todos"]').dataset.initialized) {
+            initializeHistoryFilters();
+            document.querySelector('#symbolFilters .filter-btn[data-filter="todos"]').dataset.initialized = 'true';
         }
         
-        setups.forEach(setup => {
-            const row = createHistoryRow(setup);
-            tbody.appendChild(row);
-        });
+        // Reset filters to default
+        currentFilters = {
+            symbol: 'todos',
+            estado: 'todos',
+            direccion: 'todos'
+        };
+        
+        // Reset active states
+        document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+        document.querySelector('#symbolFilters .filter-btn[data-filter="todos"]').classList.add('active');
+        document.querySelector('#estadoFilters .filter-btn[data-filter="todos"]').classList.add('active');
+        document.querySelector('#direccionFilters .filter-btn[data-filter="todos"]').classList.add('active');
+        
+        // Apply filters (which will show all since filters are 'todos')
+        applyFilters();
         
     } catch (error) {
         console.error('Error updating history table:', error);
@@ -1440,9 +1589,22 @@ function createHistoryRow(setup) {
     const fvgText = setup.fvg ? 'SÍ' : 'NO';
     const barridaText = setup.barrida ? 'SÍ' : 'NO';
     
-    // Resultado puntos and max reaccion
+    // Resultado puntos
     const resultadoPuntos = setup.resultado_puntos != null ? formatPrice(setup.resultado_puntos) : '--';
-    const maxReaccion = setup.max_reaccion_puntos != null ? formatPrice(setup.max_reaccion_puntos) : '--';
+    
+    // Max reaccion - show "--" if setup is ACTIVA and not touched/evaluated
+    let maxReaccion = '--';
+    if (setup.estado === 'ACTIVA') {
+        // For active setups, only show value if it's been touched (max_reaccion_puntos > 0)
+        if (setup.max_reaccion_puntos != null && setup.max_reaccion_puntos > 0) {
+            maxReaccion = formatPrice(setup.max_reaccion_puntos);
+        } else {
+            maxReaccion = '--';
+        }
+    } else {
+        // For non-active setups, show the value if available
+        maxReaccion = setup.max_reaccion_puntos != null ? formatPrice(setup.max_reaccion_puntos) : '--';
+    }
     
     tr.innerHTML = `
         <td class="time-cell">${fecha}</td>

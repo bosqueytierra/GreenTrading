@@ -166,6 +166,45 @@
                 <div class="indices-section history-section">
                     <h2 class="section-title history-title">📊 Historial SMC M15 PRO</h2>
                     <div id="historyError" class="history-error" style="display: none;"></div>
+                    
+                    <!-- Filters -->
+                    <div class="history-filters">
+                        <div class="filter-group">
+                            <span class="filter-label">Símbolo:</span>
+                            <div class="filter-buttons" id="symbolFilters">
+                                <button class="filter-btn active" data-filter="todos">Todos</button>
+                                <button class="filter-btn" data-filter="Boom 1000 Index">Boom 1000</button>
+                                <button class="filter-btn" data-filter="Boom 900 Index">Boom 900</button>
+                                <button class="filter-btn" data-filter="Boom 600 Index">Boom 600</button>
+                                <button class="filter-btn" data-filter="Boom 500 Index">Boom 500</button>
+                                <button class="filter-btn" data-filter="Boom 300 Index">Boom 300</button>
+                                <button class="filter-btn" data-filter="Crash 1000 Index">Crash 1000</button>
+                                <button class="filter-btn" data-filter="Crash 900 Index">Crash 900</button>
+                                <button class="filter-btn" data-filter="Crash 600 Index">Crash 600</button>
+                                <button class="filter-btn" data-filter="Crash 500 Index">Crash 500</button>
+                                <button class="filter-btn" data-filter="Crash 300 Index">Crash 300</button>
+                            </div>
+                        </div>
+                        <div class="filter-group">
+                            <span class="filter-label">Estado:</span>
+                            <div class="filter-buttons" id="estadoFilters">
+                                <button class="filter-btn active" data-filter="todos">Todos</button>
+                                <button class="filter-btn" data-filter="ACTIVA">ACTIVA</button>
+                                <button class="filter-btn" data-filter="TP">TP</button>
+                                <button class="filter-btn" data-filter="SL">SL</button>
+                                <button class="filter-btn" data-filter="DESCARTADA">DESCARTADA</button>
+                            </div>
+                        </div>
+                        <div class="filter-group">
+                            <span class="filter-label">Dirección:</span>
+                            <div class="filter-buttons" id="direccionFilters">
+                                <button class="filter-btn active" data-filter="todos">Todos</button>
+                                <button class="filter-btn" data-filter="ALCISTA">ALCISTA</button>
+                                <button class="filter-btn" data-filter="BAJISTA">BAJISTA</button>
+                            </div>
+                        </div>
+                    </div>
+                    
                     <div class="table-container">
                         <table class="history-table">
                             <thead>
