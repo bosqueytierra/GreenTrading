@@ -407,9 +407,8 @@ function detectarBarridaPrevia(candles, evento, direccion, lookback = BARRIDA_LO
     }
 
     if (direccion === 'ALCISTA') {
-        // Rastrear mínimo incremental para O(n) en vez de O(n²)
-        let minimoAnterior = tramo[0].low;
-        for (let j = BARRIDA_INITIAL_OFFSET; j < tramo.length; j++) {
+        for (let j = 5; j < tramo.length; j++) {
+            const minimoAnterior = Math.min(...tramo.slice(0, j).map(c => c.low));
             const vela = tramo[j];
 
             if (vela.low < minimoAnterior && vela.close > minimoAnterior) {
@@ -421,16 +420,10 @@ function detectarBarridaPrevia(candles, evento, direccion, lookback = BARRIDA_LO
                     close: parseFloat(vela.close)
                 };
             }
-            
-            // Actualizar mínimo incremental
-            if (vela.low < minimoAnterior) {
-                minimoAnterior = vela.low;
-            }
         }
     } else {
-        // Rastrear máximo incremental para O(n) en vez de O(n²)
-        let maximoAnterior = tramo[0].high;
-        for (let j = BARRIDA_INITIAL_OFFSET; j < tramo.length; j++) {
+        for (let j = 5; j < tramo.length; j++) {
+            const maximoAnterior = Math.max(...tramo.slice(0, j).map(c => c.high));
             const vela = tramo[j];
 
             if (vela.high > maximoAnterior && vela.close < maximoAnterior) {
@@ -441,11 +434,6 @@ function detectarBarridaPrevia(candles, evento, direccion, lookback = BARRIDA_LO
                     high: parseFloat(vela.high),
                     close: parseFloat(vela.close)
                 };
-            }
-            
-            // Actualizar máximo incremental
-            if (vela.high > maximoAnterior) {
-                maximoAnterior = vela.high;
             }
         }
     }
