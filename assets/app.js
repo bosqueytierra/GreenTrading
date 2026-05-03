@@ -83,11 +83,21 @@ async function fetchData(isAutoRefresh = false) {
             fetchCandles(symbol, 'M1', 10000)
         ]);
 
+        // Validar que al menos tenemos datos M15 (crítico para análisis)
+        // H1 y M1 son opcionales pero mejoran el análisis
         if (!candlesM15 || candlesM15.length === 0) {
-            updateStatus('No hay datos disponibles para este símbolo', 'warning');
+            updateStatus('No hay datos M15 disponibles (requerido para análisis)', 'warning');
             clearDisplay();
             clearSMCDisplay();
             return;
+        }
+
+        // Advertir si faltan timeframes opcionales
+        if (!candlesH1 || candlesH1.length === 0) {
+            console.warn('No hay datos H1 disponibles. El análisis de tendencia H1 no estará disponible.');
+        }
+        if (!candlesM1 || candlesM1.length === 0) {
+            console.warn('No hay datos M1 disponibles. La zona fina M1 no estará disponible.');
         }
 
         // Actualizar display con la última vela del timeframe seleccionado
@@ -119,7 +129,8 @@ async function fetchData(isAutoRefresh = false) {
 }
 
 async function fetchCandles(symbol, timeframe, limit) {
-    const url = `${SUPABASE_URL}/rest/v1/market_candles?symbol=eq.${encodeURIComponent(symbol)}&timeframe=eq.${timeframe}&order=timestamp.desc&limit=${limit}`;
+    // Request data in ascending order to avoid reversing large arrays
+    const url = `${SUPABASE_URL}/rest/v1/market_candles?symbol=eq.${encodeURIComponent(symbol)}&timeframe=eq.${timeframe}&order=timestamp.asc&limit=${limit}`;
     
     console.log(`Fetching ${timeframe} candles:`, url);
 
@@ -138,8 +149,15 @@ async function fetchCandles(symbol, timeframe, limit) {
 
     const data = await response.json();
     
-    // Ordenar por timestamp ascendente para el análisis
-    return data.reverse();
+    // Data already in ascending order for analysis
+    return data;
+}
+
+// Helper function to calculate median
+function calculateMedian(values) {
+    if (values.length === 0) return 0;
+    const sorted = values.slice().sort((a, b) => a - b);
+    return sorted[Math.floor(sorted.length / 2)];
 }
 
 // =========================
@@ -501,7 +519,7 @@ function crearZonaFinaM1(candlesM1, zonaM15, symbol) {
     }
 
     const precioActual = parseFloat(candlesM1[candlesM1.length - 1].close);
-    const direccion = direccionOperativaPorIndice(symbol);
+    const direccionOperativa = direccionOperativaPorIndice(symbol);
 
     const cercanas = candlesM1.filter(c => 
         c.high >= zonaM15.zona_desde && c.low <= zonaM15.zona_hasta
@@ -526,13 +544,11 @@ function crearZonaFinaM1(candlesM1, zonaM15, symbol) {
 
     let zonaDesde, zonaHasta;
 
-    if (direccion === 'ALCISTA') {
+    if (direccionOperativa === 'ALCISTA') {
         zonaDesde = Math.min(...tramo.map(c => c.low));
-        const closes = tramo.map(c => c.close).sort((a, b) => a - b);
-        zonaHasta = closes[Math.floor(closes.length / 2)];
-    } else if (direccion === 'BAJISTA') {
-        const closes = tramo.map(c => c.close).sort((a, b) => a - b);
-        zonaDesde = closes[Math.floor(closes.length / 2)];
+        zonaHasta = calculateMedian(tramo.map(c => c.close));
+    } else if (direccionOperativa === 'BAJISTA') {
+        zonaDesde = calculateMedian(tramo.map(c => c.close));
         zonaHasta = Math.max(...tramo.map(c => c.high));
     } else {
         zonaDesde = Math.min(...tramo.map(c => c.low));
