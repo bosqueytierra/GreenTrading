@@ -598,6 +598,128 @@ def analizar_smc_pro(symbol):
     zona = crear_zona_m15(df_m15, eventos_m15, fvgs_m15, symbol, precio_actual)
     zona_m1 = crear_zona_fina_m1(df_m1, zona, symbol, M1_VELAS_ZONA)
 
+    # =========================
+    # DEBUG PARA BOOM 900 INDEX
+    # =========================
+    if symbol == "Boom 900 Index":
+        print()
+        print("=" * 60)
+        print("DEBUG BOOM 900 INDEX - master_bot.py")
+        print("=" * 60)
+        print()
+        
+        # 1. Cantidad velas H1/M15/M1
+        print("1. CANTIDAD DE VELAS:")
+        print(f"   H1: {len(df_h1)}")
+        print(f"   M15: {len(df_m15)}")
+        print(f"   M1: {len(df_m1)}")
+        print()
+        
+        # 2. Primera vela M15
+        if not df_m15.empty:
+            print("2. PRIMERA VELA M15:")
+            first_m15 = df_m15.iloc[0]
+            print(f"   Timestamp: {first_m15['time']}")
+            print(f"   Open: {first_m15['open']}")
+            print(f"   High: {first_m15['high']}")
+            print(f"   Low: {first_m15['low']}")
+            print(f"   Close: {first_m15['close']}")
+            print()
+            
+            # 3. Última vela M15
+            print("3. ÚLTIMA VELA M15:")
+            last_m15 = df_m15.iloc[-1]
+            print(f"   Timestamp: {last_m15['time']}")
+            print(f"   Open: {last_m15['open']}")
+            print(f"   High: {last_m15['high']}")
+            print(f"   Low: {last_m15['low']}")
+            print(f"   Close: {last_m15['close']}")
+            print()
+        
+        # 4. Precio actual usado
+        print("4. PRECIO ACTUAL:")
+        print(f"   {precio_actual}")
+        print()
+        
+        # 5. Último evento M15 detectado
+        print("5. ÚLTIMO EVENTO M15 DETECTADO:")
+        if eventos_m15:
+            ultimo_evento = eventos_m15[-1]
+            print(f"   Tipo: {ultimo_evento['evento']}")
+            print(f"   Index: {ultimo_evento['index']}")
+            print(f"   Timestamp: {ultimo_evento['timestamp']}")
+            print(f"   Nivel roto: {ultimo_evento['nivel_roto']}")
+        else:
+            print("   NO HAY EVENTOS M15")
+        print()
+        
+        # 6-10. Información de la zona
+        if zona:
+            # 6. Evento usado para crear zona
+            print("6. EVENTO USADO PARA CREAR ZONA:")
+            print(f"   Tipo: {zona['evento']['evento']}")
+            print(f"   Index: {zona['evento']['index']}")
+            print(f"   Timestamp: {zona['evento']['timestamp']}")
+            print(f"   Nivel roto: {zona['evento']['nivel_roto']}")
+            print()
+            
+            # 7. OB usado
+            print("7. OB USADO:")
+            if zona['ob']:
+                print(f"   Tipo: {zona['ob']['tipo']}")
+                print(f"   Desde: {zona['ob']['desde']}")
+                print(f"   Hasta: {zona['ob']['hasta']}")
+                print(f"   Timestamp: {zona['ob']['timestamp']}")
+            else:
+                print("   NO")
+            print()
+            
+            # 8. FVG usado
+            print("8. FVG USADO:")
+            if zona['fvg']:
+                print(f"   Tipo: {zona['fvg']['tipo']}")
+                print(f"   Desde: {zona['fvg']['desde']}")
+                print(f"   Hasta: {zona['fvg']['hasta']}")
+                print(f"   Index: {zona['fvg']['index']}")
+                print(f"   Timestamp: {zona['fvg']['timestamp']}")
+            else:
+                print("   NO")
+            print()
+            
+            # 9. Barrida usada
+            print("9. BARRIDA USADA:")
+            if zona['barrida']:
+                print(f"   Tipo: {zona['barrida']['tipo']}")
+                print(f"   Nivel: {zona['barrida']['nivel']}")
+                print(f"   Timestamp: {zona['barrida']['timestamp']}")
+                if 'low' in zona['barrida']:
+                    print(f"   Low: {zona['barrida']['low']}")
+                if 'high' in zona['barrida']:
+                    print(f"   High: {zona['barrida']['high']}")
+                print(f"   Close: {zona['barrida']['close']}")
+            else:
+                print("   NO")
+            print()
+            
+            # 10. Zona final
+            print("10. ZONA FINAL:")
+            print(f"    Dirección: {zona['direccion']}")
+            print(f"    Zona desde: {zona['zona_desde']}")
+            print(f"    Zona hasta: {zona['zona_hasta']}")
+            print(f"    Score: {zona['score']}")
+            print(f"    Es útil: {zona['es_util']}")
+            print(f"    Motivo: {zona['motivo']}")
+            print(f"    Dirección operativa: {zona['direccion_operativa']}")
+        else:
+            print("6-10. ZONA M15 FINAL: NO SE CREÓ")
+        
+        print()
+        print("=" * 60)
+        print()
+    # =========================
+    # FIN DEBUG
+    # =========================
+
     direccion_operativa = direccion_operativa_por_indice(symbol)
 
     resultado = ""

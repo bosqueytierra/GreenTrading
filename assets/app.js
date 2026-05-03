@@ -317,6 +317,131 @@ async function fetchAndAnalyzeSymbol(symbol) {
         console.log('');
     }
     
+    // Debug logging for Boom 900 Index
+    if (symbol === 'Boom 900 Index') {
+        console.log('');
+        console.log('========================================');
+        console.log('DEBUG BOOM 900 INDEX - assets/app.js');
+        console.log('========================================');
+        console.log('');
+        
+        // 1. Cantidad velas H1/M15/M1
+        console.log('1. CANTIDAD DE VELAS:');
+        console.log('   H1:', candlesH1 ? candlesH1.length : 0);
+        console.log('   M15:', candlesM15 ? candlesM15.length : 0);
+        console.log('   M1:', candlesM1 ? candlesM1.length : 0);
+        console.log('');
+        
+        // 2. Primera vela M15
+        if (candlesM15 && candlesM15.length > 0) {
+            console.log('2. PRIMERA VELA M15:');
+            console.log('   Timestamp:', candlesM15[0].timestamp);
+            console.log('   Open:', candlesM15[0].open);
+            console.log('   High:', candlesM15[0].high);
+            console.log('   Low:', candlesM15[0].low);
+            console.log('   Close:', candlesM15[0].close);
+            console.log('');
+            
+            // 3. Última vela M15
+            console.log('3. ÚLTIMA VELA M15:');
+            const lastM15 = candlesM15[candlesM15.length - 1];
+            console.log('   Timestamp:', lastM15.timestamp);
+            console.log('   Open:', lastM15.open);
+            console.log('   High:', lastM15.high);
+            console.log('   Low:', lastM15.low);
+            console.log('   Close:', lastM15.close);
+            console.log('');
+        }
+        
+        // 4. Precio actual usado
+        console.log('4. PRECIO ACTUAL:');
+        console.log('   ', currentPrice);
+        console.log('');
+        
+        // 5. Último evento M15 detectado
+        console.log('5. ÚLTIMO EVENTO M15 DETECTADO:');
+        if (smcResult.eventosM15 && smcResult.eventosM15.length > 0) {
+            const lastEvent = smcResult.eventosM15[smcResult.eventosM15.length - 1];
+            console.log('   Tipo:', lastEvent.evento);
+            console.log('   Index:', lastEvent.index);
+            console.log('   Timestamp:', lastEvent.timestamp);
+            console.log('   Nivel roto:', lastEvent.nivel_roto);
+        } else {
+            console.log('   NO HAY EVENTOS M15');
+        }
+        console.log('');
+        
+        // 6-10. Información de la zona
+        if (smcResult.zonaM15) {
+            // 6. Evento usado para crear zona
+            console.log('6. EVENTO USADO PARA CREAR ZONA:');
+            console.log('   Tipo:', smcResult.zonaM15.evento.evento);
+            console.log('   Index:', smcResult.zonaM15.debug_evento_usado_index);
+            console.log('   Timestamp:', smcResult.zonaM15.debug_evento_usado_timestamp);
+            console.log('   Nivel roto:', smcResult.zonaM15.evento.nivel_roto);
+            console.log('');
+            
+            // 7. OB usado
+            console.log('7. OB USADO:');
+            if (smcResult.zonaM15.ob) {
+                console.log('   Tipo:', smcResult.zonaM15.ob.tipo);
+                console.log('   Desde:', smcResult.zonaM15.ob.desde);
+                console.log('   Hasta:', smcResult.zonaM15.ob.hasta);
+                console.log('   Timestamp:', smcResult.zonaM15.ob.timestamp);
+            } else {
+                console.log('   NO');
+            }
+            console.log('');
+            
+            // 8. FVG usado
+            console.log('8. FVG USADO:');
+            if (smcResult.zonaM15.fvg) {
+                console.log('   Tipo:', smcResult.zonaM15.fvg.tipo);
+                console.log('   Desde:', smcResult.zonaM15.fvg.desde);
+                console.log('   Hasta:', smcResult.zonaM15.fvg.hasta);
+                console.log('   Index:', smcResult.zonaM15.fvg.index);
+                console.log('   Timestamp:', smcResult.zonaM15.fvg.timestamp);
+            } else {
+                console.log('   NO');
+            }
+            console.log('');
+            
+            // 9. Barrida usada
+            console.log('9. BARRIDA USADA:');
+            if (smcResult.zonaM15.barrida) {
+                console.log('   Tipo:', smcResult.zonaM15.barrida.tipo);
+                console.log('   Nivel:', smcResult.zonaM15.barrida.nivel);
+                console.log('   Timestamp:', smcResult.zonaM15.barrida.timestamp);
+                if (smcResult.zonaM15.barrida.low !== undefined) {
+                    console.log('   Low:', smcResult.zonaM15.barrida.low);
+                }
+                if (smcResult.zonaM15.barrida.high !== undefined) {
+                    console.log('   High:', smcResult.zonaM15.barrida.high);
+                }
+                console.log('   Close:', smcResult.zonaM15.barrida.close);
+            } else {
+                console.log('   NO');
+            }
+            console.log('');
+            
+            // 10. Zona final
+            console.log('10. ZONA FINAL:');
+            console.log('    Dirección:', smcResult.zonaM15.direccion);
+            console.log('    Zona desde:', smcResult.zonaM15.zona_desde);
+            console.log('    Zona hasta:', smcResult.zonaM15.zona_hasta);
+            console.log('    Score:', smcResult.zonaM15.score);
+            console.log('    Es útil:', smcResult.zonaM15.es_util);
+            console.log('    Motivo:', smcResult.zonaM15.motivo);
+            console.log('    Dirección operativa:', smcResult.zonaM15.direccion_operativa);
+        } else {
+            console.log('6-10. ZONA M15 FINAL: NO SE CREÓ');
+        }
+        
+        console.log('');
+        console.log('========================================');
+        console.log('');
+    }
+    
     return {
         symbol,
         currentPrice,
