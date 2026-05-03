@@ -5,6 +5,7 @@ import pandas as pd
 import os
 import requests
 from dotenv import load_dotenv
+from src.smc_engine import analyze_smc
 
 # =========================
 # CONFIG
@@ -567,15 +568,33 @@ def analizar_smc_pro(symbol):
     if df_h1.empty or df_m15.empty:
         return "No se pudo obtener data H1/M15.\n"
 
-    swings_h1 = detectar_swings(df_h1, SWING_LOOKBACK)
-    eventos_h1, tendencia_h1 = detectar_estructura(df_h1, swings_h1)
+    # =========================
+    # NUEVA LÓGICA: Motor SMC modular
+    # =========================
+    smc_result = analyze_smc(df_h1, df_m15, df_m1 if not df_m1.empty else None)
+    
+    # Extraer resultados del análisis SMC
+    tendencia_h1 = smc_result["tendencia_h1"]
+    tendencia_m15 = smc_result["tendencia_m15"]
+    eventos_h1 = smc_result["eventos_h1"]
+    eventos_m15 = smc_result["eventos_m15"]
+    fvgs_m15 = smc_result["fvgs_m15"]
+    precio_actual = smc_result["precio_actual"]
+    
+    # =========================
+    # LÓGICA ANTIGUA (comentada como fallback)
+    # =========================
+    # swings_h1 = detectar_swings(df_h1, SWING_LOOKBACK)
+    # eventos_h1, tendencia_h1 = detectar_estructura(df_h1, swings_h1)
 
-    swings_m15 = detectar_swings(df_m15, SWING_LOOKBACK)
-    eventos_m15, tendencia_m15 = detectar_estructura(df_m15, swings_m15)
+    # swings_m15 = detectar_swings(df_m15, SWING_LOOKBACK)
+    # eventos_m15, tendencia_m15 = detectar_estructura(df_m15, swings_m15)
 
-    fvgs_m15 = detectar_fvg(df_m15)
+    # fvgs_m15 = detectar_fvg(df_m15)
 
-    precio_actual = float(df_m15["close"].iloc[-1])
+    # precio_actual = float(df_m15["close"].iloc[-1])
+    # =========================
+    
     zona = crear_zona_m15(df_m15, eventos_m15, fvgs_m15, symbol, precio_actual)
     zona_m1 = crear_zona_fina_m1(df_m1, zona, symbol, M1_VELAS_ZONA)
 
