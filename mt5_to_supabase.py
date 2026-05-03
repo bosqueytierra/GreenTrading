@@ -49,6 +49,9 @@ TIMEFRAMES = {
 # Número de velas a recolectar por cada símbolo/timeframe
 NUM_CANDLES = 100
 
+# Número de velas a leer cuando ya existe historial
+NUM_CANDLES_UPDATE = 200
+
 # Intervalo de sincronización (3 minutos)
 SYNC_INTERVAL_SECONDS = 180
 
@@ -62,6 +65,45 @@ def connect_mt5():
     
     print("✅ MT5 conectado")
     return True
+
+
+def get_last_timestamp_from_supabase(symbol, timeframe):
+    """
+    Consultar el último timestamp guardado en Supabase para un symbol/timeframe.
+    Retorna None si no hay datos previos, o el timestamp como string ISO.
+    """
+    url = f"{SUPABASE_URL}/rest/v1/market_candles"
+    
+    headers = {
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    params = {
+        "symbol": f"eq.{symbol}",
+        "timeframe": f"eq.{timeframe}",
+        "select": "timestamp",
+        "order": "timestamp.desc",
+        "limit": "1"
+    }
+    
+    try:
+        response = requests.get(url, headers=headers, params=params)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data and len(data) > 0:
+                return data[0]["timestamp"]
+            else:
+                return None
+        else:
+            print(f"⚠️ Error al consultar último timestamp: {response.status_code}")
+            return None
+    
+    except Exception as e:
+        print(f"❌ Error al consultar Supabase: {e}")
+        return None
 
 
 
@@ -108,19 +150,19 @@ def format_candle_for_supabase(symbol, timeframe, row):
 
 
 def upload_to_supabase(candles_data):
-    """Subir velas a Supabase tabla market_candles usando UPSERT"""
+    """Subir velas a Supabase tabla market_candles usando POST normal"""
     
     if not candles_data:
         return False
     
-    # Usar endpoint con parámetro on_conflict para UPSERT real
-    url = f"{SUPABASE_URL}/rest/v1/market_candles?on_conflict=symbol,timeframe,timestamp"
+    # POST normal sin upsert
+    url = f"{SUPABASE_URL}/rest/v1/market_candles"
     
     headers = {
         "apikey": SUPABASE_ANON_KEY,
         "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
         "Content-Type": "application/json",
-        "Prefer": "resolution=merge-duplicates,return=minimal"
+        "Prefer": "return=minimal"
     }
     
     try:
@@ -128,9 +170,6 @@ def upload_to_supabase(candles_data):
         
         # Considerar éxito si el status es 200, 201 o 204
         if response.status_code in [200, 201, 204]:
-            return True
-        # 409 puede ocurrir en algunos casos de duplicados ya resueltos, considerarlo éxito
-        elif response.status_code == 409:
             return True
         else:
             print(f"❌ Supabase rechazó la subida")
@@ -152,21 +191,55 @@ def collect_and_upload():
     
     for symbol in SYMBOLS:
         for tf_name, tf_mt5 in TIMEFRAMES.items():
-            # Leer velas
-            df = read_candles(symbol, tf_name, tf_mt5, NUM_CANDLES)
+            # 1. Consultar el último timestamp guardado en Supabase
+            last_timestamp = get_last_timestamp_from_supabase(symbol, tf_name)
             
-            if df is None:
-                continue
+            # 2. Si NO existe último timestamp: subir carga inicial de 100 velas
+            if last_timestamp is None:
+                df = read_candles(symbol, tf_name, tf_mt5, NUM_CANDLES)
+                
+                if df is None:
+                    continue
+                
+                # Formatear para Supabase
+                candles_batch = []
+                for _, row in df.iterrows():
+                    candle = format_candle_for_supabase(symbol, tf_name, row)
+                    candles_batch.append(candle)
+                
+                # Subir a Supabase
+                if upload_to_supabase(candles_batch):
+                    total_uploaded += len(candles_batch)
+                    print(f"✅ Carga inicial: {symbol} [{tf_name}] - {len(candles_batch)} velas")
             
-            # Formatear para Supabase
-            candles_batch = []
-            for _, row in df.iterrows():
-                candle = format_candle_for_supabase(symbol, tf_name, row)
-                candles_batch.append(candle)
-            
-            # Subir a Supabase
-            if upload_to_supabase(candles_batch):
-                total_uploaded += len(candles_batch)
+            # 3. Si SÍ existe último timestamp: leer 200 velas y filtrar las nuevas
+            else:
+                df = read_candles(symbol, tf_name, tf_mt5, NUM_CANDLES_UPDATE)
+                
+                if df is None:
+                    continue
+                
+                # Convertir last_timestamp a datetime para comparación
+                last_dt = pd.to_datetime(last_timestamp)
+                
+                # Filtrar solo velas con timestamp > último guardado
+                df_new = df[df["time"] > last_dt]
+                
+                # Si no hay velas nuevas, mostrar log y continuar
+                if len(df_new) == 0:
+                    print(f"Sin velas nuevas: {symbol} {tf_name}")
+                    continue
+                
+                # Formatear para Supabase
+                candles_batch = []
+                for _, row in df_new.iterrows():
+                    candle = format_candle_for_supabase(symbol, tf_name, row)
+                    candles_batch.append(candle)
+                
+                # Subir solo las nuevas a Supabase
+                if upload_to_supabase(candles_batch):
+                    total_uploaded += len(candles_batch)
+                    print(f"✅ {symbol} [{tf_name}] - {len(candles_batch)} velas nuevas")
     
     print(f"✅ Subidas {total_uploaded} velas - {datetime.now().strftime('%H:%M:%S')}")
     return True
