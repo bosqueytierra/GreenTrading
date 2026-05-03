@@ -174,9 +174,9 @@ async function fetchAllIndices() {
 async function fetchAndAnalyzeSymbol(symbol) {
     // Fetch multiple timeframes
     const [candlesH1, candlesM15, candlesM1] = await Promise.all([
-        fetchCandles(symbol, 'H1', 700),
-        fetchCandles(symbol, 'M15', 2000),
-        fetchCandles(symbol, 'M1', 10000)
+        fetchCandles(symbol, 'H1', 500),
+        fetchCandles(symbol, 'M15', 800),
+        fetchCandles(symbol, 'M1', 600)
     ]);
     
     if (!candlesM15 || candlesM15.length === 0) {
