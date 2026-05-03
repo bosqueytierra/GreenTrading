@@ -106,10 +106,93 @@ function showLogin() {
 
 function showDashboard() {
     document.getElementById('loginScreen').style.display = 'none';
-    document.getElementById('dashboardScreen').style.display = 'block';
+    document.getElementById('dashboardScreen').style.display = 'flex';
     document.getElementById('userInfo').textContent = currentUser;
     
     initializeDashboard();
+}
+
+// ========================================
+// NAVIGATION LOGIC
+// ========================================
+
+function initNavigation() {
+    // Sidebar toggle
+    const sidebarToggle = document.getElementById('sidebarToggle');
+    const sidebar = document.getElementById('sidebar');
+    
+    if (sidebarToggle && sidebar) {
+        sidebarToggle.addEventListener('click', () => {
+            sidebar.classList.toggle('collapsed');
+        });
+    }
+    
+    // Navigation links
+    const navLinks = document.querySelectorAll('.sidebar-link');
+    navLinks.forEach(link => {
+        link.addEventListener('click', (e) => {
+            e.preventDefault();
+            const view = link.getAttribute('data-view');
+            switchView(view);
+        });
+    });
+    
+    // Refresh history button
+    const refreshHistoryBtn = document.getElementById('refreshHistoryBtn');
+    if (refreshHistoryBtn) {
+        refreshHistoryBtn.addEventListener('click', () => {
+            updateHistoryTable();
+        });
+    }
+}
+
+function switchView(viewName) {
+    // Update active link
+    document.querySelectorAll('.sidebar-link').forEach(link => {
+        link.classList.remove('active');
+        if (link.getAttribute('data-view') === viewName) {
+            link.classList.add('active');
+        }
+    });
+    
+    // Hide all views
+    document.querySelectorAll('.view-content').forEach(view => {
+        view.classList.remove('active');
+    });
+    
+    // Show selected view
+    const views = {
+        'dashboard': 'dashboardView',
+        'history': 'historyView',
+        'stats': 'statsView',
+        'settings': 'settingsView'
+    };
+    
+    const viewId = views[viewName];
+    if (viewId) {
+        const viewElement = document.getElementById(viewId);
+        if (viewElement) {
+            viewElement.classList.add('active');
+        }
+    }
+    
+    // Update page title
+    const titles = {
+        'dashboard': 'Dashboard en vivo',
+        'history': 'Historial SMC M15 PRO',
+        'stats': 'Estadísticas',
+        'settings': 'Configuración'
+    };
+    
+    const pageTitle = document.getElementById('pageTitle');
+    if (pageTitle) {
+        pageTitle.textContent = titles[viewName] || 'GreenTrading';
+    }
+    
+    // Load data if needed
+    if (viewName === 'history') {
+        updateHistoryTable();
+    }
 }
 
 // ========================================
@@ -122,6 +205,9 @@ function initializeDashboard() {
         console.error('Configuración de Supabase no disponible');
         return;
     }
+    
+    // Initialize navigation
+    initNavigation();
     
     // Event listeners
     const refreshBtn = document.getElementById('refreshBtn');
@@ -367,8 +453,7 @@ async function fetchAllIndices() {
     updateBoomTable(results);
     updateCrashTable(results);
     
-    // Update history table
-    await updateHistoryTable();
+    // Don't update history table here - only when user navigates to history view
 }
 
 async function fetchAndAnalyzeSymbol(symbol) {
@@ -1248,11 +1333,32 @@ async function fetchSetupHistory(limit = 50) {
 }
 
 async function updateHistoryTable() {
+    const historyError = document.getElementById('historyError');
+    const tbody = document.getElementById('historyTableBody');
+    
+    if (!tbody) return; // Table not in DOM yet
+    
+    // Update history last update time
+    const historyLastUpdate = document.getElementById('historyLastUpdate');
+    if (historyLastUpdate) {
+        const now = new Date();
+        const timeString = now.toLocaleTimeString('es-ES', {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+        historyLastUpdate.textContent = `Última actualización: ${timeString}`;
+    }
+    
     try {
-        const setups = await fetchSetupHistory();
-        const tbody = document.getElementById('historyTableBody');
+        // Hide error message
+        if (historyError) {
+            historyError.style.display = 'none';
+        }
         
-        if (!tbody) return; // Table not in DOM yet
+        tbody.innerHTML = '<tr><td colspan="11" class="loading">Cargando historial...</td></tr>';
+        
+        const setups = await fetchSetupHistory();
         
         tbody.innerHTML = '';
         
@@ -1268,7 +1374,17 @@ async function updateHistoryTable() {
         
     } catch (error) {
         console.error('Error updating history table:', error);
-        const tbody = document.getElementById('historyTableBody');
+        
+        // Show clear error message
+        if (historyError) {
+            if (error.message.includes('401') || error.message.includes('403')) {
+                historyError.textContent = '⚠️ No se pudo cargar historial. Revisar permisos RLS de smc_m15_setups.';
+            } else {
+                historyError.textContent = `⚠️ Error cargando historial: ${error.message}`;
+            }
+            historyError.style.display = 'block';
+        }
+        
         if (tbody) {
             tbody.innerHTML = '<tr><td colspan="11" class="loading">Error cargando historial</td></tr>';
         }

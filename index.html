@@ -31,11 +31,39 @@
 
     <!-- Dashboard (hidden by default) -->
     <div id="dashboardScreen" class="dashboard-screen" style="display: none;">
-        <div class="container">
+        <!-- Sidebar -->
+        <aside id="sidebar" class="sidebar">
+            <div class="sidebar-header">
+                <img src="graficos/Green.png" alt="GreenTrading" class="sidebar-logo">
+                <h2 class="sidebar-title">GreenTrading</h2>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="#" class="sidebar-link active" data-view="dashboard">
+                    <span class="sidebar-icon">📊</span>
+                    <span class="sidebar-text">Dashboard en vivo</span>
+                </a>
+                <a href="#" class="sidebar-link" data-view="history">
+                    <span class="sidebar-icon">📈</span>
+                    <span class="sidebar-text">Historial SMC M15 PRO</span>
+                </a>
+                <a href="#" class="sidebar-link" data-view="stats">
+                    <span class="sidebar-icon">📉</span>
+                    <span class="sidebar-text">Estadísticas</span>
+                </a>
+                <a href="#" class="sidebar-link" data-view="settings">
+                    <span class="sidebar-icon">⚙️</span>
+                    <span class="sidebar-text">Configuración</span>
+                </a>
+            </nav>
+            <button id="sidebarToggle" class="sidebar-toggle" title="Colapsar menú">
+                <span>◀</span>
+            </button>
+        </aside>
+
+        <div class="main-content">
             <header class="header">
                 <div class="header-left">
-                    <img src="graficos/Green.png" alt="GreenTrading" class="header-logo">
-                    <h1>GreenTrading Dashboard</h1>
+                    <h1 id="pageTitle">Dashboard en vivo</h1>
                 </div>
                 <div class="header-right">
                     <span class="user-info" id="userInfo">Usuario</span>
@@ -43,109 +71,141 @@
                 </div>
             </header>
 
-            <div class="controls-bar">
-                <div class="control-group">
-                    <label for="strategySelect">Estrategia:</label>
-                    <select id="strategySelect">
-                        <option value="SMC_M15_PRO" selected>SMC M15 PRO</option>
-                    </select>
+            <!-- Dashboard View -->
+            <div id="dashboardView" class="view-content active">
+                <div class="controls-bar">
+                    <div class="control-group">
+                        <label for="strategySelect">Estrategia:</label>
+                        <select id="strategySelect">
+                            <option value="SMC_M15_PRO" selected>SMC M15 PRO</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <button id="refreshBtn" class="refresh-btn">🔄 Actualizar Todo</button>
+                    </div>
+                    <div class="status-info">
+                        <span id="lastUpdate" class="last-update-time">Última actualización: --</span>
+                        <span class="auto-refresh-indicator">Auto-refresh: 30s</span>
+                    </div>
                 </div>
-                <div class="control-group">
-                    <button id="refreshBtn" class="refresh-btn">🔄 Actualizar Todo</button>
+
+                <div class="indices-section">
+                    <h2 class="section-title boom-title">📈 Índices Boom</h2>
+                    <div class="table-container">
+                        <table class="indices-table">
+                            <thead>
+                                <tr>
+                                    <th>Índice</th>
+                                    <th>Tendencia H1</th>
+                                    <th>Tendencia M15</th>
+                                    <th>Dirección</th>
+                                    <th>Último Evento M15</th>
+                                    <th>Zona Madre M15</th>
+                                    <th>Zona Fina M1</th>
+                                    <th>Score</th>
+                                    <th>OB</th>
+                                    <th>FVG</th>
+                                    <th>Barrida</th>
+                                    <th>Estado</th>
+                                    <th>Precio</th>
+                                    <th>Actualización</th>
+                                </tr>
+                            </thead>
+                            <tbody id="boomTableBody">
+                                <tr>
+                                    <td colspan="14" class="loading">Cargando datos...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-                <div class="status-info">
-                    <span id="lastUpdate" class="last-update-time">Última actualización: --</span>
-                    <span class="auto-refresh-indicator">Auto-refresh: 30s</span>
+
+                <div class="indices-section">
+                    <h2 class="section-title crash-title">📉 Índices Crash</h2>
+                    <div class="table-container">
+                        <table class="indices-table">
+                            <thead>
+                                <tr>
+                                    <th>Índice</th>
+                                    <th>Tendencia H1</th>
+                                    <th>Tendencia M15</th>
+                                    <th>Dirección</th>
+                                    <th>Último Evento M15</th>
+                                    <th>Zona Madre M15</th>
+                                    <th>Zona Fina M1</th>
+                                    <th>Score</th>
+                                    <th>OB</th>
+                                    <th>FVG</th>
+                                    <th>Barrida</th>
+                                    <th>Estado</th>
+                                    <th>Precio</th>
+                                    <th>Actualización</th>
+                                </tr>
+                            </thead>
+                            <tbody id="crashTableBody">
+                                <tr>
+                                    <td colspan="14" class="loading">Cargando datos...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 
-            <div class="indices-section">
-                <h2 class="section-title boom-title">📈 Índices Boom</h2>
-                <div class="table-container">
-                    <table class="indices-table">
-                        <thead>
-                            <tr>
-                                <th>Índice</th>
-                                <th>Tendencia H1</th>
-                                <th>Tendencia M15</th>
-                                <th>Dirección</th>
-                                <th>Último Evento M15</th>
-                                <th>Zona Madre M15</th>
-                                <th>Zona Fina M1</th>
-                                <th>Score</th>
-                                <th>OB</th>
-                                <th>FVG</th>
-                                <th>Barrida</th>
-                                <th>Estado</th>
-                                <th>Precio</th>
-                                <th>Actualización</th>
-                            </tr>
-                        </thead>
-                        <tbody id="boomTableBody">
-                            <tr>
-                                <td colspan="14" class="loading">Cargando datos...</td>
-                            </tr>
-                        </tbody>
-                    </table>
+            <!-- History View -->
+            <div id="historyView" class="view-content">
+                <div class="controls-bar">
+                    <div class="control-group">
+                        <button id="refreshHistoryBtn" class="refresh-btn">🔄 Actualizar Historial</button>
+                    </div>
+                    <div class="status-info">
+                        <span id="historyLastUpdate" class="last-update-time">Última actualización: --</span>
+                    </div>
+                </div>
+
+                <div class="indices-section history-section">
+                    <h2 class="section-title history-title">📊 Historial SMC M15 PRO</h2>
+                    <div id="historyError" class="history-error" style="display: none;"></div>
+                    <div class="table-container">
+                        <table class="history-table">
+                            <thead>
+                                <tr>
+                                    <th>Fecha</th>
+                                    <th>Índice</th>
+                                    <th>Dirección</th>
+                                    <th>Zona</th>
+                                    <th>Score</th>
+                                    <th>OB</th>
+                                    <th>FVG</th>
+                                    <th>Barrida</th>
+                                    <th>Estado</th>
+                                    <th>Resultado (pts)</th>
+                                    <th>Max Reacción (pts)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="historyTableBody">
+                                <tr>
+                                    <td colspan="11" class="loading">Cargando historial...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 
-            <div class="indices-section">
-                <h2 class="section-title crash-title">📉 Índices Crash</h2>
-                <div class="table-container">
-                    <table class="indices-table">
-                        <thead>
-                            <tr>
-                                <th>Índice</th>
-                                <th>Tendencia H1</th>
-                                <th>Tendencia M15</th>
-                                <th>Dirección</th>
-                                <th>Último Evento M15</th>
-                                <th>Zona Madre M15</th>
-                                <th>Zona Fina M1</th>
-                                <th>Score</th>
-                                <th>OB</th>
-                                <th>FVG</th>
-                                <th>Barrida</th>
-                                <th>Estado</th>
-                                <th>Precio</th>
-                                <th>Actualización</th>
-                            </tr>
-                        </thead>
-                        <tbody id="crashTableBody">
-                            <tr>
-                                <td colspan="14" class="loading">Cargando datos...</td>
-                            </tr>
-                        </tbody>
-                    </table>
+            <!-- Stats View -->
+            <div id="statsView" class="view-content">
+                <div class="empty-view">
+                    <h2>📉 Estadísticas</h2>
+                    <p>Funcionalidad próximamente disponible</p>
                 </div>
             </div>
 
-            <div class="indices-section history-section">
-                <h2 class="section-title history-title">📊 Historial SMC M15 PRO</h2>
-                <div class="table-container">
-                    <table class="history-table">
-                        <thead>
-                            <tr>
-                                <th>Fecha</th>
-                                <th>Índice</th>
-                                <th>Dirección</th>
-                                <th>Zona</th>
-                                <th>Score</th>
-                                <th>OB</th>
-                                <th>FVG</th>
-                                <th>Barrida</th>
-                                <th>Estado</th>
-                                <th>Resultado (pts)</th>
-                                <th>Max Reacción (pts)</th>
-                            </tr>
-                        </thead>
-                        <tbody id="historyTableBody">
-                            <tr>
-                                <td colspan="11" class="loading">Cargando historial...</td>
-                            </tr>
-                        </tbody>
-                    </table>
+            <!-- Settings View -->
+            <div id="settingsView" class="view-content">
+                <div class="empty-view">
+                    <h2>⚙️ Configuración</h2>
+                    <p>Funcionalidad próximamente disponible</p>
                 </div>
             </div>
 
