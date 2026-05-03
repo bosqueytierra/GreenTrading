@@ -880,6 +880,11 @@ select:focus {
     color: var(--accent-red);
 }
 
+.status-profit {
+    background: #d1fae5;
+    color: #059669;
+}
+
 .status-tp {
     background: #dbeafe;
     color: var(--accent-blue);

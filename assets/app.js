@@ -237,8 +237,8 @@ function startAutoRefresh() {
 // ========================================
 
 async function getAllActiveSetups(symbol) {
-    // Get all setups with estado ACTIVA or EN_ZONA for this symbol
-    const url = `${SUPABASE_URL}/rest/v1/smc_m15_setups?symbol=eq.${encodeURIComponent(symbol)}&estado=in.(ACTIVA,EN_ZONA)&order=created_at.desc`;
+    // Get all setups with estado ACTIVA, EN_ZONA, or PROFIT for this symbol
+    const url = `${SUPABASE_URL}/rest/v1/smc_m15_setups?symbol=eq.${encodeURIComponent(symbol)}&estado=in.(ACTIVA,EN_ZONA,PROFIT)&order=created_at.desc`;
     
     const response = await fetch(url, {
         method: 'GET',
@@ -307,9 +307,9 @@ async function closeSetup(id, motivo) {
     });
 }
 
-async function getSetupEnZona(symbol) {
-    // Get the most recent EN_ZONA setup for this symbol
-    const url = `${SUPABASE_URL}/rest/v1/smc_m15_setups?symbol=eq.${encodeURIComponent(symbol)}&estado=eq.EN_ZONA&order=created_at.desc&limit=1`;
+async function getSetupEnZonaOrProfit(symbol) {
+    // Get the most recent EN_ZONA or PROFIT setup for this symbol
+    const url = `${SUPABASE_URL}/rest/v1/smc_m15_setups?symbol=eq.${encodeURIComponent(symbol)}&estado=in.(EN_ZONA,PROFIT)&order=created_at.desc&limit=1`;
     
     try {
         const response = await fetch(url, {
@@ -322,16 +322,153 @@ async function getSetupEnZona(symbol) {
         });
         
         if (!response.ok) {
-            console.error(`Error fetching EN_ZONA setup for ${symbol}: ${response.status}`);
+            console.error(`Error fetching EN_ZONA/PROFIT setup for ${symbol}: ${response.status}`);
             return null;
         }
         
         const data = await response.json();
         return data.length > 0 ? data[0] : null;
     } catch (error) {
-        console.error(`Error fetching EN_ZONA setup for ${symbol}:`, error);
+        console.error(`Error fetching EN_ZONA/PROFIT setup for ${symbol}:`, error);
         return null;
     }
+}
+
+/**
+ * Check and update setup state based on price movements
+ * Handles transitions: ACTIVA → EN_ZONA → PROFIT → TP/SL
+ */
+async function updateSetupState(setup, currentPrice) {
+    const updateData = {
+        updated_at: new Date().toISOString()
+    };
+    
+    const isInZone = currentPrice >= setup.zona_desde && currentPrice <= setup.zona_hasta;
+    const zona_size_puntos = Math.abs(setup.zona_hasta - setup.zona_desde);
+    
+    // Calculate TP and SL if not set yet
+    if (setup.tp_price === null || setup.sl_price === null) {
+        if (setup.direccion === 'ALCISTA') {
+            updateData.tp_price = setup.zona_hasta + zona_size_puntos;
+            updateData.sl_price = setup.zona_desde;
+        } else { // BAJISTA
+            updateData.tp_price = setup.zona_desde - zona_size_puntos;
+            updateData.sl_price = setup.zona_hasta;
+        }
+        updateData.ratio_rr = 1.0;
+    }
+    
+    const tp_price = updateData.tp_price || setup.tp_price;
+    const sl_price = updateData.sl_price || setup.sl_price;
+    
+    // State transition logic
+    if (setup.estado === 'ACTIVA') {
+        // ACTIVA → EN_ZONA: Price enters the zone
+        if (isInZone) {
+            updateData.estado = 'EN_ZONA';
+            console.log(`✓ Setup ${setup.id} transitioned ACTIVA → EN_ZONA for ${setup.symbol}`);
+        }
+    } 
+    else if (setup.estado === 'EN_ZONA') {
+        // Check for SL hit first (highest priority)
+        if (setup.direccion === 'ALCISTA' && currentPrice < setup.zona_desde) {
+            // ALCISTA: Price below zone = SL
+            updateData.estado = 'SL';
+            updateData.resultado_puntos = -zona_size_puntos;
+            updateData.fecha_cierre = new Date().toISOString();
+            updateData.motivo_cierre = 'Stop Loss alcanzado';
+            console.log(`✓ Setup ${setup.id} transitioned EN_ZONA → SL for ${setup.symbol}`);
+        }
+        else if (setup.direccion === 'BAJISTA' && currentPrice > setup.zona_hasta) {
+            // BAJISTA: Price above zone = SL
+            updateData.estado = 'SL';
+            updateData.resultado_puntos = -zona_size_puntos;
+            updateData.fecha_cierre = new Date().toISOString();
+            updateData.motivo_cierre = 'Stop Loss alcanzado';
+            console.log(`✓ Setup ${setup.id} transitioned EN_ZONA → SL for ${setup.symbol}`);
+        }
+        // EN_ZONA → PROFIT: Price moves favorably but hasn't reached TP yet
+        else if (setup.direccion === 'ALCISTA' && currentPrice > setup.zona_hasta && currentPrice < tp_price) {
+            updateData.estado = 'PROFIT';
+            console.log(`✓ Setup ${setup.id} transitioned EN_ZONA → PROFIT for ${setup.symbol}`);
+        }
+        else if (setup.direccion === 'BAJISTA' && currentPrice < setup.zona_desde && currentPrice > tp_price) {
+            updateData.estado = 'PROFIT';
+            console.log(`✓ Setup ${setup.id} transitioned EN_ZONA → PROFIT for ${setup.symbol}`);
+        }
+        // EN_ZONA → TP: Price reaches TP directly from zone
+        else if (setup.direccion === 'ALCISTA' && currentPrice >= tp_price) {
+            updateData.estado = 'TP';
+            updateData.resultado_puntos = zona_size_puntos;
+            updateData.fecha_cierre = new Date().toISOString();
+            updateData.motivo_cierre = 'Take Profit 1:1 alcanzado';
+            console.log(`✓ Setup ${setup.id} transitioned EN_ZONA → TP for ${setup.symbol}`);
+        }
+        else if (setup.direccion === 'BAJISTA' && currentPrice <= tp_price) {
+            updateData.estado = 'TP';
+            updateData.resultado_puntos = zona_size_puntos;
+            updateData.fecha_cierre = new Date().toISOString();
+            updateData.motivo_cierre = 'Take Profit 1:1 alcanzado';
+            console.log(`✓ Setup ${setup.id} transitioned EN_ZONA → TP for ${setup.symbol}`);
+        }
+    }
+    else if (setup.estado === 'PROFIT') {
+        // Check for SL hit
+        if (setup.direccion === 'ALCISTA' && currentPrice < setup.zona_desde) {
+            updateData.estado = 'SL';
+            updateData.resultado_puntos = -zona_size_puntos;
+            updateData.fecha_cierre = new Date().toISOString();
+            updateData.motivo_cierre = 'Stop Loss alcanzado';
+            console.log(`✓ Setup ${setup.id} transitioned PROFIT → SL for ${setup.symbol}`);
+        }
+        else if (setup.direccion === 'BAJISTA' && currentPrice > setup.zona_hasta) {
+            updateData.estado = 'SL';
+            updateData.resultado_puntos = -zona_size_puntos;
+            updateData.fecha_cierre = new Date().toISOString();
+            updateData.motivo_cierre = 'Stop Loss alcanzado';
+            console.log(`✓ Setup ${setup.id} transitioned PROFIT → SL for ${setup.symbol}`);
+        }
+        // PROFIT → TP: Price reaches TP
+        else if (setup.direccion === 'ALCISTA' && currentPrice >= tp_price) {
+            updateData.estado = 'TP';
+            updateData.resultado_puntos = zona_size_puntos;
+            updateData.fecha_cierre = new Date().toISOString();
+            updateData.motivo_cierre = 'Take Profit 1:1 alcanzado';
+            console.log(`✓ Setup ${setup.id} transitioned PROFIT → TP for ${setup.symbol}`);
+        }
+        else if (setup.direccion === 'BAJISTA' && currentPrice <= tp_price) {
+            updateData.estado = 'TP';
+            updateData.resultado_puntos = zona_size_puntos;
+            updateData.fecha_cierre = new Date().toISOString();
+            updateData.motivo_cierre = 'Take Profit 1:1 alcanzado';
+            console.log(`✓ Setup ${setup.id} transitioned PROFIT → TP for ${setup.symbol}`);
+        }
+    }
+    
+    // Calculate max_reaccion_puntos only for EN_ZONA or PROFIT states
+    if (setup.estado === 'EN_ZONA' || setup.estado === 'PROFIT' || 
+        (updateData.estado && (updateData.estado === 'EN_ZONA' || updateData.estado === 'PROFIT'))) {
+        
+        const currentEstado = updateData.estado || setup.estado;
+        
+        if (currentEstado === 'EN_ZONA' || currentEstado === 'PROFIT') {
+            const distanceFromZone = setup.direccion === 'ALCISTA' 
+                ? Math.max(0, currentPrice - setup.zona_hasta)
+                : Math.max(0, setup.zona_desde - currentPrice);
+            
+            const currentMaxReaccion = setup.max_reaccion_puntos || 0;
+            updateData.max_reaccion_puntos = Math.max(currentMaxReaccion, distanceFromZone);
+        }
+    }
+    
+    // Only update if there are meaningful changes
+    const hasChanges = Object.keys(updateData).length > 1; // more than just updated_at
+    if (hasChanges) {
+        await updateSetup(setup.id, updateData);
+        return true;
+    }
+    
+    return false;
 }
 
 async function trackZoneHistory(symbol, analysis) {
@@ -346,7 +483,7 @@ async function trackZoneHistory(symbol, analysis) {
         // Get tipo_indice (Boom or Crash)
         const tipoIndice = symbol.includes('Boom') ? 'Boom' : 'Crash';
         
-        // Get all active/in-zone setups for this symbol
+        // Get all active/in-zone/profit setups for this symbol
         const existingSetups = await getAllActiveSetups(symbol);
         
         // Calculate new zone boundaries
@@ -386,8 +523,6 @@ async function trackZoneHistory(symbol, analysis) {
         
         // If we found a matching setup (contained or overlapped), update it instead of creating new
         if (matchingSetup) {
-            const isInZone = currentPrice >= matchingSetup.zona_desde && currentPrice <= matchingSetup.zona_hasta;
-            
             const updateData = {
                 updated_at: new Date().toISOString(),
                 score: zonaM15.score,
@@ -396,28 +531,24 @@ async function trackZoneHistory(symbol, analysis) {
                 barrida: zonaM15.barrida ? true : false
             };
             
-            // Change to EN_ZONA if price is in zone
-            if (matchingSetup.estado === 'ACTIVA' && isInZone) {
-                updateData.estado = 'EN_ZONA';
-                console.log(`✓ Setup ${matchingSetup.id} cambió a EN_ZONA para ${symbol}`);
-            }
-            
-            // Calculate max_reaccion_puntos if EN_ZONA
-            const isOrWillBeEnZona = (matchingSetup.estado === 'ACTIVA' && isInZone) || matchingSetup.estado === 'EN_ZONA';
-            if (isOrWillBeEnZona) {
-                const distanceFromZone = matchingSetup.direccion === 'ALCISTA' 
-                    ? Math.max(0, currentPrice - matchingSetup.zona_hasta)
-                    : Math.max(0, matchingSetup.zona_desde - currentPrice);
-                
-                const currentMaxReaccion = (matchingSetup.estado === 'ACTIVA') ? 0 : (matchingSetup.max_reaccion_puntos || 0);
-                updateData.max_reaccion_puntos = Math.max(currentMaxReaccion, distanceFromZone);
-            }
-            
             await updateSetup(matchingSetup.id, updateData);
             console.log(`✓ Setup ${matchingSetup.id} actualizado (mantiene zona original) para ${symbol}`);
+            
+            // Update state based on price movement
+            await updateSetupState(matchingSetup, currentPrice);
         }
         // If zone doesn't exist and not contained/overlapped, create new setup
         else if (!exactZoneExists) {
+            // Calculate TP and SL for 1:1 ratio
+            let tp_price, sl_price;
+            if (zonaM15.direccion === 'ALCISTA') {
+                tp_price = newZonaHasta + newZonaSize;
+                sl_price = newZonaDesde;
+            } else { // BAJISTA
+                tp_price = newZonaDesde - newZonaSize;
+                sl_price = newZonaHasta;
+            }
+            
             const newSetup = {
                 symbol: symbol,
                 tipo_indice: tipoIndice,
@@ -433,56 +564,33 @@ async function trackZoneHistory(symbol, analysis) {
                 fvg: zonaM15.fvg ? true : false,
                 barrida: zonaM15.barrida ? true : false,
                 estado: 'ACTIVA',
-                tp_price: null,
-                sl_price: null,
-                ratio_rr: null,
+                tp_price: tp_price,
+                sl_price: sl_price,
+                ratio_rr: 1.0,
                 max_reaccion_puntos: null,
                 resultado_puntos: null,
                 fecha_cierre: null,
                 motivo_cierre: null
             };
             
-            await createSetup(newSetup);
-            console.log(`✓ Nuevo setup ACTIVO creado para ${symbol}`);
+            const created = await createSetup(newSetup);
+            console.log(`✓ Nuevo setup ACTIVO creado para ${symbol} (TP: ${tp_price}, SL: ${sl_price})`);
+            
+            // Check if it should immediately transition to EN_ZONA
+            if (created && created.length > 0) {
+                await updateSetupState(created[0], currentPrice);
+            }
         }
         
-        // Update all OTHER existing setups (check if price is in zone, update max_reaccion)
+        // Update all OTHER existing setups (state transitions)
         for (const setup of existingSetups) {
             // Skip the matching setup as we already updated it above
             if (matchingSetup && setup.id === matchingSetup.id) {
                 continue;
             }
             
-            const isInZone = currentPrice >= setup.zona_desde && currentPrice <= setup.zona_hasta;
-            
-            const updateData = {
-                updated_at: new Date().toISOString()
-            };
-            
-            // Check if we need to change from ACTIVA to EN_ZONA
-            if (setup.estado === 'ACTIVA' && isInZone) {
-                updateData.estado = 'EN_ZONA';
-                console.log(`✓ Setup ${setup.id} cambió a EN_ZONA para ${symbol}`);
-            }
-            
-            // Calculate max_reaccion_puntos only if estado is EN_ZONA (current or new)
-            const isOrWillBeEnZona = (setup.estado === 'ACTIVA' && isInZone) || setup.estado === 'EN_ZONA';
-            if (isOrWillBeEnZona) {
-                const distanceFromZone = setup.direccion === 'ALCISTA' 
-                    ? Math.max(0, currentPrice - setup.zona_hasta)
-                    : Math.max(0, setup.zona_desde - currentPrice);
-                
-                // For ACTIVA->EN_ZONA transition, always start from 0
-                // For existing EN_ZONA, use current value (or 0 if null from old data)
-                const currentMaxReaccion = (setup.estado === 'ACTIVA') ? 0 : (setup.max_reaccion_puntos || 0);
-                updateData.max_reaccion_puntos = Math.max(currentMaxReaccion, distanceFromZone);
-            }
-            
-            // Only update if there are meaningful changes (estado or max_reaccion_puntos)
-            const hasMeaningfulChanges = updateData.estado !== undefined || updateData.max_reaccion_puntos !== undefined;
-            if (hasMeaningfulChanges) {
-                await updateSetup(setup.id, updateData);
-            }
+            // Update state based on current price
+            await updateSetupState(setup, currentPrice);
         }
         
     } catch (error) {
@@ -729,22 +837,22 @@ async function createTableRow(symbol, data) {
     
     const smc = data.smc;
     
-    // Check for existing EN_ZONA setup
-    const setupEnZona = await getSetupEnZona(symbol);
+    // Check for existing EN_ZONA or PROFIT setup
+    const setupEnZonaOrProfit = await getSetupEnZonaOrProfit(symbol);
     
     // Decide which data source to use for display
     let displayZonaDesde, displayZonaHasta, displayDireccion, displayScore, displayOB, displayFVG, displayBarrida, displayEstado;
     
-    if (setupEnZona) {
-        // Use EN_ZONA setup data for display
-        displayZonaDesde = setupEnZona.zona_desde;
-        displayZonaHasta = setupEnZona.zona_hasta;
-        displayDireccion = setupEnZona.direccion;
-        displayScore = setupEnZona.score;
-        displayOB = setupEnZona.ob;
-        displayFVG = setupEnZona.fvg;
-        displayBarrida = setupEnZona.barrida;
-        displayEstado = 'EN_ZONA';
+    if (setupEnZonaOrProfit) {
+        // Use EN_ZONA or PROFIT setup data for display
+        displayZonaDesde = setupEnZonaOrProfit.zona_desde;
+        displayZonaHasta = setupEnZonaOrProfit.zona_hasta;
+        displayDireccion = setupEnZonaOrProfit.direccion;
+        displayScore = setupEnZonaOrProfit.score;
+        displayOB = setupEnZonaOrProfit.ob;
+        displayFVG = setupEnZonaOrProfit.fvg;
+        displayBarrida = setupEnZonaOrProfit.barrida;
+        displayEstado = setupEnZonaOrProfit.estado; // Will be 'EN_ZONA' or 'PROFIT'
     } else {
         // Use current analysis data
         displayZonaDesde = smc.zonaM15 ? smc.zonaM15.zona_desde : null;
@@ -819,6 +927,9 @@ async function createTableRow(symbol, data) {
     if (estadoText === 'EN_ZONA' || estadoText.includes('DENTRO')) {
         estadoClass += 'status-esperando';
         estadoText = 'En Zona';
+    } else if (estadoText === 'PROFIT') {
+        estadoClass += 'status-profit';
+        estadoText = 'En Profit';
     } else if (estadoText.includes('FUERA')) {
         estadoClass += 'status-vigilancia';
         estadoText = 'Fuera Zona';
@@ -1552,7 +1663,7 @@ function applyFilters() {
     tbody.innerHTML = '';
     
     if (filteredSetups.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="11" class="loading">No hay datos con los filtros seleccionados</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="13" class="loading">No hay datos con los filtros seleccionados</td></tr>';
         return;
     }
     
@@ -1586,7 +1697,7 @@ async function updateHistoryTable() {
             historyError.style.display = 'none';
         }
         
-        tbody.innerHTML = '<tr><td colspan="11" class="loading">Cargando historial...</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="13" class="loading">Cargando historial...</td></tr>';
         
         const setups = await fetchSetupHistory();
         
@@ -1629,7 +1740,7 @@ async function updateHistoryTable() {
         }
         
         if (tbody) {
-            tbody.innerHTML = '<tr><td colspan="11" class="loading">Error cargando historial</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="13" class="loading">Error cargando historial</td></tr>';
         }
     }
 }
@@ -1648,6 +1759,10 @@ function createHistoryRow(setup) {
     
     // Zone text
     const zonaText = `${formatPrice(setup.zona_desde)} - ${formatPrice(setup.zona_hasta)}`;
+    
+    // TP and SL prices
+    const tpText = setup.tp_price != null ? formatPrice(setup.tp_price) : '--';
+    const slText = setup.sl_price != null ? formatPrice(setup.sl_price) : '--';
     
     // Direction class
     const direccionClass = setup.direccion === 'ALCISTA' ? 'direction-alcista' : 'direction-bajista';
@@ -1668,6 +1783,9 @@ function createHistoryRow(setup) {
         case 'EN_ZONA':
             estadoClass += 'status-esperando';
             estadoText = 'EN ZONA';
+            break;
+        case 'PROFIT':
+            estadoClass += 'status-profit';
             break;
         case 'DESCARTADA':
             estadoClass += 'status-descartada';
@@ -1690,13 +1808,13 @@ function createHistoryRow(setup) {
     // Resultado puntos
     const resultadoPuntos = setup.resultado_puntos != null ? formatPrice(setup.resultado_puntos) : '--';
     
-    // Max reaccion - show "--" if estado is ACTIVA, only show value for EN_ZONA and other states
+    // Max reaccion - show "--" if estado is ACTIVA, only show value for EN_ZONA, PROFIT and other states
     let maxReaccion = '--';
     if (setup.estado === 'ACTIVA') {
         // For ACTIVA setups, always show "--" (as per requirement)
         maxReaccion = '--';
-    } else if (setup.estado === 'EN_ZONA') {
-        // For EN_ZONA setups, calculate and show max_reaccion_puntos
+    } else if (setup.estado === 'EN_ZONA' || setup.estado === 'PROFIT') {
+        // For EN_ZONA and PROFIT setups, calculate and show max_reaccion_puntos
         maxReaccion = setup.max_reaccion_puntos != null ? formatPrice(setup.max_reaccion_puntos) : '--';
     } else {
         // For other states (TP, SL, DESCARTADA), show the value if available
@@ -1708,6 +1826,8 @@ function createHistoryRow(setup) {
         <td>${setup.symbol || '--'}</td>
         <td class="direction-cell ${direccionClass}">${setup.direccion || '--'}</td>
         <td class="zone-cell">${zonaText}</td>
+        <td class="price-cell">${tpText}</td>
+        <td class="price-cell">${slText}</td>
         <td class="score-cell ${scoreClass}">${setup.score || 0}</td>
         <td class="${setup.ob ? 'indicator-yes' : 'indicator-no'}">${obText}</td>
         <td class="${setup.fvg ? 'indicator-yes' : 'indicator-no'}">${fvgText}</td>
@@ -1716,6 +1836,9 @@ function createHistoryRow(setup) {
         <td class="price-cell">${resultadoPuntos}</td>
         <td class="price-cell">${maxReaccion}</td>
     `;
+    
+    return tr;
+}
     
     return tr;
 }
