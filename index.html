@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GreenTrading Dashboard</title>
+    <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>🌿 GreenTrading Dashboard</h1>
+            <div class="last-update">
+                Última actualización: <span id="lastUpdate">--</span>
+            </div>
+        </header>
+
+        <div class="controls">
+            <div class="control-group">
+                <label for="symbolSelect">Símbolo:</label>
+                <select id="symbolSelect">
+                    <option value="Boom 1000 Index">Boom 1000 Index</option>
+                    <option value="Boom 900 Index">Boom 900 Index</option>
+                    <option value="Boom 600 Index">Boom 600 Index</option>
+                    <option value="Boom 500 Index">Boom 500 Index</option>
+                    <option value="Boom 300 Index">Boom 300 Index</option>
+                    <option value="Crash 1000 Index">Crash 1000 Index</option>
+                    <option value="Crash 900 Index">Crash 900 Index</option>
+                    <option value="Crash 600 Index">Crash 600 Index</option>
+                    <option value="Crash 500 Index">Crash 500 Index</option>
+                    <option value="Crash 300 Index">Crash 300 Index</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="timeframeSelect">Timeframe:</label>
+                <select id="timeframeSelect">
+                    <option value="M1">M1</option>
+                    <option value="M15" selected>M15</option>
+                    <option value="H1">H1</option>
+                </select>
+            </div>
+
+            <button id="refreshBtn" class="refresh-btn">🔄 Actualizar</button>
+        </div>
+
+        <div class="status-bar">
+            <span id="statusMessage">Iniciando...</span>
+            <span id="autoRefreshIndicator" class="auto-refresh-on">Auto-refresh: ON</span>
+        </div>
+
+        <div class="dashboard">
+            <div class="card">
+                <div class="card-title">Símbolo</div>
+                <div class="card-value" id="displaySymbol">--</div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">Timeframe</div>
+                <div class="card-value" id="displayTimeframe">--</div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">Precio Close</div>
+                <div class="card-value price" id="closePrice">--</div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">High</div>
+                <div class="card-value price" id="highPrice">--</div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">Low</div>
+                <div class="card-value price" id="lowPrice">--</div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">Timestamp</div>
+                <div class="card-value timestamp" id="timestamp">--</div>
+            </div>
+        </div>
+
+        <div class="candles-section">
+            <h2>Últimas 10 Velas</h2>
+            <div class="table-container">
+                <table id="candlesTable">
+                    <thead>
+                        <tr>
+                            <th>Timestamp</th>
+                            <th>Open</th>
+                            <th>High</th>
+                            <th>Low</th>
+                            <th>Close</th>
+                            <th>Volumen</th>
+                        </tr>
+                    </thead>
+                    <tbody id="candlesTableBody">
+                        <tr>
+                            <td colspan="6" class="loading">Cargando datos...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <footer class="footer">
+            <p>GreenTrading © 2026 | Dashboard auto-refresh: 30 segundos | MT5 sync: cada 3 minutos</p>
+        </footer>
+    </div>
+
+    <script src="assets/app.js"></script>
+</body>
+</html>
