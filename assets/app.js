@@ -112,8 +112,12 @@ async function fetchData(isAutoRefresh = false) {
             currentCandles = candlesH1;
         } else if (timeframe === 'M15') {
             currentCandles = candlesM15;
-        } else {
+        } else if (timeframe === 'M1') {
             currentCandles = candlesM1;
+        } else {
+            // Fallback para timeframes no soportados
+            currentCandles = candlesM15;
+            console.warn(`Timeframe ${timeframe} no soportado, usando M15 por defecto`);
         }
         
         if (currentCandles && currentCandles.length > 0) {
@@ -121,8 +125,8 @@ async function fetchData(isAutoRefresh = false) {
             updateTable(currentCandles.slice(-10).reverse());
         }
 
-        // Ejecutar análisis SMC
-        if (candlesH1 && candlesM15 && candlesH1.length > 0 && candlesM15.length > 0) {
+        // Ejecutar análisis SMC (requiere M15 como mínimo, H1 es opcional para tendencia)
+        if (candlesM15 && candlesM15.length > 0) {
             const smcResult = analyzeSMC(candlesH1, candlesM15, candlesM1, symbol);
             updateSMCDisplay(smcResult);
         } else {
@@ -170,16 +174,17 @@ async function fetchCandles(symbol, timeframe, limit) {
 // Helper function to calculate median
 function calculateMedian(values) {
     if (values.length === 0) return 0;
-    const sorted = values.slice().sort((a, b) => a - b);
+    // Ensure numeric sorting by explicitly parsing values
+    const sorted = values.slice().sort((a, b) => parseFloat(a) - parseFloat(b));
     const mid = Math.floor(sorted.length / 2);
     
     // For even-length arrays, return average of two middle elements
     if (sorted.length % 2 === 0) {
-        return (sorted[mid - 1] + sorted[mid]) / 2;
+        return (parseFloat(sorted[mid - 1]) + parseFloat(sorted[mid])) / 2;
     }
     
     // For odd-length arrays, return middle element
-    return sorted[mid];
+    return parseFloat(sorted[mid]);
 }
 
 // =========================
@@ -596,6 +601,8 @@ function crearZonaFinaM1(candlesM1, zonaM15, symbol) {
     }
 
     if (zonaDesde > zonaHasta) {
+        // Advertir sobre inversión de límites de zona
+        console.warn('Zona M1: límites invertidos, corrigiendo. Desde:', zonaDesde, 'Hasta:', zonaHasta);
         [zonaDesde, zonaHasta] = [zonaHasta, zonaDesde];
     }
 
@@ -611,11 +618,19 @@ function crearZonaFinaM1(candlesM1, zonaM15, symbol) {
 }
 
 function analyzeSMC(candlesH1, candlesM15, candlesM1, symbol) {
-    // Análisis H1
-    const swingsH1 = detectarSwings(candlesH1);
-    const { eventos: eventosH1, tendencia: tendenciaH1 } = detectarEstructura(candlesH1, swingsH1);
+    // Análisis H1 (opcional)
+    let swingsH1 = [];
+    let eventosH1 = [];
+    let tendenciaH1 = null;
+    
+    if (candlesH1 && candlesH1.length > 0) {
+        swingsH1 = detectarSwings(candlesH1);
+        const resultH1 = detectarEstructura(candlesH1, swingsH1);
+        eventosH1 = resultH1.eventos;
+        tendenciaH1 = resultH1.tendencia;
+    }
 
-    // Análisis M15
+    // Análisis M15 (requerido)
     const swingsM15 = detectarSwings(candlesM15);
     const { eventos: eventosM15, tendencia: tendenciaM15 } = detectarEstructura(candlesM15, swingsM15);
 
