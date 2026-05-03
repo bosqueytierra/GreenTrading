@@ -573,6 +573,9 @@ async function fetchAndAnalyzeSymbol(symbol) {
     const currentPrice = candlesM15[candlesM15.length - 1].close;
     const timestamp = candlesM15[candlesM15.length - 1].timestamp;
     
+    // Check for EN_ZONA setup and attach to analysis
+    const lockedSetup = await getSetupEnZona(symbol);
+    
     // Debug logging for Boom 1000 Index - SMC Results
     if (symbol === 'Boom 1000 Index') {
         console.log('Precio Actual:', currentPrice);
@@ -672,7 +675,8 @@ async function fetchAndAnalyzeSymbol(symbol) {
         symbol,
         currentPrice,
         timestamp,
-        smc: smcResult
+        smc: smcResult,
+        lockedSetup: lockedSetup
     };
 }
 
@@ -729,21 +733,18 @@ async function createTableRow(symbol, data) {
     
     const smc = data.smc;
     
-    // Check for existing EN_ZONA setup
-    const setupEnZona = await getSetupEnZona(symbol);
-    
     // Decide which data source to use for display
     let displayZonaDesde, displayZonaHasta, displayDireccion, displayScore, displayOB, displayFVG, displayBarrida, displayEstado;
     
-    if (setupEnZona) {
+    if (data.lockedSetup) {
         // Use EN_ZONA setup data for display
-        displayZonaDesde = setupEnZona.zona_desde;
-        displayZonaHasta = setupEnZona.zona_hasta;
-        displayDireccion = setupEnZona.direccion;
-        displayScore = setupEnZona.score;
-        displayOB = setupEnZona.ob;
-        displayFVG = setupEnZona.fvg;
-        displayBarrida = setupEnZona.barrida;
+        displayZonaDesde = data.lockedSetup.zona_desde;
+        displayZonaHasta = data.lockedSetup.zona_hasta;
+        displayDireccion = data.lockedSetup.direccion;
+        displayScore = data.lockedSetup.score;
+        displayOB = data.lockedSetup.ob;
+        displayFVG = data.lockedSetup.fvg;
+        displayBarrida = data.lockedSetup.barrida;
         displayEstado = 'EN_ZONA';
     } else {
         // Use current analysis data
