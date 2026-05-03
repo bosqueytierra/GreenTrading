@@ -388,8 +388,9 @@ function detectarBarridaPrevia(candles, evento, direccion, lookback = BARRIDA_LO
     }
 
     if (direccion === 'ALCISTA') {
+        // Rastrear mínimo incremental para O(n) en vez de O(n²)
+        let minimoAnterior = tramo[0].low;
         for (let j = BARRIDA_INITIAL_OFFSET; j < tramo.length; j++) {
-            const minimoAnterior = Math.min(...tramo.slice(0, j).map(c => c.low));
             const vela = tramo[j];
 
             if (vela.low < minimoAnterior && vela.close > minimoAnterior) {
@@ -401,10 +402,16 @@ function detectarBarridaPrevia(candles, evento, direccion, lookback = BARRIDA_LO
                     close: parseFloat(vela.close)
                 };
             }
+            
+            // Actualizar mínimo incremental
+            if (vela.low < minimoAnterior) {
+                minimoAnterior = vela.low;
+            }
         }
     } else {
+        // Rastrear máximo incremental para O(n) en vez de O(n²)
+        let maximoAnterior = tramo[0].high;
         for (let j = BARRIDA_INITIAL_OFFSET; j < tramo.length; j++) {
-            const maximoAnterior = Math.max(...tramo.slice(0, j).map(c => c.high));
             const vela = tramo[j];
 
             if (vela.high > maximoAnterior && vela.close < maximoAnterior) {
@@ -415,6 +422,11 @@ function detectarBarridaPrevia(candles, evento, direccion, lookback = BARRIDA_LO
                     high: parseFloat(vela.high),
                     close: parseFloat(vela.close)
                 };
+            }
+            
+            // Actualizar máximo incremental
+            if (vela.high > maximoAnterior) {
+                maximoAnterior = vela.high;
             }
         }
     }
@@ -543,15 +555,21 @@ function crearZonaFinaM1(candlesM1, zonaM15, symbol) {
     const precioActual = parseFloat(candlesM1[candlesM1.length - 1].close);
     const direccionOperativa = direccionOperativaPorIndice(symbol);
 
-    const cercanas = candlesM1.filter(c => 
-        c.high >= zonaM15.zona_desde && c.low <= zonaM15.zona_hasta
-    );
+    // Filtrar velas cercanas y almacenar índice original para evitar indexOf
+    const cercanas = [];
+    for (let i = 0; i < candlesM1.length; i++) {
+        const c = candlesM1[i];
+        if (c.high >= zonaM15.zona_desde && c.low <= zonaM15.zona_hasta) {
+            cercanas.push({ candle: c, originalIndex: i });
+        }
+    }
 
     let tramo;
     let confirmacion;
 
     if (cercanas.length > 0) {
-        const idx = candlesM1.indexOf(cercanas[cercanas.length - 1]);
+        const lastCercana = cercanas[cercanas.length - 1];
+        const idx = lastCercana.originalIndex;
         const inicio = Math.max(0, idx - M1_VELAS_ZONA + 1);
         tramo = candlesM1.slice(inicio, idx + 1);
         confirmacion = 'M1 dentro/cerca de zona madre M15';
