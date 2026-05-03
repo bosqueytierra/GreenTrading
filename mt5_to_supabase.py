@@ -456,7 +456,7 @@ class CollectorGUI:
                     if df is None:
                         continue
                     
-                    # NO filtramos por timestamp, enviamos todas las velas leídas
+                    # No filtramos por timestamp, enviamos todas las velas leídas
                     # UPSERT actualizará las existentes e insertará las nuevas
                     candles_batch = []
                     for _, row in df.iterrows():
@@ -589,7 +589,13 @@ def format_candle_for_supabase(symbol, timeframe, row):
 
 
 def upload_to_supabase(candles_data):
-    """Subir velas a Supabase tabla market_candles usando UPSERT para actualizar velas existentes"""
+    """
+    Subir velas a Supabase tabla market_candles usando UPSERT para actualizar velas existentes.
+    
+    El UPSERT se basa en el constraint unique_candle (symbol, timeframe, timestamp).
+    Si una vela ya existe con esa combinación, se actualizan sus valores OHLC.
+    Si no existe, se inserta como nueva.
+    """
     
     if not candles_data:
         return False
@@ -602,6 +608,7 @@ def upload_to_supabase(candles_data):
         "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
         "Content-Type": "application/json",
         # resolution=merge-duplicates hace que actualice en lugar de rechazar duplicados
+        # Se basa en la constraint unique_candle: (symbol, timeframe, timestamp)
         "Prefer": "return=minimal,resolution=merge-duplicates"
     }
     
