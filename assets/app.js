@@ -161,8 +161,8 @@ async function fetchData(isAutoRefresh = false) {
 }
 
 async function fetchCandles(symbol, timeframe, limit) {
-    // Request data in ascending order to avoid reversing large arrays
-    const url = `${SUPABASE_URL}/rest/v1/market_candles?symbol=eq.${encodeURIComponent(symbol)}&timeframe=eq.${timeframe}&order=timestamp.asc&limit=${limit}`;
+    // Request latest data in descending order, then reverse to get chronological ascending order
+    const url = `${SUPABASE_URL}/rest/v1/market_candles?symbol=eq.${encodeURIComponent(symbol)}&timeframe=eq.${timeframe}&order=timestamp.desc&limit=${limit}`;
     
     console.log(`Fetching ${timeframe} candles:`, url);
 
@@ -181,8 +181,8 @@ async function fetchCandles(symbol, timeframe, limit) {
 
     const data = await response.json();
     
-    // Data already in ascending order for analysis
-    return data;
+    // Reverse to get data in ascending chronological order for SMC analysis
+    return data.reverse();
 }
 
 // Helper function to calculate median
