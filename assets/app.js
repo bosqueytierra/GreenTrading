@@ -1,6 +1,8 @@
 // Configuración de Supabase
 // IMPORTANTE: Reemplazar estas credenciales con las reales de tu proyecto Supabase
-// Puedes usar config.example.js como plantilla y crear tu propio config.js
+// SUPABASE_URL debe ser SOLO la URL base, sin slash final y sin /rest/v1
+// Formato correcto: https://xxxx.supabase.co (sin trailing slash)
+// Ejemplo: const SUPABASE_URL = 'https://rqjmndaqxxgljpubnfkg.supabase.co';
 const SUPABASE_URL = 'YOUR_SUPABASE_URL';
 const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
 
@@ -15,7 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function initializeApp() {
     // Verificar configuración
-    if (SUPABASE_URL === 'https://rqjmndaqxxgljpubnfkg.supabase.co' || SUPABASE_ANON_KEY === 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJxam1uZGFxeHhnbGpwdWJuZmtnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NDYzOTMsImV4cCI6MjA5MzMyMjM5M30.6WCZP39R9nMoDPgasGxPt6qbR8rvVcB3kX1gJvnKuv0') {
+    if (SUPABASE_URL === 'YOUR_SUPABASE_URL' || SUPABASE_ANON_KEY === 'YOUR_SUPABASE_ANON_KEY') {
         updateStatus('⚠️ Configurar SUPABASE_URL y SUPABASE_ANON_KEY en assets/app.js', 'warning');
         return;
     }
@@ -73,6 +75,9 @@ async function fetchData(isAutoRefresh = false) {
     try {
         // Construir URL de Supabase con filtros y orden
         const url = `${SUPABASE_URL}/rest/v1/market_candles?symbol=eq.${encodeURIComponent(symbol)}&timeframe=eq.${timeframe}&order=timestamp.desc&limit=10`;
+        
+        // Mostrar URL en consola para debugging
+        console.log('URL de consulta:', url);
 
         const response = await fetch(url, {
             method: 'GET',
