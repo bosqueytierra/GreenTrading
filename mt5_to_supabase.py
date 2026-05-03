@@ -11,7 +11,7 @@ import os
 import sys
 import time
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 import MetaTrader5 as mt5
 import pandas as pd
 import requests
@@ -74,6 +74,28 @@ UPDATE_CANDLES_BY_TIMEFRAME = {
     "M1": 20,
     "M15": 10,
     "H1": 5
+}
+
+# Configuración de recuperación automática por timeframe
+RECOVERY_CONFIG = {
+    "M1": {
+        "divisor": 1,      # Minutos por vela
+        "margen": 20,      # Velas extra de seguridad
+        "minimo": 20,      # Mínimo de velas a recuperar
+        "maximo": 10000    # Máximo de velas a recuperar
+    },
+    "M15": {
+        "divisor": 15,
+        "margen": 10,
+        "minimo": 10,
+        "maximo": 2000
+    },
+    "H1": {
+        "divisor": 60,
+        "margen": 5,
+        "minimo": 5,
+        "maximo": 700
+    }
 }
 
 # Intervalo de sincronización (3 minutos)
@@ -468,44 +490,35 @@ class CollectorGUI:
                     
                     # Log de timestamps
                     self.log(f"│  📅 [{tf_name}] Última Supabase: {last_timestamp_supabase}", "info")
-                    self.log(f"│  📅 [{tf_name}] Última MT5: {datetime.fromtimestamp(last_timestamp_mt5).strftime('%Y-%m-%dT%H:%M:%S')}Z", "info")
+                    self.log(f"│  📅 [{tf_name}] Última MT5: {datetime.fromtimestamp(last_timestamp_mt5, tz=timezone.utc).strftime('%Y-%m-%dT%H:%M:%S')}Z", "info")
                     
                     # 4. Comparar: diferencia en segundos
                     diferencia_segundos = last_timestamp_mt5 - last_timestamp_supabase_unix
                     diferencia_minutos = diferencia_segundos / 60.0
                     
-                    # 5. Calcular velas faltantes según timeframe
-                    if tf_name == "M1":
-                        velas_faltantes = diferencia_minutos / 1
-                        margen = 20
-                        minimo = 20
-                        maximo = 10000
-                    elif tf_name == "M15":
-                        velas_faltantes = diferencia_minutos / 15
-                        margen = 10
-                        minimo = 10
-                        maximo = 2000
-                    elif tf_name == "H1":
-                        velas_faltantes = diferencia_minutos / 60
-                        margen = 5
-                        minimo = 5
-                        maximo = 700
+                    # Validar que la diferencia no sea negativa
+                    if diferencia_segundos < 0:
+                        self.log(f"│  ⚠️ [{tf_name}] MT5 tiene timestamp anterior a Supabase. Usando mínimo configurado.", "warning")
+                        num_candles = RECOVERY_CONFIG[tf_name]["minimo"]
                     else:
-                        velas_faltantes = 0
-                        margen = 0
-                        minimo = 0
-                        maximo = 0
-                    
-                    # 6. Agregar margen
-                    num_candles = int(velas_faltantes) + margen
-                    
-                    # 7. Aplicar mínimos
-                    if num_candles < minimo:
-                        num_candles = minimo
-                    
-                    # 8. Aplicar máximos
-                    if num_candles > maximo:
-                        num_candles = maximo
+                        # 5. Calcular velas faltantes según timeframe
+                        config = RECOVERY_CONFIG.get(tf_name)
+                        if config is None:
+                            self.log(f"│  ⚠️ [{tf_name}] Configuración no encontrada", "warning")
+                            continue
+                        
+                        velas_faltantes = diferencia_minutos / config["divisor"]
+                        
+                        # 6. Agregar margen
+                        num_candles = int(velas_faltantes) + config["margen"]
+                        
+                        # 7. Aplicar mínimos
+                        if num_candles < config["minimo"]:
+                            num_candles = config["minimo"]
+                        
+                        # 8. Aplicar máximos
+                        if num_candles > config["maximo"]:
+                            num_candles = config["maximo"]
                     
                     # Log de recuperación
                     self.log(f"│  🔄 [{tf_name}] Recuperación: leyendo {num_candles} velas", "info")
