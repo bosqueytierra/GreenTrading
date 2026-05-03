@@ -1,15 +1,25 @@
 """
-SMC Engine - Lógica Smart Money Concepts.
+SMC Engine - Motor Smart Money Concepts completo.
 
-Reorganización de la lógica existente en smc_m15_pro.py.
+Lógica extraída de smc_m15_pro.py.
 No contiene I/O (MT5, Supabase, UI). Solo cálculos puros sobre DataFrames.
+
+Funciones principales:
+- detectar_swings: Detecta swing highs y lows
+- detect_bos: Detecta Break of Structure
+- detect_choch: Detecta Change of Character
+- detect_fvg: Detecta Fair Value Gaps
+- detect_order_blocks: Detecta Order Blocks
+- detect_m15_zones: Crea zona depurada M15
+- refine_zone_m1: Refinamiento M1 (passthrough)
+- analyze_smc: Función principal de análisis
 """
 
 import pandas as pd
 
 
 # =========================
-# CONFIG
+# CONFIGURACIÓN
 # =========================
 
 SWING_LOOKBACK = 3
@@ -17,10 +27,20 @@ CLOSE_BREAK = True
 
 
 # =========================
-# SWINGS (helper interno)
+# SWINGS
 # =========================
 
 def detectar_swings(df, lookback=SWING_LOOKBACK):
+    """
+    Detecta swing highs y swing lows en el DataFrame.
+    
+    Args:
+        df: DataFrame con columnas ['high', 'low', 'time']
+        lookback: Número de velas a considerar antes y después
+    
+    Returns:
+        Lista de diccionarios con swings detectados
+    """
     swings = []
 
     for i in range(lookback, len(df) - lookback):
@@ -55,11 +75,19 @@ def detectar_swings(df, lookback=SWING_LOOKBACK):
 # =========================
 # ESTRUCTURA (BOS + CHOCH)
 # =========================
-# En el original, BOS y CHOCH se calculan en la misma pasada porque CHOCH
-# depende del estado de tendencia previo. Mantenemos esa función núcleo
-# intacta y exponemos detect_bos / detect_choch como filtros sobre su salida.
 
-def _detect_structure(df, swings):
+def _detectar_estructura(df, swings):
+    """
+    Detecta estructura de mercado: BOS (Break of Structure) y CHOCH (Change of Character).
+    Esta es la función interna que detecta ambos tipos de eventos en una sola pasada.
+    
+    Args:
+        df: DataFrame con columnas ['close', 'high', 'low', 'time']
+        swings: Lista de swings detectados
+    
+    Returns:
+        Tupla (eventos, tendencia_actual)
+    """
     eventos = []
     tendencia = None
 
@@ -125,33 +153,62 @@ def _detect_structure(df, swings):
 
 
 def detect_bos(df, swings=None):
-    """Devuelve solo los eventos BOS detectados sobre df."""
+    """
+    Detecta solo los eventos Break of Structure (BOS).
+    
+    Args:
+        df: DataFrame con datos de velas
+        swings: Lista de swings (opcional, se calculará si no se provee)
+    
+    Returns:
+        Lista de eventos BOS
+    """
     if swings is None:
         swings = detectar_swings(df, SWING_LOOKBACK)
-    eventos, _ = _detect_structure(df, swings)
+    eventos, _ = _detectar_estructura(df, swings)
     return [e for e in eventos if "BOS" in e["evento"]]
 
 
 def detect_choch(df, swings=None):
-    """Devuelve solo los eventos CHOCH detectados sobre df."""
+    """
+    Detecta solo los eventos Change of Character (CHOCH).
+    
+    Args:
+        df: DataFrame con datos de velas
+        swings: Lista de swings (opcional, se calculará si no se provee)
+    
+    Returns:
+        Lista de eventos CHOCH
+    """
     if swings is None:
         swings = detectar_swings(df, SWING_LOOKBACK)
-    eventos, _ = _detect_structure(df, swings)
+    eventos, _ = _detectar_estructura(df, swings)
     return [e for e in eventos if "CHOCH" in e["evento"]]
 
 
 # =========================
-# FVG
+# FVG (Fair Value Gaps)
 # =========================
 
 def detect_fvg(df):
+    """
+    Detecta Fair Value Gaps (FVG) - huecos dejados por movimientos impulsivos.
+    
+    FVG Alcista: low actual > high de hace 2 velas
+    FVG Bajista: high actual < low de hace 2 velas
+    
+    Args:
+        df: DataFrame con columnas ['high', 'low', 'time']
+    
+    Returns:
+        Lista de FVGs detectados
+    """
     fvgs = []
 
     for i in range(2, len(df)):
         vela_1 = df.iloc[i-2]
         vela_3 = df.iloc[i]
 
-        # FVG alcista: low actual > high de hace 2 velas
         if vela_3["low"] > vela_1["high"]:
             fvgs.append({
                 "index": i,
@@ -161,7 +218,6 @@ def detect_fvg(df):
                 "hasta": float(vela_3["low"])
             })
 
-        # FVG bajista: high actual < low de hace 2 velas
         if vela_3["high"] < vela_1["low"]:
             fvgs.append({
                 "index": i,
@@ -179,6 +235,19 @@ def detect_fvg(df):
 # =========================
 
 def _buscar_order_block(df, evento):
+    """
+    Busca el Order Block asociado a un evento de estructura.
+    
+    Order Block Alcista: última vela bajista antes del impulso alcista
+    Order Block Bajista: última vela alcista antes del impulso bajista
+    
+    Args:
+        df: DataFrame con datos de velas
+        evento: Diccionario con información del evento
+    
+    Returns:
+        Diccionario con datos del Order Block o None
+    """
     idx = evento["index"]
     direccion = "ALCISTA" if "ALCISTA" in evento["evento"] else "BAJISTA"
 
@@ -186,7 +255,6 @@ def _buscar_order_block(df, evento):
     tramo = df.iloc[inicio:idx]
 
     if direccion == "ALCISTA":
-        # última vela bajista antes del impulso
         candidatas = tramo[tramo["close"] < tramo["open"]]
         if candidatas.empty:
             return None
@@ -200,7 +268,6 @@ def _buscar_order_block(df, evento):
         }
 
     else:
-        # última vela alcista antes del impulso bajista
         candidatas = tramo[tramo["close"] > tramo["open"]]
         if candidatas.empty:
             return None
@@ -215,7 +282,16 @@ def _buscar_order_block(df, evento):
 
 
 def detect_order_blocks(df, eventos):
-    """Devuelve el OB asociado a cada evento (mismo criterio que el original)."""
+    """
+    Detecta Order Blocks para una lista de eventos.
+    
+    Args:
+        df: DataFrame con datos de velas
+        eventos: Lista de eventos de estructura
+    
+    Returns:
+        Lista de Order Blocks detectados
+    """
     obs = []
     for ev in eventos:
         ob = _buscar_order_block(df, ev)
@@ -225,10 +301,25 @@ def detect_order_blocks(df, eventos):
 
 
 # =========================
-# BARRIDA / SWEEP (helper interno)
+# BARRIDA / SWEEP
 # =========================
 
 def _detectar_barrida_previa(df, evento, direccion, lookback=30):
+    """
+    Detecta barridas de liquidez previas al evento.
+    
+    Barrida Alcista: vela que toca mínimo previo y cierra por encima
+    Barrida Bajista: vela que toca máximo previo y cierra por debajo
+    
+    Args:
+        df: DataFrame con datos de velas
+        evento: Evento de estructura
+        direccion: "ALCISTA" o "BAJISTA"
+        lookback: Número de velas a revisar hacia atrás
+    
+    Returns:
+        Diccionario con datos de barrida o None
+    """
     idx = evento["index"]
     inicio = max(0, idx - lookback)
     tramo = df.iloc[inicio:idx]
@@ -268,7 +359,23 @@ def _detectar_barrida_previa(df, evento, direccion, lookback=30):
 # =========================
 
 def detect_m15_zones(df_m15, eventos_m15, fvgs_m15):
-    """Construye la zona depurada M15 (equivalente a crear_zona_m15 del original)."""
+    """
+    Construye la zona depurada M15 combinando:
+    - Último evento de estructura
+    - Order Block
+    - Fair Value Gap
+    - Barrida previa
+    
+    Calcula un score de confluencia basado en los elementos presentes.
+    
+    Args:
+        df_m15: DataFrame M15
+        eventos_m15: Lista de eventos de estructura M15
+        fvgs_m15: Lista de FVGs M15
+    
+    Returns:
+        Diccionario con zona completa o None
+    """
     if not eventos_m15:
         return None
 
@@ -336,8 +443,17 @@ def detect_m15_zones(df_m15, eventos_m15, fvgs_m15):
 
 def refine_zone_m1(zona, df_m1=None):
     """
-    Placeholder: en smc_m15_pro.py no existe lógica de refinamiento M1.
-    Para no crear lógica nueva, se devuelve la zona sin modificar.
+    Refinamiento de zona con timeframe M1.
+    
+    Nota: En smc_m15_pro.py no existe lógica de refinamiento M1.
+    Esta función actúa como passthrough sin modificar la zona.
+    
+    Args:
+        zona: Zona M15 a refinar
+        df_m1: DataFrame M1 (opcional)
+    
+    Returns:
+        Zona sin modificar
     """
     return zona
 
@@ -348,14 +464,35 @@ def refine_zone_m1(zona, df_m1=None):
 
 def analyze_smc(df_h1, df_m15, df_m1=None):
     """
-    Replica el cómputo del main() original (sin I/O, sin prints).
-    Recibe DataFrames ya cargados y devuelve el resultado del análisis SMC.
+    Función principal de análisis SMC.
+    
+    Procesa los DataFrames y ejecuta todo el análisis Smart Money Concepts:
+    1. Detecta swings en H1 y M15
+    2. Detecta estructura (BOS/CHOCH) en ambos timeframes
+    3. Detecta FVGs en M15
+    4. Construye zona depurada M15
+    5. Opcionalmente refina con M1
+    
+    Args:
+        df_h1: DataFrame con datos H1 (columnas: time, open, high, low, close)
+        df_m15: DataFrame con datos M15 (columnas: time, open, high, low, close)
+        df_m1: DataFrame con datos M1 (opcional)
+    
+    Returns:
+        Diccionario con:
+        - tendencia_h1: Tendencia actual en H1
+        - tendencia_m15: Tendencia actual en M15
+        - eventos_h1: Lista de eventos de estructura H1
+        - eventos_m15: Lista de eventos de estructura M15
+        - fvgs_m15: Lista de FVGs en M15
+        - zona: Zona depurada M15 (o None)
+        - precio_actual: Precio actual (close de última vela M15)
     """
     swings_h1 = detectar_swings(df_h1, SWING_LOOKBACK)
-    eventos_h1, tendencia_h1 = _detect_structure(df_h1, swings_h1)
+    eventos_h1, tendencia_h1 = _detectar_estructura(df_h1, swings_h1)
 
     swings_m15 = detectar_swings(df_m15, SWING_LOOKBACK)
-    eventos_m15, tendencia_m15 = _detect_structure(df_m15, swings_m15)
+    eventos_m15, tendencia_m15 = _detectar_estructura(df_m15, swings_m15)
 
     fvgs_m15 = detect_fvg(df_m15)
 
