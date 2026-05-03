@@ -17,7 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function initializeApp() {
     // Verificar configuración
-    if (SUPABASE_URL === 'https://rqjmndaqxxgljpubnfkg.supabase.co' || SUPABASE_ANON_KEY === 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJxam1uZGFxeHhnbGpwdWJuZmtnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NDYzOTMsImV4cCI6MjA5MzMyMjM5M30.6WCZP39R9nMoDPgasGxPt6qbR8rvVcB3kX1gJvnKuv0') {
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY || SUPABASE_URL.includes('YOUR_') || SUPABASE_ANON_KEY.includes('YOUR_')) {
         updateStatus('⚠️ Configurar SUPABASE_URL y SUPABASE_ANON_KEY en assets/app.js', 'warning');
         return;
     }
