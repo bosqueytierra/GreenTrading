@@ -601,15 +601,13 @@ def upload_to_supabase(candles_data):
         return False
     
     # POST con UPSERT: actualiza si existe (on_conflict) o inserta si no existe
-    url = f"{SUPABASE_URL}/rest/v1/market_candles"
+    url = f"{SUPABASE_URL}/rest/v1/market_candles?on_conflict=symbol,timeframe,timestamp"
     
     headers = {
         "apikey": SUPABASE_ANON_KEY,
         "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
         "Content-Type": "application/json",
-        # resolution=merge-duplicates hace que actualice en lugar de rechazar duplicados
-        # Se basa en la constraint unique_candle: (symbol, timeframe, timestamp)
-        "Prefer": "return=minimal,resolution=merge-duplicates"
+        "Prefer": "resolution=merge-duplicates,return=minimal"
     }
     
     try:
