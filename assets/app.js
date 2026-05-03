@@ -3,8 +3,8 @@
 // SUPABASE_URL debe ser SOLO la URL base, sin slash final y sin /rest/v1
 // Formato correcto: https://xxxx.supabase.co (sin trailing slash)
 // Ejemplo: const SUPABASE_URL = 'https://rqjmndaqxxgljpubnfkg.supabase.co';
-const SUPABASE_URL = 'YOUR_SUPABASE_URL';
-const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+const SUPABASE_URL = 'https://rqjmndaqxxgljpubnfkg.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJxam1uZGFxeHhnbGpwdWJuZmtnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NDYzOTMsImV4cCI6MjA5MzMyMjM5M30.6WCZP39R9nMoDPgasGxPt6qbR8rvVcB3kX1gJvnKuv0';
 
 // Variables globales
 let autoRefreshInterval = null;
@@ -17,7 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function initializeApp() {
     // Verificar configuración
-    if (SUPABASE_URL === 'YOUR_SUPABASE_URL' || SUPABASE_ANON_KEY === 'YOUR_SUPABASE_ANON_KEY') {
+    if (SUPABASE_URL === 'https://rqjmndaqxxgljpubnfkg.supabase.co' || SUPABASE_ANON_KEY === 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJxam1uZGFxeHhnbGpwdWJuZmtnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NDYzOTMsImV4cCI6MjA5MzMyMjM5M30.6WCZP39R9nMoDPgasGxPt6qbR8rvVcB3kX1gJvnKuv0') {
         updateStatus('⚠️ Configurar SUPABASE_URL y SUPABASE_ANON_KEY en assets/app.js', 'warning');
         return;
     }
