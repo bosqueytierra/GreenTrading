@@ -375,8 +375,9 @@ async function trackZoneHistory(symbol, analysis) {
                 console.log(`✓ Setup ${setup.id} cambió a EN_ZONA para ${symbol}`);
             }
             
-            // Calculate max_reaccion_puntos only if estado is EN_ZONA
-            if (setup.estado === 'EN_ZONA' || (setup.estado === 'ACTIVA' && isInZone)) {
+            // Calculate max_reaccion_puntos only if estado is EN_ZONA (current or new)
+            const willBeEnZona = (setup.estado === 'ACTIVA' && isInZone) || setup.estado === 'EN_ZONA';
+            if (willBeEnZona) {
                 const distanceFromZone = setup.direccion === 'ALCISTA' 
                     ? Math.max(0, currentPrice - setup.zona_hasta)
                     : Math.max(0, setup.zona_desde - currentPrice);
