@@ -173,7 +173,7 @@ async function fetchAllIndices() {
 
 async function fetchAndAnalyzeSymbol(symbol) {
     // Fetch multiple timeframes
-    const [candlesH1, candlesM15, candlesM1] = await Promise.all([
+    let [candlesH1, candlesM15, candlesM1] = await Promise.all([
         fetchCandles(symbol, 'H1', 500),
         fetchCandles(symbol, 'M15', 800),
         fetchCandles(symbol, 'M1', 600)
@@ -185,6 +185,11 @@ async function fetchAndAnalyzeSymbol(symbol) {
             message: 'No hay datos M15'
         };
     }
+    
+    // Excluir la última vela (abierta) de cada timeframe para comparar solo velas cerradas
+    candlesH1 = candlesH1.slice(0, -1);
+    candlesM15 = candlesM15.slice(0, -1);
+    candlesM1 = candlesM1.slice(0, -1);
     
     // Debug logging for Boom 1000 Index
     if (symbol === 'Boom 1000 Index') {

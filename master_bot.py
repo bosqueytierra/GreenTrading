@@ -567,6 +567,11 @@ def analizar_smc_pro(symbol):
     if df_h1.empty or df_m15.empty:
         return "No se pudo obtener data H1/M15.\n"
 
+    # Excluir la última vela (abierta) de cada timeframe para comparar solo velas cerradas
+    df_h1 = df_h1.iloc[:-1]
+    df_m15 = df_m15.iloc[:-1]
+    df_m1 = df_m1.iloc[:-1]
+
     swings_h1 = detectar_swings(df_h1, SWING_LOOKBACK)
     eventos_h1, tendencia_h1 = detectar_estructura(df_h1, swings_h1)
 
