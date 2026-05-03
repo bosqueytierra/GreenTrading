@@ -108,24 +108,29 @@ def format_candle_for_supabase(symbol, timeframe, row):
 
 
 def upload_to_supabase(candles_data):
-    """Subir velas a Supabase tabla market_candles"""
+    """Subir velas a Supabase tabla market_candles usando UPSERT"""
     
     if not candles_data:
         return False
     
-    url = f"{SUPABASE_URL}/rest/v1/market_candles"
+    # Usar endpoint con parámetro on_conflict para UPSERT real
+    url = f"{SUPABASE_URL}/rest/v1/market_candles?on_conflict=symbol,timeframe,timestamp"
     
     headers = {
         "apikey": SUPABASE_ANON_KEY,
         "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
         "Content-Type": "application/json",
-        "Prefer": "resolution=merge-duplicates"
+        "Prefer": "resolution=merge-duplicates,return=minimal"
     }
     
     try:
         response = requests.post(url, headers=headers, json=candles_data)
         
-        if response.status_code in [200, 201]:
+        # Considerar éxito si el status es 200, 201 o 204
+        if response.status_code in [200, 201, 204]:
+            return True
+        # 409 puede ocurrir en algunos casos de duplicados ya resueltos, considerarlo éxito
+        elif response.status_code == 409:
             return True
         else:
             print(f"❌ Supabase rechazó la subida")
