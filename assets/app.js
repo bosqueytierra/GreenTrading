@@ -1,5 +1,6 @@
 // Configuración de Supabase
 // IMPORTANTE: Reemplazar estas credenciales con las reales de tu proyecto Supabase
+// Puedes usar config.example.js como plantilla y crear tu propio config.js
 const SUPABASE_URL = 'YOUR_SUPABASE_URL';
 const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
 
@@ -175,7 +176,9 @@ function formatPrice(price) {
 
 function formatVolume(volume) {
     if (volume === null || volume === undefined) return '--';
-    return parseInt(volume).toLocaleString('es-ES');
+    const numValue = Number(volume);
+    if (isNaN(numValue)) return '--';
+    return Math.round(numValue).toLocaleString('es-ES');
 }
 
 function formatTimestamp(timestamp) {
