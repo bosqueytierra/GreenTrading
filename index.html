@@ -73,13 +73,13 @@
 
             <!-- Dashboard View -->
             <div id="dashboardView" class="view-content active">
+                <!-- Strategy Tabs -->
+                <div class="strategy-tabs">
+                    <button class="strategy-tab active" data-strategy="SMC_M15_PRO">SMC M15 PRO</button>
+                    <button class="strategy-tab" data-strategy="SMC_H1_M15_PRO">SMC PRO TENDENCIA H1 + CHOCH/BOS (M15)</button>
+                </div>
+                
                 <div class="controls-bar">
-                    <div class="control-group">
-                        <label for="strategySelect">Estrategia:</label>
-                        <select id="strategySelect">
-                            <option value="SMC_M15_PRO" selected>SMC M15 PRO</option>
-                        </select>
-                    </div>
                     <div class="control-group">
                         <button id="refreshBtn" class="refresh-btn">🔄 Actualizar Todo</button>
                     </div>
@@ -150,6 +150,12 @@
 
             <!-- History View -->
             <div id="historyView" class="view-content">
+                <!-- Strategy Tabs for History -->
+                <div class="strategy-tabs">
+                    <button class="strategy-tab active" data-strategy="SMC_M15_PRO">Historial SMC M15 PRO</button>
+                    <button class="strategy-tab" data-strategy="SMC_H1_M15_PRO">Historial SMC PRO TENDENCIA H1 + CHOCH/BOS (M15)</button>
+                </div>
+                
                 <div class="controls-bar">
                     <div class="control-group">
                         <button id="refreshHistoryBtn" class="refresh-btn">🔄 Actualizar Historial</button>
