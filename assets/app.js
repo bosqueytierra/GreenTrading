@@ -388,9 +388,11 @@ async function updateSetupState(setup, currentPrice) {
             console.log(`✓ Setup ${setup.id} transitioned EN_ZONA → SL for ${setup.symbol}`);
         }
         // Check if price is still IN zone - must remain EN_ZONA
+        // This explicit check ensures PROFIT cannot be marked while price is within zone boundaries
         else if (isInZone) {
-            // Price is still within the zone, keep state as EN_ZONA
-            // No state change, just continue tracking
+            // Price is still within the zone (zona_desde ≤ precio_actual ≤ zona_hasta)
+            // Keep state as EN_ZONA - no transition to PROFIT or TP allowed
+            // Continue tracking max_reaccion_puntos below
         }
         // EN_ZONA → PROFIT: Price exits zone favorably but hasn't reached TP yet
         else if (setup.direccion === 'ALCISTA' && currentPrice > setup.zona_hasta && currentPrice < tp_price) {
