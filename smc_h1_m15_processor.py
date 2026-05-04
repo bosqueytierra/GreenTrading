@@ -60,6 +60,9 @@ PROCESS_INTERVAL_SECONDS = 180  # 3 minutos
 # Umbral de similitud de zona (en puntos)
 ZONE_SIMILARITY_THRESHOLD = 10  # Diferencia máxima para considerar zonas similares
 
+# Estados terminales (zonas cerradas)
+TERMINAL_STATES = {"TP", "SL", "PROFIT", "PAUSADA", "DESCARTADA"}
+
 # =========================
 # SUPABASE HELPERS
 # =========================
@@ -72,6 +75,38 @@ def supabase_headers():
         "Content-Type": "application/json",
         "Prefer": "return=representation"
     }
+
+
+def get_zone_boundaries(zona_desde, zona_hasta):
+    """
+    Calcula los límites (mínimo y máximo) de una zona.
+    
+    Funciona para zonas alcistas y bajistas independientemente del orden
+    en que se proporcionen zona_desde y zona_hasta.
+    
+    Args:
+        zona_desde: Límite inferior o superior de la zona
+        zona_hasta: Límite superior o inferior de la zona
+    
+    Returns:
+        Tupla (zona_min, zona_max)
+    """
+    return min(zona_desde, zona_hasta), max(zona_desde, zona_hasta)
+
+
+def calculate_zone_size(zona_desde, zona_hasta):
+    """
+    Calcula el tamaño de una zona en puntos.
+    
+    Args:
+        zona_desde: Límite inferior o superior de la zona
+        zona_hasta: Límite superior o inferior de la zona
+    
+    Returns:
+        Tamaño absoluto de la zona en puntos
+    """
+    return abs(zona_hasta - zona_desde)
+
 
 
 def get_candles_from_supabase(symbol, timeframe, limit=1000):
@@ -212,8 +247,8 @@ def save_zone_to_supabase(symbol, result, zona):
         estado = "DESCARTADA"
         motivo_cierre = result['razon_validacion']
     
-    # Calcular TP y SL (ratio 1:1)
-    zona_size = abs(zona['zona_hasta'] - zona['zona_desde'])
+    # Calcular TP y SL (ratio 1:1) usando helper
+    zona_size = calculate_zone_size(zona['zona_desde'], zona['zona_hasta'])
     
     if zona['direccion'] == "ALCISTA":
         precio_entrada = zona['zona_desde']
@@ -285,7 +320,7 @@ def update_zone_state(zone_id, new_state, precio_actual, motivo=None):
         "estado": new_state
     }
     
-    if new_state in ["TP", "SL", "PROFIT", "PAUSADA", "DESCARTADA"]:
+    if new_state in TERMINAL_STATES:
         data["fecha_cierre"] = datetime.now(timezone.utc).isoformat()
         if motivo:
             data["motivo_cierre"] = motivo
@@ -400,9 +435,8 @@ def update_active_zones_states(symbol, precio_actual):
         sl_price = zona['sl_price']
         estado_actual = zona['estado']
         
-        # Calcular límites de zona (mínimo y máximo) independientemente de la dirección
-        zona_min = min(zona_desde, zona_hasta)
-        zona_max = max(zona_desde, zona_hasta)
+        # Calcular límites de zona usando helper
+        zona_min, zona_max = get_zone_boundaries(zona_desde, zona_hasta)
         
         # Verificar si precio está EN_ZONA
         if zona_min <= precio_actual <= zona_max:
