@@ -1050,6 +1050,11 @@ select:focus {
     color: #059669;
 }
 
+.status-pausada {
+    background: #fef3c7;
+    color: #92400e;
+}
+
 .status-tp {
     background: #dbeafe;
     color: var(--accent-blue);

@@ -237,8 +237,8 @@ function startAutoRefresh() {
 // ========================================
 
 async function getAllActiveSetups(symbol) {
-    // Get all setups with estado ACTIVA, EN_ZONA, PROFIT, or TP (not yet released) for this symbol
-    const url = `${SUPABASE_URL}/rest/v1/smc_m15_setups?symbol=eq.${encodeURIComponent(symbol)}&estado=in.(ACTIVA,EN_ZONA,PROFIT,TP)&order=created_at.desc`;
+    // Get all setups with estado ACTIVA, EN_ZONA, PROFIT, PAUSADA, or TP (not yet released) for this symbol
+    const url = `${SUPABASE_URL}/rest/v1/smc_m15_setups?symbol=eq.${encodeURIComponent(symbol)}&estado=in.(ACTIVA,EN_ZONA,PROFIT,PAUSADA,TP)&order=created_at.desc`;
 
     const response = await fetch(url, {
         method: 'GET',
@@ -257,7 +257,7 @@ async function getAllActiveSetups(symbol) {
     
     // Filter out TP setups that have been released
     return data.filter(setup => {
-        if (setup.estado === 'ACTIVA' || setup.estado === 'EN_ZONA' || setup.estado === 'PROFIT') {
+        if (setup.estado === 'ACTIVA' || setup.estado === 'EN_ZONA' || setup.estado === 'PROFIT' || setup.estado === 'PAUSADA') {
             return true;
         }
         if (setup.estado === 'TP') {
@@ -361,10 +361,106 @@ async function getSetupEnZonaOrProfit(symbol) {
 }
 
 /**
+ * Extract ultimo_evento_m15 from analysis
+ * Helper function to reduce code duplication
+ */
+function getUltimoEventoM15(analysis) {
+    if (analysis && analysis.smc && analysis.smc.eventosM15 && analysis.smc.eventosM15.length > 0) {
+        const lastEvent = analysis.smc.eventosM15[analysis.smc.eventosM15.length - 1];
+        return lastEvent?.evento || null;
+    }
+    return null;
+}
+
+/**
+ * Reevaluate a PAUSADA zone to determine if it should remain PAUSADA or transition to DESCARTADA
+ * A zone stays PAUSADA only if:
+ * - Price hasn't touched its SL
+ * - The structure is still coherent
+ * - H1/M15 trends and M15 event are still compatible with the desired direction
+ * - Not invalidated by new SMC readings
+ * - Still has minimum OB/FVG/Sweep confluence
+ */
+async function reevaluatePausedZone(setup, currentPrice, analysis) {
+    const updateData = {
+        updated_at: new Date().toISOString()
+    };
+    
+    let shouldDiscard = false;
+    let discardReason = null;
+    
+    // 1. Check if price touched SL
+    if (setup.direccion === 'ALCISTA' && currentPrice < setup.sl_price) {
+        shouldDiscard = true;
+        discardReason = 'Precio tocó SL de zona pausada';
+    } else if (setup.direccion === 'BAJISTA' && currentPrice > setup.sl_price) {
+        shouldDiscard = true;
+        discardReason = 'Precio tocó SL de zona pausada';
+    }
+    
+    // 2. Check H1/M15 context compatibility
+    if (!shouldDiscard && analysis && analysis.smc) {
+        const tendenciaH1 = analysis.smc.tendenciaH1;
+        const tendenciaM15 = analysis.smc.tendenciaM15;
+        
+        // If trends changed against the zone direction, discard
+        if (tendenciaH1 && tendenciaH1 !== setup.direccion) {
+            shouldDiscard = true;
+            discardReason = 'Contexto H1 cambió contra la zona';
+        } else if (tendenciaM15 && tendenciaM15 !== setup.direccion) {
+            shouldDiscard = true;
+            discardReason = 'Contexto M15 cambió contra la zona';
+        }
+    }
+    
+    // 3. Check if M15 event still makes sense
+    if (!shouldDiscard) {
+        const ultimoEvento = getUltimoEventoM15(analysis);
+        if (ultimoEvento) {
+            const lastEventDireccion = ultimoEvento.includes('ALCISTA') ? 'ALCISTA' : 'BAJISTA';
+            
+            // If last event direction is opposite to zone direction, it may invalidate the zone
+            if (lastEventDireccion !== setup.direccion) {
+                shouldDiscard = true;
+                discardReason = 'Evento M15 dejó de tener sentido para la zona';
+            }
+        }
+    }
+    
+    // 4. Check minimum confluence (at least one of OB, FVG, or Barrida must be present)
+    if (!shouldDiscard) {
+        const hasConfluence = setup.ob || setup.fvg || setup.barrida;
+        if (!hasConfluence) {
+            shouldDiscard = true;
+            discardReason = 'Zona no tiene confluencia OB/FVG/Barrida mínima';
+        }
+    }
+    
+    // If zone should be discarded, update it
+    if (shouldDiscard) {
+        updateData.estado = 'DESCARTADA';
+        updateData.fecha_cierre = new Date().toISOString();
+        updateData.motivo_cierre = discardReason;
+        await updateSetup(setup.id, updateData);
+        console.log(`✓ Zona PAUSADA ${setup.id} → DESCARTADA: ${discardReason} para ${setup.symbol}`);
+        return 'DESCARTADA';
+    }
+    
+    // Zone remains PAUSADA
+    return 'PAUSADA';
+}
+
+/**
  * Check and update setup state based on price movements
  * Handles transitions: ACTIVA → EN_ZONA ⇄ PROFIT → TP (1:1) → [1:2 or SL return] → LIBERAR
+ * PAUSADA zones are skipped from normal state updates (they are reevaluated separately)
  */
-async function updateSetupState(setup, currentPrice) {
+async function updateSetupState(setup, currentPrice, analysis = null) {
+    // Skip PAUSADA zones - they are reevaluated separately
+    if (setup.estado === 'PAUSADA') {
+        return false;
+    }
+    
     const updateData = {
         updated_at: new Date().toISOString()
     };
@@ -532,10 +628,103 @@ async function updateSetupState(setup, currentPrice) {
     const hasChanges = Object.keys(updateData).length > 1; // more than just updated_at
     if (hasChanges) {
         await updateSetup(setup.id, updateData);
+        
+        // If transitioned to SL, check for paused zones to reactivate
+        if (updateData.estado === 'SL') {
+            await handleSLHitAndReactivatePausedZones(setup.symbol, currentPrice, analysis);
+        }
+        
         return true;
     }
     
     return false;
+}
+
+/**
+ * Handle SL hit: reevaluate paused zones and reactivate the most proximate valid one
+ */
+async function handleSLHitAndReactivatePausedZones(symbol, currentPrice, analysis) {
+    try {
+        // Get all PAUSADA zones for this symbol
+        const url = `${SUPABASE_URL}/rest/v1/smc_m15_setups?symbol=eq.${encodeURIComponent(symbol)}&estado=eq.PAUSADA&order=created_at.desc`;
+        
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            console.error(`Error fetching PAUSADA zones for ${symbol}: ${response.status}`);
+            return;
+        }
+        
+        const pausedZones = await response.json();
+        
+        if (pausedZones.length === 0) {
+            console.log(`No hay zonas PAUSADAS para reactivar en ${symbol}`);
+            return;
+        }
+        
+        // Reevaluate each paused zone
+        const validPausedZones = [];
+        for (const zone of pausedZones) {
+            const result = await reevaluatePausedZone(zone, currentPrice, analysis);
+            if (result === 'PAUSADA') {
+                validPausedZones.push(zone);
+            }
+        }
+        
+        if (validPausedZones.length === 0) {
+            console.log(`No quedan zonas PAUSADAS válidas para reactivar en ${symbol}`);
+            return;
+        }
+        
+        // Find the zone closest to current price
+        let closestZone = validPausedZones[0];
+        let minDistance = calculateDistanceToZone(closestZone, currentPrice);
+        
+        for (let i = 1; i < validPausedZones.length; i++) {
+            const distance = calculateDistanceToZone(validPausedZones[i], currentPrice);
+            if (distance < minDistance) {
+                minDistance = distance;
+                closestZone = validPausedZones[i];
+            }
+        }
+        
+        // Reactivate the closest zone
+        await updateSetup(closestZone.id, {
+            estado: 'ACTIVA',
+            updated_at: new Date().toISOString()
+        });
+        console.log(`✓ Zona PAUSADA ${closestZone.id} → ACTIVA (reactivada tras SL) para ${symbol}`);
+        
+        // Update closestZone object with new estado before calling updateSetupState
+        closestZone.estado = 'ACTIVA';
+        
+        // Immediately check if it should transition to EN_ZONA
+        await updateSetupState(closestZone, currentPrice, analysis);
+        
+    } catch (error) {
+        console.error(`Error handling SL hit and reactivating paused zones for ${symbol}:`, error);
+    }
+}
+
+/**
+ * Calculate distance from current price to a zone
+ */
+function calculateDistanceToZone(zone, currentPrice) {
+    if (currentPrice >= zone.zona_desde && currentPrice <= zone.zona_hasta) {
+        return 0; // Price is inside zone
+    }
+    
+    return Math.min(
+        Math.abs(currentPrice - zone.zona_desde),
+        Math.abs(currentPrice - zone.zona_hasta)
+    );
 }
 
 async function trackZoneHistory(symbol, analysis) {
@@ -545,12 +734,16 @@ async function trackZoneHistory(symbol, analysis) {
         
         // SIN SETUP: If no valid zone exists, don't create or track anything
         if (!zonaM15 || !zonaM15.es_util) {
-            // Get all active setups to update their states based on price
+            // Get all active setups (including PAUSADA) to update their states based on price
             const existingSetups = await getAllActiveSetups(symbol);
             
-            // Update state of existing setups
+            // Reevaluate PAUSADA zones
             for (const setup of existingSetups) {
-                await updateSetupState(setup, currentPrice);
+                if (setup.estado === 'PAUSADA') {
+                    await reevaluatePausedZone(setup, currentPrice, analysis);
+                } else {
+                    await updateSetupState(setup, currentPrice, analysis);
+                }
             }
             
             return; // Don't create new records for SIN SETUP
@@ -559,11 +752,36 @@ async function trackZoneHistory(symbol, analysis) {
         // Get tipo_indice (Boom or Crash)
         const tipoIndice = symbol.includes('Boom') ? 'Boom' : 'Crash';
         
-        // Get all active/in-zone/profit/TP setups for this symbol
+        // Get all active/in-zone/profit/pausada/TP setups for this symbol
         const existingSetups = await getAllActiveSetups(symbol);
         
+        // Separate operative zones from paused zones
+        const operativeSetups = existingSetups.filter(s => 
+            s.estado === 'ACTIVA' || s.estado === 'EN_ZONA' || s.estado === 'PROFIT' || s.estado === 'TP'
+        );
+        const pausedSetups = existingSetups.filter(s => s.estado === 'PAUSADA');
+        
+        // Reevaluate all PAUSADA zones first
+        for (const setup of pausedSetups) {
+            await reevaluatePausedZone(setup, currentPrice, analysis);
+        }
+        
+        // Find the main operative zone (closest to price among ACTIVA/EN_ZONA/PROFIT)
+        let mainOperativeZone = null;
+        let minDistance = Infinity;
+        
+        for (const setup of operativeSetups) {
+            if (setup.estado === 'ACTIVA' || setup.estado === 'EN_ZONA' || setup.estado === 'PROFIT') {
+                const distance = calculateDistanceToZone(setup, currentPrice);
+                if (distance < minDistance) {
+                    minDistance = distance;
+                    mainOperativeZone = setup;
+                }
+            }
+        }
+        
         // Check if dashboard is locked (any setup in EN_ZONA, PROFIT, or TP not yet released)
-        const dashboardLocked = existingSetups.some(setup => {
+        const dashboardLocked = operativeSetups.some(setup => {
             if (setup.estado === 'EN_ZONA' || setup.estado === 'PROFIT') {
                 return true;
             }
@@ -593,6 +811,11 @@ async function trackZoneHistory(symbol, analysis) {
         
         if (!exactZoneExists) {
             for (const setup of existingSetups) {
+                // Skip PAUSADA zones for matching
+                if (setup.estado === 'PAUSADA') {
+                    continue;
+                }
+                
                 // Check if new zone is contained within existing zone
                 const isContained = newZonaDesde >= setup.zona_desde && newZonaHasta <= setup.zona_hasta;
                 
@@ -613,11 +836,7 @@ async function trackZoneHistory(symbol, analysis) {
         // If we found a matching setup (contained or overlapped), update it instead of creating new
         if (matchingSetup) {
             // Get ultimo_evento_m15 from analysis
-            let ultimo_evento_m15 = null;
-            if (analysis.smc.eventosM15 && analysis.smc.eventosM15.length > 0) {
-                const lastEvent = analysis.smc.eventosM15[analysis.smc.eventosM15.length - 1];
-                ultimo_evento_m15 = lastEvent?.evento;
-            }
+            const ultimo_evento_m15 = getUltimoEventoM15(analysis);
             
             const updateData = {
                 updated_at: new Date().toISOString(),
@@ -640,19 +859,12 @@ async function trackZoneHistory(symbol, analysis) {
             console.log(`✓ Setup ${matchingSetup.id} actualizado (mantiene zona original) para ${symbol}`);
             
             // Update state based on price movement
-            await updateSetupState(matchingSetup, currentPrice);
+            await updateSetupState(matchingSetup, currentPrice, analysis);
         }
         // If zone doesn't exist and not contained/overlapped, check if we can create a new setup
         else if (!exactZoneExists) {
-            // Don't create new zone if dashboard is locked
-            if (dashboardLocked) {
-                console.log(`⚠ Dashboard locked for ${symbol}, not creating new zone`);
-                // Just update existing setups state
-                for (const setup of existingSetups) {
-                    await updateSetupState(setup, currentPrice);
-                }
-                return;
-            }
+            // Get ultimo_evento_m15 from analysis
+            const ultimo_evento_m15 = getUltimoEventoM15(analysis);
             
             // Calculate TP and SL for 1:1 ratio
             let tp_price, sl_price;
@@ -662,13 +874,6 @@ async function trackZoneHistory(symbol, analysis) {
             } else { // BAJISTA
                 tp_price = newZonaDesde - newZonaSize;
                 sl_price = newZonaHasta;
-            }
-            
-            // Get ultimo_evento_m15 from analysis
-            let ultimo_evento_m15 = null;
-            if (analysis.smc.eventosM15 && analysis.smc.eventosM15.length > 0) {
-                const lastEvent = analysis.smc.eventosM15[analysis.smc.eventosM15.length - 1];
-                ultimo_evento_m15 = lastEvent?.evento;
             }
             
             const newSetup = {
@@ -687,7 +892,6 @@ async function trackZoneHistory(symbol, analysis) {
                 barrida: zonaM15.barrida ? true : false,
                 tendencia_h1: analysis.smc.tendenciaH1 || null,
                 tendencia_m15: analysis.smc.tendenciaM15 || null,
-                estado: 'ACTIVA',
                 tp_price: tp_price,
                 sl_price: sl_price,
                 ratio_rr: 1.0,
@@ -697,28 +901,99 @@ async function trackZoneHistory(symbol, analysis) {
                 motivo_cierre: null
             };
             
-            const created = await createSetup(newSetup);
-            console.log(`✓ Nuevo setup ACTIVO creado para ${symbol} (TP: ${tp_price}, SL: ${sl_price})`);
-            
-            // Check if it should immediately transition to EN_ZONA
-            if (created && created.length > 0) {
-                await updateSetupState(created[0], currentPrice);
+            // Determine if this should be the operative zone or a paused zone
+            if (dashboardLocked || mainOperativeZone) {
+                // Dashboard is locked or there's already an operative zone
+                // Create this as PAUSADA
+                newSetup.estado = 'PAUSADA';
+                const created = await createSetup(newSetup);
+                console.log(`✓ Nueva zona PAUSADA creada para ${symbol} (TP: ${tp_price}, SL: ${sl_price})`);
+            } else {
+                // No operative zone yet, create as ACTIVA
+                newSetup.estado = 'ACTIVA';
+                const created = await createSetup(newSetup);
+                console.log(`✓ Nuevo setup ACTIVO creado para ${symbol} (TP: ${tp_price}, SL: ${sl_price})`);
+                
+                // Check if it should immediately transition to EN_ZONA
+                if (created && created.length > 0) {
+                    await updateSetupState(created[0], currentPrice, analysis);
+                }
             }
         }
         
-        // Update all OTHER existing setups (state transitions)
-        for (const setup of existingSetups) {
+        // Update all operative setups (state transitions)
+        for (const setup of operativeSetups) {
             // Skip the matching setup as we already updated it above
             if (matchingSetup && setup.id === matchingSetup.id) {
                 continue;
             }
             
             // Update state based on current price
-            await updateSetupState(setup, currentPrice);
+            await updateSetupState(setup, currentPrice, analysis);
         }
+        
+        // After all updates, ensure only one operative zone remains
+        await ensureSingleOperativeZone(symbol, currentPrice, analysis);
         
     } catch (error) {
         console.error(`Error tracking zone history for ${symbol}:`, error);
+    }
+}
+
+/**
+ * Ensure there is only one operative zone (ACTIVA, EN_ZONA, or PROFIT) per symbol
+ * If multiple exist, keep the closest to current price and pause the rest
+ */
+async function ensureSingleOperativeZone(symbol, currentPrice, analysis) {
+    try {
+        // Get all operative zones (ACTIVA, EN_ZONA, PROFIT) for this symbol
+        const url = `${SUPABASE_URL}/rest/v1/smc_m15_setups?symbol=eq.${encodeURIComponent(symbol)}&estado=in.(ACTIVA,EN_ZONA,PROFIT)&order=created_at.desc`;
+        
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            console.error(`Error fetching operative zones for ${symbol}: ${response.status}`);
+            return;
+        }
+        
+        const operativeZones = await response.json();
+        
+        if (operativeZones.length <= 1) {
+            return; // Only one or no operative zone, nothing to do
+        }
+        
+        // Find the zone closest to current price
+        let closestZone = operativeZones[0];
+        let minDistance = calculateDistanceToZone(closestZone, currentPrice);
+        
+        for (let i = 1; i < operativeZones.length; i++) {
+            const distance = calculateDistanceToZone(operativeZones[i], currentPrice);
+            if (distance < minDistance) {
+                minDistance = distance;
+                closestZone = operativeZones[i];
+            }
+        }
+        
+        // Pause all other zones
+        for (const zone of operativeZones) {
+            if (zone.id !== closestZone.id) {
+                await updateSetup(zone.id, {
+                    estado: 'PAUSADA',
+                    updated_at: new Date().toISOString()
+                });
+                console.log(`✓ Zona ${zone.id} → PAUSADA (no es la más próxima) para ${symbol}`);
+            }
+        }
+        
+    } catch (error) {
+        console.error(`Error ensuring single operative zone for ${symbol}:`, error);
     }
 }
 
@@ -1080,6 +1355,9 @@ async function createTableRow(symbol, data) {
     } else if (estadoText === 'PROFIT') {
         estadoClass += 'status-profit';
         estadoText = 'PROFIT';
+    } else if (estadoText === 'PAUSADA') {
+        estadoClass += 'status-pausada';
+        estadoText = 'PAUSADA';
     } else if (estadoText === 'ESPERANDO_ACOMODO') {
         estadoClass += 'status-esperando-acomodo';
         estadoText = 'ESPERANDO ACOMODO';
@@ -2114,6 +2392,9 @@ function createHistoryRow(setup) {
         case 'PROFIT':
             estadoClass += 'status-profit';
             break;
+        case 'PAUSADA':
+            estadoClass += 'status-pausada';
+            break;
         case 'DESCARTADA':
             estadoClass += 'status-descartada';
             break;
@@ -2135,10 +2416,10 @@ function createHistoryRow(setup) {
     // Resultado puntos
     const resultadoPuntos = setup.resultado_puntos != null ? formatPrice(setup.resultado_puntos) : '--';
     
-    // Max reaccion - show "--" if estado is ACTIVA, only show value for EN_ZONA, PROFIT and other states
+    // Max reaccion - show "--" if estado is ACTIVA or PAUSADA, only show value for EN_ZONA, PROFIT and other states
     let maxReaccion = '--';
-    if (setup.estado === 'ACTIVA') {
-        // For ACTIVA setups, always show "--" (as per requirement)
+    if (setup.estado === 'ACTIVA' || setup.estado === 'PAUSADA') {
+        // For ACTIVA and PAUSADA setups, always show "--"
         maxReaccion = '--';
     } else if (setup.estado === 'EN_ZONA' || setup.estado === 'PROFIT') {
         // For EN_ZONA and PROFIT setups, calculate and show max_reaccion_puntos
