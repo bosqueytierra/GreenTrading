@@ -497,20 +497,17 @@ function getUltimoEventoM15(analysis) {
 }
 
 /**
- * Reevaluate a PAUSADA zone to determine if it should remain PAUSADA or transition to DESCARTADA
- * A zone stays PAUSADA only if:
- * - Price hasn't touched its SL
- * - The structure is still coherent
- * - H1/M15 trends and M15 event are still compatible with the desired direction
- * - Not invalidated by new SMC readings
- * - Still has minimum OB/FVG/Sweep confluence
- */
-/**
  * Reevaluate a PAUSADA zone to determine if it should be discarded or remain paused
+ * 
  * @param {Object} setup - The zone setup to reevaluate
  * @param {Number} currentPrice - Current market price
  * @param {Object} analysis - SMC analysis data
  * @returns {String} - 'PAUSADA' or 'DESCARTADA'
+ * 
+ * A zone stays PAUSADA only if:
+ * - Price hasn't touched its SL
+ * - Has minimum OB/FVG/Sweep confluence
+ * - (For SMC_H1_M15_PRO only) H1/M15 trends and M15 event are still compatible
  * 
  * Note: Uses global variable `currentStrategy` to determine which validation rules to apply.
  * - For SMC_M15_PRO: Only discards if SL is hit or no confluence
@@ -584,8 +581,7 @@ async function reevaluatePausedZone(setup, currentPrice, analysis) {
         return 'DESCARTADA';
     }
     
-    // Zone remains PAUSADA
-    console.log(`✓ Zona PAUSADA ${setup.id} mantiene estado PAUSADA para ${setup.symbol} (estrategia: ${currentStrategy})`);
+    // Zone remains PAUSADA (no log to avoid cluttering console)
     return 'PAUSADA';
 }
 
