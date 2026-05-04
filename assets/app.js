@@ -652,7 +652,8 @@ async function trackZoneHistory(symbol, analysis) {
             let ultimo_evento_m15 = null;
             if (analysis.smc.eventosM15 && analysis.smc.eventosM15.length > 0) {
                 const lastEvent = analysis.smc.eventosM15[analysis.smc.eventosM15.length - 1];
-                ultimo_evento_m15 = lastEvent.evento;
+                // Ensure evento property exists before accessing it
+                ultimo_evento_m15 = lastEvent && lastEvent.evento ? lastEvent.evento : null;
             }
             
             const newSetup = {
