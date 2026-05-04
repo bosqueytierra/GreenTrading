@@ -648,6 +648,13 @@ async function trackZoneHistory(symbol, analysis) {
                 sl_price = newZonaHasta;
             }
             
+            // Get ultimo_evento_m15 from analysis
+            let ultimo_evento_m15 = null;
+            if (analysis.smc.eventosM15 && analysis.smc.eventosM15.length > 0) {
+                const lastEvent = analysis.smc.eventosM15[analysis.smc.eventosM15.length - 1];
+                ultimo_evento_m15 = lastEvent?.evento;
+            }
+            
             const newSetup = {
                 symbol: symbol,
                 tipo_indice: tipoIndice,
@@ -662,6 +669,9 @@ async function trackZoneHistory(symbol, analysis) {
                 ob: zonaM15.ob ? true : false,
                 fvg: zonaM15.fvg ? true : false,
                 barrida: zonaM15.barrida ? true : false,
+                tendencia_h1: analysis.smc.tendenciaH1 || null,
+                tendencia_m15: analysis.smc.tendenciaM15 || null,
+                ultimo_evento_m15: ultimo_evento_m15,
                 estado: 'ACTIVA',
                 tp_price: tp_price,
                 sl_price: sl_price,
@@ -929,7 +939,7 @@ async function createTableRow(symbol, data) {
     if (!data || data.error) {
         tr.innerHTML = `
             <td class="index-name">${symbol}</td>
-            <td colspan="12" class="loading">${data ? data.message : 'Cargando...'}</td>
+            <td colspan="11" class="loading">${data ? data.message : 'Cargando...'}</td>
         `;
         return tr;
     }
@@ -1074,15 +1084,10 @@ async function createTableRow(symbol, data) {
     const tendH1Class = getTrendClass(tendH1);
     const tendM15Class = getTrendClass(tendM15);
     
-    // Dirección
-    const direccion = displayDireccion;
-    const direccionClass = direccion === 'ALCISTA' ? 'direction-alcista' : (direccion === 'BAJISTA' ? 'direction-bajista' : '');
-    
     tr.innerHTML = `
         <td class="index-name">${symbol}</td>
         <td class="${tendH1Class}">${tendH1}</td>
         <td class="${tendM15Class}">${tendM15}</td>
-        <td class="direction-cell ${direccionClass}">${direccion}</td>
         <td>${lastEventM15}</td>
         <td>${zonaM15HTML}</td>
         <td class="score-cell ${scoreClass}">${score}</td>
@@ -1812,16 +1817,128 @@ function calculateStats(setups) {
 }
 
 /**
- * Render statistics cards in the stats bar
- * @param {Object} stats - Stats object from calculateStats
+ * Calculate statistics per index from filtered setups
+ * @param {Array} setups - Array of setup objects
+ * @returns {Object} Stats per symbol
  */
-function renderStats(stats) {
+function calculateIndexStats(setups) {
+    const indexStats = {};
+    
+    setups.forEach(setup => {
+        const symbol = setup.symbol;
+        
+        if (!indexStats[symbol]) {
+            indexStats[symbol] = {
+                total: 0,
+                tp: 0,
+                sl: 0,
+                activas: 0,
+                enZona: 0,
+                profit: 0,
+                descartadas: 0
+            };
+        }
+        
+        indexStats[symbol].total++;
+        
+        switch (setup.estado) {
+            case 'TP':
+                indexStats[symbol].tp++;
+                break;
+            case 'SL':
+                indexStats[symbol].sl++;
+                break;
+            case 'ACTIVA':
+                indexStats[symbol].activas++;
+                break;
+            case 'EN_ZONA':
+                indexStats[symbol].enZona++;
+                break;
+            case 'PROFIT':
+                indexStats[symbol].profit++;
+                break;
+            case 'DESCARTADA':
+                indexStats[symbol].descartadas++;
+                break;
+        }
+    });
+    
+    // Find index with most TP and most SL
+    let maxTpSymbol = null;
+    let maxTpCount = 0;
+    let maxSlSymbol = null;
+    let maxSlCount = 0;
+    
+    Object.entries(indexStats).forEach(([symbol, stats]) => {
+        if (stats.tp > maxTpCount) {
+            maxTpCount = stats.tp;
+            maxTpSymbol = symbol;
+        }
+        if (stats.sl > maxSlCount) {
+            maxSlCount = stats.sl;
+            maxSlSymbol = symbol;
+        }
+    });
+    
+    return {
+        indexStats,
+        maxTpSymbol,
+        maxSlSymbol
+    };
+}
+
+/**
+ * Render statistics cards in the stats bar with index performance
+ * @param {Object} stats - Stats object from calculateStats
+ * @param {Array} setups - Array of all filtered setups
+ */
+function renderStats(stats, setups = []) {
     const statsBar = document.getElementById('stats-bar');
     if (!statsBar) return;
     
     // Calculate winrate
     const totalClosed = stats.tp + stats.sl;
     const winrate = totalClosed > 0 ? ((stats.tp / totalClosed) * 100).toFixed(1) : '0.0';
+    
+    // Calculate index statistics
+    const { indexStats, maxTpSymbol, maxSlSymbol } = calculateIndexStats(setups);
+    
+    // Create index performance section HTML
+    let indexPerformanceHTML = '';
+    if (Object.keys(indexStats).length > 0) {
+        // Helper function to get top performers by metric
+        const getTopPerformers = (metric) => {
+            return Object.entries(indexStats)
+                .filter(([_, stats]) => stats[metric] > 0)
+                .sort((a, b) => b[1][metric] - a[1][metric])
+                .slice(0, 3);
+        };
+        
+        const sortedByTp = getTopPerformers('tp');
+        const sortedBySl = getTopPerformers('sl');
+        
+        // Helper function to render index items
+        const renderIndexItems = (items, cssClass) => {
+            return items.length > 0
+                ? items.map(([symbol, stats]) => {
+                    const shortName = symbol.replace(' Index', '');
+                    const metric = cssClass === 'stat-index-tp' ? stats.tp : stats.sl;
+                    return `<div class="stat-index-item ${cssClass}">${shortName}: ${metric}</div>`;
+                  }).join('')
+                : '<div class="stat-index-item">N/A</div>';
+        };
+        
+        indexPerformanceHTML = `
+            <div class="stat-card stat-index-performance">
+                <div class="stat-label">🔥 Más TP</div>
+                ${renderIndexItems(sortedByTp, 'stat-index-tp')}
+            </div>
+            <div class="stat-card stat-index-performance">
+                <div class="stat-label">⚠️ Más SL</div>
+                ${renderIndexItems(sortedBySl, 'stat-index-sl')}
+            </div>
+        `;
+    }
     
     // Create stats cards
     statsBar.innerHTML = `
@@ -1857,6 +1974,7 @@ function renderStats(stats) {
             <div class="stat-label">Winrate</div>
             <div class="stat-value">${winrate}%</div>
         </div>
+        ${indexPerformanceHTML}
     `;
 }
 
@@ -1886,13 +2004,13 @@ function applyFilters() {
     
     // Calculate and render stats for filtered data
     const stats = calculateStats(filteredSetups);
-    renderStats(stats);
+    renderStats(stats, filteredSetups);
     
     // Update table
     tbody.innerHTML = '';
     
     if (filteredSetups.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="13" class="loading">No hay datos con los filtros seleccionados</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="15" class="loading">No hay datos con los filtros seleccionados</td></tr>';
         return;
     }
     
@@ -1926,7 +2044,7 @@ async function updateHistoryTable() {
             historyError.style.display = 'none';
         }
         
-        tbody.innerHTML = '<tr><td colspan="13" class="loading">Cargando historial...</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="15" class="loading">Cargando historial...</td></tr>';
         
         const setups = await fetchSetupHistory();
         
@@ -1969,7 +2087,7 @@ async function updateHistoryTable() {
         }
         
         if (tbody) {
-            tbody.innerHTML = '<tr><td colspan="13" class="loading">Error cargando historial</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="15" class="loading">Error cargando historial</td></tr>';
         }
     }
 }
@@ -1993,8 +2111,14 @@ function createHistoryRow(setup) {
     const tpText = setup.tp_price != null ? formatPrice(setup.tp_price) : '--';
     const slText = setup.sl_price != null ? formatPrice(setup.sl_price) : '--';
     
-    // Direction class
-    const direccionClass = setup.direccion === 'ALCISTA' ? 'direction-alcista' : 'direction-bajista';
+    // Tendencias
+    const tendH1 = setup.tendencia_h1 || '--';
+    const tendM15 = setup.tendencia_m15 || '--';
+    const tendH1Class = getTrendClass(tendH1);
+    const tendM15Class = getTrendClass(tendM15);
+    
+    // Último evento M15
+    const ultimoEventoM15 = setup.ultimo_evento_m15 || '--';
     
     // Score class
     let scoreClass = 'score-low';
@@ -2053,7 +2177,9 @@ function createHistoryRow(setup) {
     tr.innerHTML = `
         <td class="time-cell">${fecha}</td>
         <td>${setup.symbol || '--'}</td>
-        <td class="direction-cell ${direccionClass}">${setup.direccion || '--'}</td>
+        <td class="${tendH1Class}">${tendH1}</td>
+        <td class="${tendM15Class}">${tendM15}</td>
+        <td>${ultimoEventoM15}</td>
         <td class="zone-cell">${zonaText}</td>
         <td class="price-cell">${tpText}</td>
         <td class="price-cell">${slText}</td>

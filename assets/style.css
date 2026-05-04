@@ -853,6 +853,35 @@ select:focus {
     color: #8b5cf6;
 }
 
+/* Index Performance Cards */
+.stat-card.stat-index-performance {
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    min-width: 180px;
+}
+
+.stat-card.stat-index-performance .stat-label {
+    color: white;
+    font-weight: 600;
+    font-size: 0.75em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+}
+
+.stat-index-item {
+    color: white;
+    font-size: 0.85em;
+    padding: 3px 0;
+    font-weight: 500;
+}
+
+.stat-index-tp {
+    color: #d1fae5 !important;
+}
+
+.stat-index-sl {
+    color: #fecaca !important;
+}
+
 /* ========================================
    HISTORY SECTION
    ======================================== */
