@@ -827,6 +827,30 @@ function calculateDistanceToZone(zone, currentPrice) {
     );
 }
 
+/**
+ * Valida si una zona cumple con los requisitos de la estrategia H1+M15
+ * Esta validación se aplica al CREAR el setup, no es un filtro visual
+ * Boom: H1 ALCISTA + Evento M15 ALCISTA (CHOCH o BOS)
+ * Crash: H1 BAJISTA + Evento M15 BAJISTA (CHOCH o BOS)
+ */
+function cumpleValidacionH1M15(symbol, tendenciaH1, eventoM15) {
+    const tipoIndice = symbol.includes('Boom') ? 'Boom' : 'Crash';
+    
+    // Para Boom: H1 debe ser ALCISTA y evento M15 debe ser ALCISTA
+    if (tipoIndice === 'Boom') {
+        return tendenciaH1 === 'ALCISTA' && 
+               (eventoM15.includes('CHOCH_ALCISTA') || eventoM15.includes('BOS_ALCISTA'));
+    }
+    
+    // Para Crash: H1 debe ser BAJISTA y evento M15 debe ser BAJISTA
+    if (tipoIndice === 'Crash') {
+        return tendenciaH1 === 'BAJISTA' && 
+               (eventoM15.includes('CHOCH_BAJISTA') || eventoM15.includes('BOS_BAJISTA'));
+    }
+    
+    return false;
+}
+
 async function trackZoneHistory(symbol, analysis) {
     try {
         const zonaM15 = analysis.smc.zonaM15;
@@ -1001,16 +1025,50 @@ async function trackZoneHistory(symbol, analysis) {
                 motivo_cierre: null
             };
             
+            // VALIDACIÓN H1+M15: Si estamos en estrategia H1+M15, validar antes de determinar el estado
+            let estadoInicial;
+            if (currentStrategy === 'SMC_H1_M15_PRO') {
+                // Validar H1+M15
+                const cumpleH1M15 = cumpleValidacionH1M15(
+                    symbol, 
+                    analysis.smc.tendenciaH1 || '--', 
+                    ultimo_evento_m15
+                );
+                
+                if (!cumpleH1M15) {
+                    // No cumple validación → DESCARTADA
+                    const tipoIndice = symbol.includes('Boom') ? 'Boom' : 'Crash';
+                    const razonDescarte = tipoIndice === 'Boom'
+                        ? `NO CUMPLE H1+M15: Se requiere H1 ALCISTA + M15 ALCISTA (actual: H1=${analysis.smc.tendenciaH1 || '--'}, M15=${ultimo_evento_m15})`
+                        : `NO CUMPLE H1+M15: Se requiere H1 BAJISTA + M15 BAJISTA (actual: H1=${analysis.smc.tendenciaH1 || '--'}, M15=${ultimo_evento_m15})`;
+                    
+                    newSetup.estado = 'DESCARTADA';
+                    newSetup.motivo_cierre = razonDescarte;
+                    newSetup.fecha_cierre = new Date().toISOString();
+                    
+                    const created = await createSetup(newSetup);
+                    console.log(`✓ Zona DESCARTADA por no cumplir H1+M15 para ${symbol}: ${razonDescarte}`);
+                    return; // No continuar con lógica de zona operativa
+                }
+                
+                // Cumple validación → continuar normalmente
+                estadoInicial = dashboardLocked || mainOperativeZone ? 'PAUSADA' : 'ACTIVA';
+            } else {
+                // SMC M15 PRO: No aplicar validación H1+M15
+                estadoInicial = dashboardLocked || mainOperativeZone ? 'PAUSADA' : 'ACTIVA';
+            }
+            
             // Determine if this should be the operative zone or a paused zone
-            if (dashboardLocked || mainOperativeZone) {
+            newSetup.estado = estadoInicial;
+            
+            if (estadoInicial === 'PAUSADA') {
+            if (estadoInicial === 'PAUSADA') {
                 // Dashboard is locked or there's already an operative zone
                 // Create this as PAUSADA
-                newSetup.estado = 'PAUSADA';
                 const created = await createSetup(newSetup);
                 console.log(`✓ Nueva zona PAUSADA creada para ${symbol} (TP: ${tp_price}, SL: ${sl_price})`);
             } else {
                 // No operative zone yet, create as ACTIVA
-                newSetup.estado = 'ACTIVA';
                 const created = await createSetup(newSetup);
                 console.log(`✓ Nuevo setup ACTIVO creado para ${symbol} (TP: ${tp_price}, SL: ${sl_price})`);
                 
