@@ -8,6 +8,10 @@ Este procesador:
 2. Ejecuta análisis SMC con validación H1 + M15
 3. Guarda resultados en public.smc_h1_m15_setups
 
+⚠️ IMPORTANTE - TABLA OBLIGATORIA:
+   Este procesador SOLO debe escribir en: public.smc_h1_m15_setups
+   NUNCA debe escribir en: public.smc_m15_setups (reservada para SMC M15 PRO)
+
 NO crea nuevo collector MT5.
 NO duplica velas.
 Es otro consumidor de las mismas velas existentes.
@@ -27,6 +31,11 @@ load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
+
+# ⚠️ TABLA OBLIGATORIA - NO MODIFICAR
+# Esta estrategia SOLO usa smc_h1_m15_setups
+# SMC M15 PRO usa smc_m15_setups (tabla diferente)
+TARGET_TABLE = "smc_h1_m15_setups"
 
 # Validar credenciales
 if not SUPABASE_URL or not SUPABASE_ANON_KEY:
@@ -206,6 +215,8 @@ def get_active_zones_for_symbol(symbol):
     """
     Obtiene zonas activas para un símbolo específico.
     
+    ⚠️ Lee SOLO de smc_h1_m15_setups (estrategia H1+M15)
+    
     Args:
         symbol: Símbolo del índice
     
@@ -213,7 +224,7 @@ def get_active_zones_for_symbol(symbol):
         Lista de zonas activas
     """
     url = (
-        f"{SUPABASE_URL}/rest/v1/smc_h1_m15_setups"
+        f"{SUPABASE_URL}/rest/v1/{TARGET_TABLE}"
         f"?symbol=eq.{symbol}"
         f"&estado=eq.ACTIVA"
         f"&select=*"
@@ -236,11 +247,13 @@ def pause_zone(zone_id, motivo="Pausada por nueva zona activa"):
     """
     Pausa una zona existente.
     
+    ⚠️ Actualiza SOLO en smc_h1_m15_setups (estrategia H1+M15)
+    
     Args:
         zone_id: ID de la zona a pausar
         motivo: Motivo del cierre
     """
-    url = f"{SUPABASE_URL}/rest/v1/smc_h1_m15_setups?id=eq.{zone_id}"
+    url = f"{SUPABASE_URL}/rest/v1/{TARGET_TABLE}?id=eq.{zone_id}"
     
     data = {
         "estado": "PAUSADA",
@@ -266,6 +279,9 @@ def pause_zone(zone_id, motivo="Pausada por nueva zona activa"):
 def save_zone_to_supabase(symbol, result, zona):
     """
     Guarda una zona en public.smc_h1_m15_setups.
+    
+    ⚠️ Inserta SOLO en smc_h1_m15_setups (estrategia H1+M15)
+    ⚠️ NUNCA insertar en smc_m15_setups (estrategia SMC M15 PRO)
     
     Args:
         symbol: Símbolo del índice
@@ -314,7 +330,7 @@ def save_zone_to_supabase(symbol, result, zona):
         "estrategia": "SMC PRO TENDENCIA H1 + CHOCH/BOS (M15)"
     }
     
-    url = f"{SUPABASE_URL}/rest/v1/smc_h1_m15_setups"
+    url = f"{SUPABASE_URL}/rest/v1/{TARGET_TABLE}"
     
     try:
         response = requests.post(url, headers=supabase_headers(), json=data, timeout=15)
@@ -335,13 +351,15 @@ def update_zone_state(zone_id, new_state, precio_actual, motivo=None):
     """
     Actualiza el estado de una zona.
     
+    ⚠️ Actualiza SOLO en smc_h1_m15_setups (estrategia H1+M15)
+    
     Args:
         zone_id: ID de la zona
         new_state: Nuevo estado
         precio_actual: Precio actual
         motivo: Motivo del cambio (opcional)
     """
-    url = f"{SUPABASE_URL}/rest/v1/smc_h1_m15_setups?id=eq.{zone_id}"
+    url = f"{SUPABASE_URL}/rest/v1/{TARGET_TABLE}?id=eq.{zone_id}"
     
     data = {
         "estado": new_state
@@ -496,9 +514,11 @@ def main():
     print("="*70)
     print(" SMC PRO TENDENCIA H1 + CHOCH/BOS (M15) - Procesador")
     print("="*70)
+    print(f"⚠️  TABLA DESTINO: {TARGET_TABLE}")
+    print(f"⚠️  NO escribe en: smc_m15_setups (tabla de SMC M15 PRO)")
     print(f"Procesando {len(SYMBOLS)} símbolos cada {PROCESS_INTERVAL_SECONDS}s")
     print(f"Leyendo velas desde: public.market_candles")
-    print(f"Guardando resultados en: public.smc_h1_m15_setups")
+    print(f"Guardando resultados en: public.{TARGET_TABLE}")
     print("="*70)
     
     ciclo = 0
