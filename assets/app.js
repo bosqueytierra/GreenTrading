@@ -1062,7 +1062,6 @@ async function trackZoneHistory(symbol, analysis) {
             newSetup.estado = estadoInicial;
             
             if (estadoInicial === 'PAUSADA') {
-            if (estadoInicial === 'PAUSADA') {
                 // Dashboard is locked or there's already an operative zone
                 // Create this as PAUSADA
                 const created = await createSetup(newSetup);
