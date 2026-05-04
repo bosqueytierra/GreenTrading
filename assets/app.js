@@ -413,7 +413,12 @@ async function updateSetupState(setup, currentPrice) {
         }
     }
     else if (setup.estado === 'PROFIT') {
-        // Check for SL hit
+        // Calculate objetivo 1:3 (3x zone size from zone boundary)
+        const objetivo_1_3 = setup.direccion === 'ALCISTA' 
+            ? setup.zona_hasta + (zona_size_puntos * 3)
+            : setup.zona_desde - (zona_size_puntos * 3);
+        
+        // Check for SL hit (highest priority)
         if (setup.direccion === 'ALCISTA' && currentPrice < setup.zona_desde) {
             updateData.estado = 'SL';
             updateData.resultado_puntos = -zona_size_puntos;
@@ -428,20 +433,35 @@ async function updateSetupState(setup, currentPrice) {
             updateData.motivo_cierre = 'Stop Loss alcanzado';
             console.log(`✓ Setup ${setup.id} transitioned PROFIT → SL for ${setup.symbol}`);
         }
-        // PROFIT → TP: Price reaches TP
+        // PROFIT → TP: Price reaches TP 1:1
         else if (setup.direccion === 'ALCISTA' && currentPrice >= tp_price) {
             updateData.estado = 'TP';
             updateData.resultado_puntos = zona_size_puntos;
             updateData.fecha_cierre = new Date().toISOString();
             updateData.motivo_cierre = 'Take Profit 1:1 alcanzado';
-            console.log(`✓ Setup ${setup.id} transitioned PROFIT → TP for ${setup.symbol}`);
+            console.log(`✓ Setup ${setup.id} transitioned PROFIT → TP (1:1) for ${setup.symbol}`);
         }
         else if (setup.direccion === 'BAJISTA' && currentPrice <= tp_price) {
             updateData.estado = 'TP';
             updateData.resultado_puntos = zona_size_puntos;
             updateData.fecha_cierre = new Date().toISOString();
             updateData.motivo_cierre = 'Take Profit 1:1 alcanzado';
-            console.log(`✓ Setup ${setup.id} transitioned PROFIT → TP for ${setup.symbol}`);
+            console.log(`✓ Setup ${setup.id} transitioned PROFIT → TP (1:1) for ${setup.symbol}`);
+        }
+        // PROFIT → TP: Price reaches extension 1:3 (auto-release dashboard)
+        else if (setup.direccion === 'ALCISTA' && currentPrice >= objetivo_1_3) {
+            updateData.estado = 'TP';
+            updateData.resultado_puntos = zona_size_puntos;
+            updateData.fecha_cierre = new Date().toISOString();
+            updateData.motivo_cierre = 'Extensión 1:3 alcanzada';
+            console.log(`✓ Setup ${setup.id} transitioned PROFIT → TP (1:3) for ${setup.symbol}`);
+        }
+        else if (setup.direccion === 'BAJISTA' && currentPrice <= objetivo_1_3) {
+            updateData.estado = 'TP';
+            updateData.resultado_puntos = zona_size_puntos;
+            updateData.fecha_cierre = new Date().toISOString();
+            updateData.motivo_cierre = 'Extensión 1:3 alcanzada';
+            console.log(`✓ Setup ${setup.id} transitioned PROFIT → TP (1:3) for ${setup.symbol}`);
         }
     }
     
