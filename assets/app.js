@@ -2223,7 +2223,16 @@ let currentFilters = {
 async function fetchSetupHistory(limit = 50) {
     // Lee desde la tabla correspondiente a la estrategia seleccionada en historial
     const table = getStrategyTable(currentHistoryStrategy);
-    const url = `${SUPABASE_URL}/rest/v1/${table}?order=created_at.desc&limit=${limit}`;
+    
+    // FILTRO CRÍTICO: SMC M15 PRO NO debe mostrar DESCARTADA
+    // DESCARTADA solo pertenece a SMC H1+M15 PRO
+    let url = `${SUPABASE_URL}/rest/v1/${table}?order=created_at.desc&limit=${limit}`;
+    
+    if (currentHistoryStrategy === 'SMC_M15_PRO') {
+        // Filtrar estados válidos para SMC M15 PRO: ACTIVA, EN_ZONA, PROFIT, TP, SL, PAUSADA
+        // Excluir DESCARTADA (solo pertenece a H1+M15)
+        url += `&estado=in.(ACTIVA,EN_ZONA,PROFIT,TP,SL,PAUSADA)`;
+    }
     
     const response = await fetch(url, {
         method: 'GET',
