@@ -1028,6 +1028,18 @@ select:focus {
     .indices-table td {
         padding: 12px 8px;
     }
+    
+    .stats-bar {
+        gap: 8px;
+    }
+    
+    .stat-card {
+        min-width: 100px;
+    }
+    
+    .stat-value {
+        font-size: 20px;
+    }
 }
 
 @media (max-width: 768px) {
@@ -1095,6 +1107,15 @@ select:focus {
     
     .indices-table {
         min-width: 1200px;
+    }
+    
+    .stats-bar {
+        flex-direction: column;
+        gap: 8px;
+    }
+    
+    .stat-card {
+        min-width: 100%;
     }
 }
 
