@@ -60,9 +60,33 @@ async function getAllSetupsForMatching(symbol) {
 
 ### 2. Lógica de Matching Mejorada en `trackZoneHistory()`
 
-**Ubicación:** `assets/app.js` (líneas ~900-991)
+**Ubicación:** `assets/app.js` (líneas ~900-1010)
 
-#### Cambio 1: Separación de Setups
+#### Cambio 1: Validación de Evento (Safety Check)
+
+```javascript
+// Get ultimo_evento_m15 from analysis for matching
+const ultimo_evento_m15 = getUltimoEventoM15(analysis);
+
+// If no valid evento is detected, we can't perform proper matching
+if (!ultimo_evento_m15) {
+    console.warn(`⚠️ No se pudo obtener ultimo_evento_m15 para ${symbol}, omitiendo matching`);
+    // Still update existing setups' states, but don't try to match/create
+    const existingSetups = await getAllActiveSetups(symbol);
+    for (const setup of existingSetups) {
+        if (setup.estado === 'PAUSADA') {
+            await reevaluatePausedZone(setup, currentPrice, analysis);
+        } else {
+            await updateSetupState(setup, currentPrice, analysis);
+        }
+    }
+    return;
+}
+```
+
+**Propósito:** Previene errores si el análisis no tiene un evento válido. En lugar de fallar, actualiza los estados existentes y retorna sin intentar crear/matchear zonas.
+
+#### Cambio 2: Separación de Setups
 
 ```javascript
 // Get all active/in-zone/profit/pausada/TP setups for this symbol (for state management)
@@ -72,9 +96,9 @@ const activeSetups = await getAllActiveSetups(symbol);
 const allSetups = await getAllSetupsForMatching(symbol);
 ```
 
-#### Cambio 2: Matching en Dos Fases
+#### Cambio 3: Matching en Dos Fases
 
-**Fase 1: Matching Exacto** (líneas 958-970)
+**Fase 1: Matching Exacto** (líneas ~975-987)
 ```javascript
 // First, check for exact match (same zone boundaries, evento, and direccion)
 for (const setup of allSetups) {
@@ -91,14 +115,14 @@ for (const setup of allSetups) {
 }
 ```
 
-**Fase 2: Matching por Contenido/Solapamiento** (líneas 973-991)
+**Fase 2: Matching por Contenido/Solapamiento** (líneas ~990-1008)
 ```javascript
 // If no exact match, check for containment or strong overlap (only with active/paused zones)
 if (!matchingSetup) {
     for (const setup of activeSetups) {  // ← Ahora INCLUYE PAUSADA
-        // Check if new zone is contained within existing zone
-        const isContained = newZonaDesde >= (setup.zona_desde - tolerance) && 
-                           newZonaHasta <= (setup.zona_hasta + tolerance);
+        // Check if new zone is contained within existing zone (strict containment)
+        const isContained = newZonaDesde >= setup.zona_desde && 
+                           newZonaHasta <= setup.zona_hasta;
         
         // Check for strong overlap (>= 70%)
         const overlap = Math.min(newZonaHasta, setup.zona_hasta) - Math.max(newZonaDesde, setup.zona_desde);
@@ -115,7 +139,12 @@ if (!matchingSetup) {
 }
 ```
 
-#### Cambio 3: Tolerancia Incrementada
+**Notas importantes sobre Fase 2:**
+- **Containment check**: Usa comparación estricta sin tolerancia. Una zona está contenida solo si está completamente dentro de otra zona existente.
+- **Overlap check**: Calcula el porcentaje de solapamiento. Si es >= 70%, se considera la misma zona.
+- **Solo active setups**: Solo verifica containment/overlap con zonas activas (ACTIVA, EN_ZONA, PROFIT, PAUSADA, TP), no con zonas cerradas/descartadas.
+
+#### Cambio 4: Tolerancia Incrementada
 
 ```javascript
 const tolerance = 0.001; // Aumentado de 0.00001 para mejor manejo de decimales
@@ -123,7 +152,9 @@ const tolerance = 0.001; // Aumentado de 0.00001 para mejor manejo de decimales
 
 **Justificación:** Los precios de índices como Boom/Crash pueden tener variaciones mínimas por redondeo. Una tolerancia de 0.001 es suficiente para capturar zonas idénticas sin ser tan estricta que cree duplicados por diferencias insignificantes.
 
-#### Cambio 4: Actualización en Lugar de Creación
+**Nota:** La tolerancia se usa SOLO para exact matching (Fase 1), NO para containment check (Fase 2).
+
+#### Cambio 5: Actualización en Lugar de Creación
 
 ```javascript
 // If we found a matching setup, update it instead of creating new
