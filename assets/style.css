@@ -1002,6 +1002,16 @@ select:focus {
     color: #d97706;
 }
 
+.status-esperando-acomodo {
+    background: #e0e7ff;
+    color: #4f46e5;
+}
+
+.status-sin-setup {
+    background: #f3f4f6;
+    color: #6b7280;
+}
+
 /* ========================================
    FOOTER
    ======================================== */
