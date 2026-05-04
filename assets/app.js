@@ -926,8 +926,10 @@ async function trackZoneHistory(symbol, analysis) {
         const allSetups = await getAllSetupsForMatching(symbol);
         
         // Separate operative zones from paused zones
+        // Operative: ACTIVA, EN_ZONA, PROFIT, TP (actively tracking price)
+        // Paused: PAUSADA (valid but not currently operative)
         const operativeSetups = activeSetups.filter(s => 
-            s.estado === 'ACTIVA' || s.estado === 'EN_ZONA' || s.estado === 'PROFIT' || s.estado === 'TP'
+            ['ACTIVA', 'EN_ZONA', 'PROFIT', 'TP'].includes(s.estado)
         );
         const pausedSetups = activeSetups.filter(s => s.estado === 'PAUSADA');
         

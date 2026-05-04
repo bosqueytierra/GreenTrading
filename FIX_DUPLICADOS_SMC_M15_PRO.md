@@ -180,8 +180,8 @@ if (matchingSetup) {
     console.log(`✓ Setup ${matchingSetup.id} actualizado (mantiene zona original) para ${symbol}`);
     
     // Update state based on price movement (only if in an active state)
-    const activeStates = ['ACTIVA', 'EN_ZONA', 'PROFIT', 'PAUSADA', 'TP'];
-    if (activeStates.includes(matchingSetup.estado)) {
+    // Uses ACTIVE_SETUP_STATES constant: ['ACTIVA', 'EN_ZONA', 'PROFIT', 'PAUSADA', 'TP']
+    if (ACTIVE_SETUP_STATES.includes(matchingSetup.estado)) {
         await updateSetupState(matchingSetup, currentPrice, analysis);
     }
 }
@@ -190,6 +190,8 @@ else {
     // ... create new setup
 }
 ```
+
+**Nota:** El código usa la constante `ACTIVE_SETUP_STATES` definida al inicio del archivo (línea ~61) para mantener consistencia en todo el código.
 
 ## Flujo Esperado Después del Fix
 
