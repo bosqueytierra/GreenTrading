@@ -52,7 +52,7 @@ Se implementó un sistema automático de limpieza de zonas competidoras para el 
 2. Calcula la distancia de cada zona al precio actual
 3. Ordena por distancia (ascendente)
 4. Mantiene la zona más cercana
-5. Descarta todas las demás con motivo: `"Nueva zona descartada por menor proximidad / zona menos cercana al precio actual"`
+5. Descarta todas las demás con motivo: `"Zona descartada: mayor distancia al precio actual"`
 
 **Logs generados:**
 ```
@@ -220,7 +220,7 @@ SELECT
     zona_desde,
     zona_hasta
 FROM smc_m15_setups
-WHERE motivo_cierre LIKE '%menor proximidad%'
+WHERE motivo_cierre LIKE '%mayor distancia%'
 ORDER BY fecha_cierre DESC
 LIMIT 20;
 ```
