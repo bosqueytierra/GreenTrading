@@ -12,23 +12,22 @@ const VALID_USERS = {
 let autoRefreshInterval = null;
 const AUTO_REFRESH_SECONDS = 30;
 let currentUser = null;
-// ⚠️ IMPORTANTE: currentStrategy solo controla qué datos se MUESTRAN en el dashboard
-// NO debe controlar a qué tabla se ESCRIBE (el tracking siempre va a smc_m15_setups)
-let currentStrategy = 'SMC_M15_PRO'; // Estrategia seleccionada en dashboard
-// ⚠️ currentHistoryStrategy siempre debe ser 'SMC_M15_PRO' para el historial principal
-let currentHistoryStrategy = 'SMC_M15_PRO'; // Estrategia seleccionada en historial
+// Estrategia seleccionada en dashboard (SMC_M15_PRO o SMC_H1_M15_PRO)
+let currentStrategy = 'SMC_M15_PRO';
+// Estrategia seleccionada en historial (SMC_M15_PRO o SMC_H1_M15_PRO)
+let currentHistoryStrategy = 'SMC_M15_PRO';
 
-// ⚠️ Configuración de estrategias - MAPEO DE TABLAS
-// IMPORTANTE: Cada estrategia usa su propia tabla, NO modificar este mapeo
+// Configuración de estrategias - MAPEO DE TABLAS
+// Cada estrategia usa su propia tabla independiente (aislamiento real)
 const STRATEGIES = {
     SMC_M15_PRO: {
         name: 'SMC M15 PRO',
-        table: 'smc_m15_setups',  // ⚠️ SOLO para SMC M15 PRO
+        table: 'smc_m15_setups',
         displayName: 'SMC M15 PRO'
     },
     SMC_H1_M15_PRO: {
         name: 'SMC PRO TENDENCIA H1 + CHOCH/BOS (M15)',
-        table: 'smc_h1_m15_setups',  // ⚠️ SOLO para H1+M15
+        table: 'smc_h1_m15_setups',
         displayName: 'SMC PRO TENDENCIA H1 + CHOCH/BOS (M15)'
     }
 };
@@ -282,9 +281,9 @@ function switchDashboardStrategy(strategy) {
         }
     });
     
-    // ⚠️ IMPORTANTE: Ambas estrategias leen de la misma tabla (smc_m15_setups)
-    // La diferencia es que H1+M15 aplica filtro adicional al MOSTRAR los datos
-    // NO al escribirlos (el tracking siempre va a smc_m15_setups)
+    // Cada estrategia lee/escribe de su propia tabla independiente
+    // SMC M15 PRO → smc_m15_setups
+    // SMC H1+M15 PRO → smc_h1_m15_setups
     // Reload dashboard with new strategy
     fetchAllIndices();
 }
@@ -2111,10 +2110,8 @@ let currentFilters = {
 };
 
 async function fetchSetupHistory(limit = 50) {
-    // ⚠️ IMPORTANTE: El historial siempre lee de smc_m15_setups
-    // porque es la única tabla que tiene datos reales
-    // La tabla smc_h1_m15_setups está vacía (solo para el procesador backend cuando se active)
-    const table = 'smc_m15_setups';  // Siempre usar esta tabla para el historial
+    // Lee desde la tabla correspondiente a la estrategia seleccionada en historial
+    const table = getStrategyTable(currentHistoryStrategy);
     const url = `${SUPABASE_URL}/rest/v1/${table}?order=created_at.desc&limit=${limit}`;
     
     const response = await fetch(url, {
@@ -2441,7 +2438,7 @@ async function updateHistoryTable() {
         // Show clear error message
         if (historyError) {
             if (error.message.includes('401') || error.message.includes('403')) {
-                historyError.textContent = '⚠️ No se pudo cargar historial. Revisar permisos RLS de smc_m15_setups.';
+                historyError.textContent = `⚠️ No se pudo cargar historial. Revisar permisos RLS de ${getStrategyTable(currentHistoryStrategy)}.`;
             } else {
                 historyError.textContent = `⚠️ Error cargando historial: ${error.message}`;
             }
