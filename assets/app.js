@@ -254,7 +254,19 @@ async function getAllActiveSetups(symbol) {
     }
     
     const data = await response.json();
-    return data;
+    
+    // Filter out TP setups that have been released
+    return data.filter(setup => {
+        if (setup.estado === 'ACTIVA' || setup.estado === 'EN_ZONA' || setup.estado === 'PROFIT') {
+            return true;
+        }
+        if (setup.estado === 'TP') {
+            // Only include TP if it hasn't been released yet
+            const isReleased = setup.motivo_cierre && setup.motivo_cierre.includes('liberada');
+            return !isReleased;
+        }
+        return false;
+    });
 }
 
 async function createSetup(setupData) {
@@ -309,7 +321,7 @@ async function closeSetup(id, motivo) {
 
 async function getSetupEnZonaOrProfit(symbol) {
     // Get the most recent EN_ZONA, PROFIT, or TP (not yet released) setup for this symbol
-    const url = `${SUPABASE_URL}/rest/v1/smc_m15_setups?symbol=eq.${encodeURIComponent(symbol)}&estado=in.(EN_ZONA,PROFIT,TP)&order=created_at.desc&limit=1`;
+    const url = `${SUPABASE_URL}/rest/v1/smc_m15_setups?symbol=eq.${encodeURIComponent(symbol)}&estado=in.(EN_ZONA,PROFIT,TP)&order=created_at.desc&limit=5`;
     
     try {
         const response = await fetch(url, {
@@ -322,14 +334,28 @@ async function getSetupEnZonaOrProfit(symbol) {
         });
         
         if (!response.ok) {
-            console.error(`Error fetching EN_ZONA/PROFIT setup for ${symbol}: ${response.status}`);
+            console.error(`Error fetching EN_ZONA/PROFIT/TP setup for ${symbol}: ${response.status}`);
             return null;
         }
         
         const data = await response.json();
-        return data.length > 0 ? data[0] : null;
+        
+        // Filter out TP setups that have been released
+        const activeSetup = data.find(setup => {
+            if (setup.estado === 'EN_ZONA' || setup.estado === 'PROFIT') {
+                return true;
+            }
+            if (setup.estado === 'TP') {
+                // Only include TP if it hasn't been released yet
+                const isReleased = setup.motivo_cierre && setup.motivo_cierre.includes('liberada');
+                return !isReleased;
+            }
+            return false;
+        });
+        
+        return activeSetup || null;
     } catch (error) {
-        console.error(`Error fetching EN_ZONA/PROFIT setup for ${symbol}:`, error);
+        console.error(`Error fetching EN_ZONA/PROFIT/TP setup for ${symbol}:`, error);
         return null;
     }
 }
