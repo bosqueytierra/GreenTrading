@@ -1103,9 +1103,18 @@ async function fetchAllIndices() {
             const analysis = await fetchAndAnalyzeSymbol(symbol);
             results[symbol] = analysis;
             
-            // Track zone history for SMC M15 PRO (handles SIN SETUP case internally)
+            // IMPORTANT: Always track zone history using SMC M15 PRO table (smc_m15_setups)
+            // This ensures backward compatibility and prevents accidental writes to H1+M15 table
+            // The H1+M15 strategy is currently view-only from frontend
             if (analysis && !analysis.error) {
+                // Temporarily force strategy to SMC_M15_PRO for tracking
+                const originalStrategy = currentStrategy;
+                currentStrategy = 'SMC_M15_PRO';
+                
                 await trackZoneHistory(symbol, analysis);
+                
+                // Restore original strategy
+                currentStrategy = originalStrategy;
             }
         } catch (error) {
             console.error(`Error fetching ${symbol}:`, error);
