@@ -361,6 +361,90 @@ async function getSetupEnZonaOrProfit(symbol) {
 }
 
 /**
+ * Calculate distance from current price to zone
+ * Returns 0 if price is within zone, otherwise returns minimum distance to nearest edge
+ */
+function calculateDistanceToZone(currentPrice, zona_desde, zona_hasta) {
+    // If price is within zone, distance is 0
+    if (currentPrice >= zona_desde && currentPrice <= zona_hasta) {
+        return 0;
+    }
+    
+    // If price is outside, calculate minimum distance to nearest edge
+    return Math.min(
+        Math.abs(currentPrice - zona_desde),
+        Math.abs(currentPrice - zona_hasta)
+    );
+}
+
+/**
+ * Keep only the closest zone per symbol and discard competing live zones
+ * Live states: ACTIVA, EN_ZONA, PROFIT, ESPERANDO_ACOMODO (if applicable)
+ * Untouched states: TP, SL, DESCARTADA
+ */
+async function cleanupZonesByProximity(symbol, currentPrice) {
+    try {
+        // Get all live zones for this symbol (excluding TP, SL, DESCARTADA)
+        const url = `${SUPABASE_URL}/rest/v1/smc_m15_setups?symbol=eq.${encodeURIComponent(symbol)}&estado=in.(ACTIVA,EN_ZONA,PROFIT,ESPERANDO_ACOMODO)&order=created_at.desc`;
+        
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            console.error(`Error fetching live zones for ${symbol}: ${response.status}`);
+            return;
+        }
+        
+        const liveZones = await response.json();
+        
+        // If there's 0 or 1 live zone, no cleanup needed
+        if (liveZones.length <= 1) {
+            return;
+        }
+        
+        // Calculate distance for each zone
+        const zonesWithDistance = liveZones.map(zone => ({
+            ...zone,
+            distance: calculateDistanceToZone(currentPrice, zone.zona_desde, zone.zona_hasta)
+        }));
+        
+        // Sort by distance (ascending) - closest first
+        zonesWithDistance.sort((a, b) => a.distance - b.distance);
+        
+        // Keep the closest zone, discard the rest
+        const closestZone = zonesWithDistance[0];
+        const zonesToDiscard = zonesWithDistance.slice(1);
+        
+        console.log(`🔍 Limpieza por proximidad para ${symbol}: ${liveZones.length} zonas vivas detectadas`);
+        console.log(`   ✓ Zona más cercana (ID ${closestZone.id}): distancia = ${closestZone.distance.toFixed(3)}, estado = ${closestZone.estado}`);
+        
+        // Discard all other zones
+        for (const zone of zonesToDiscard) {
+            console.log(`   ❌ Descartando zona ID ${zone.id}: distancia = ${zone.distance.toFixed(3)}, estado = ${zone.estado}`);
+            
+            await updateSetup(zone.id, {
+                estado: 'DESCARTADA',
+                fecha_cierre: new Date().toISOString(),
+                motivo_cierre: 'Nueva zona descartada por menor proximidad / zona menos cercana al precio actual'
+            });
+        }
+        
+        if (zonesToDiscard.length > 0) {
+            console.log(`✅ Limpieza completada: 1 zona activa, ${zonesToDiscard.length} zona(s) descartada(s)`);
+        }
+        
+    } catch (error) {
+        console.error(`Error in cleanupZonesByProximity for ${symbol}:`, error);
+    }
+}
+
+/**
  * Check and update setup state based on price movements
  * Handles transitions: ACTIVA → EN_ZONA ⇄ PROFIT → TP (1:1) → [1:2 or SL return] → LIBERAR
  */
@@ -716,6 +800,9 @@ async function trackZoneHistory(symbol, analysis) {
             // Update state based on current price
             await updateSetupState(setup, currentPrice);
         }
+        
+        // Cleanup: Keep only the closest zone per symbol, discard competing live zones
+        await cleanupZonesByProximity(symbol, currentPrice);
         
     } catch (error) {
         console.error(`Error tracking zone history for ${symbol}:`, error);
