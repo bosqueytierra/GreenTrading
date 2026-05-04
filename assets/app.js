@@ -15,16 +15,17 @@ let currentUser = null;
 let currentStrategy = 'SMC_M15_PRO'; // Estrategia seleccionada en dashboard
 let currentHistoryStrategy = 'SMC_M15_PRO'; // Estrategia seleccionada en historial
 
-// Configuración de estrategias
+// ⚠️ Configuración de estrategias - MAPEO DE TABLAS
+// IMPORTANTE: Cada estrategia usa su propia tabla, NO modificar este mapeo
 const STRATEGIES = {
     SMC_M15_PRO: {
         name: 'SMC M15 PRO',
-        table: 'smc_m15_setups',
+        table: 'smc_m15_setups',  // ⚠️ SOLO para SMC M15 PRO
         displayName: 'SMC M15 PRO'
     },
     SMC_H1_M15_PRO: {
         name: 'SMC PRO TENDENCIA H1 + CHOCH/BOS (M15)',
-        table: 'smc_h1_m15_setups',
+        table: 'smc_h1_m15_setups',  // ⚠️ SOLO para H1+M15
         displayName: 'SMC PRO TENDENCIA H1 + CHOCH/BOS (M15)'
     }
 };
