@@ -1635,6 +1635,101 @@ function initializeHistoryFilters() {
     });
 }
 
+/**
+ * Calculate statistics from filtered setups
+ * @param {Array} setups - Array of setup objects
+ * @returns {Object} Stats object with counts for each state
+ */
+function calculateStats(setups) {
+    const stats = {
+        total: setups.length,
+        activas: 0,
+        enZona: 0,
+        profit: 0,
+        tp: 0,
+        sl: 0,
+        descartadas: 0
+    };
+    
+    setups.forEach(setup => {
+        switch (setup.estado) {
+            case 'ACTIVA':
+                stats.activas++;
+                break;
+            case 'EN_ZONA':
+                stats.enZona++;
+                break;
+            case 'PROFIT':
+                stats.profit++;
+                break;
+            case 'TP':
+                stats.tp++;
+                break;
+            case 'SL':
+                stats.sl++;
+                break;
+            case 'DESCARTADA':
+                stats.descartadas++;
+                break;
+            default:
+                // Handle unexpected state values
+                console.warn(`Unexpected estado value: ${setup.estado} for setup ID ${setup.id}`);
+                break;
+        }
+    });
+    
+    return stats;
+}
+
+/**
+ * Render statistics cards in the stats bar
+ * @param {Object} stats - Stats object from calculateStats
+ */
+function renderStats(stats) {
+    const statsBar = document.getElementById('stats-bar');
+    if (!statsBar) return;
+    
+    // Calculate winrate
+    const totalClosed = stats.tp + stats.sl;
+    const winrate = totalClosed > 0 ? ((stats.tp / totalClosed) * 100).toFixed(1) : '0.0';
+    
+    // Create stats cards
+    statsBar.innerHTML = `
+        <div class="stat-card stat-total">
+            <div class="stat-label">Total Setups</div>
+            <div class="stat-value">${stats.total}</div>
+        </div>
+        <div class="stat-card stat-activas">
+            <div class="stat-label">Activas</div>
+            <div class="stat-value">${stats.activas}</div>
+        </div>
+        <div class="stat-card stat-en-zona">
+            <div class="stat-label">En Zona</div>
+            <div class="stat-value">${stats.enZona}</div>
+        </div>
+        <div class="stat-card stat-profit">
+            <div class="stat-label">Profit</div>
+            <div class="stat-value">${stats.profit}</div>
+        </div>
+        <div class="stat-card stat-tp">
+            <div class="stat-label">TP</div>
+            <div class="stat-value">${stats.tp}</div>
+        </div>
+        <div class="stat-card stat-sl">
+            <div class="stat-label">SL</div>
+            <div class="stat-value">${stats.sl}</div>
+        </div>
+        <div class="stat-card stat-descartadas">
+            <div class="stat-label">Descartadas</div>
+            <div class="stat-value">${stats.descartadas}</div>
+        </div>
+        <div class="stat-card stat-winrate">
+            <div class="stat-label">Winrate</div>
+            <div class="stat-value">${winrate}%</div>
+        </div>
+    `;
+}
+
 function applyFilters() {
     const tbody = document.getElementById('historyTableBody');
     if (!tbody) return;
@@ -1658,6 +1753,10 @@ function applyFilters() {
         
         return true;
     });
+    
+    // Calculate and render stats for filtered data
+    const stats = calculateStats(filteredSetups);
+    renderStats(stats);
     
     // Update table
     tbody.innerHTML = '';
