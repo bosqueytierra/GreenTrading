@@ -1906,34 +1906,36 @@ function renderStats(stats, setups = []) {
     // Create index performance section HTML
     let indexPerformanceHTML = '';
     if (Object.keys(indexStats).length > 0) {
-        const sortedByTp = Object.entries(indexStats)
-            .filter(([_, stats]) => stats.tp > 0)
-            .sort((a, b) => b[1].tp - a[1].tp)
-            .slice(0, 3);
+        // Helper function to get top performers by metric
+        const getTopPerformers = (metric) => {
+            return Object.entries(indexStats)
+                .filter(([_, stats]) => stats[metric] > 0)
+                .sort((a, b) => b[1][metric] - a[1][metric])
+                .slice(0, 3);
+        };
         
-        const sortedBySl = Object.entries(indexStats)
-            .filter(([_, stats]) => stats.sl > 0)
-            .sort((a, b) => b[1].sl - a[1].sl)
-            .slice(0, 3);
+        const sortedByTp = getTopPerformers('tp');
+        const sortedBySl = getTopPerformers('sl');
+        
+        // Helper function to render index items
+        const renderIndexItems = (items, cssClass) => {
+            return items.length > 0
+                ? items.map(([symbol, stats]) => {
+                    const shortName = symbol.replace(' Index', '');
+                    const metric = cssClass === 'stat-index-tp' ? stats.tp : stats.sl;
+                    return `<div class="stat-index-item ${cssClass}">${shortName}: ${metric}</div>`;
+                  }).join('')
+                : '<div class="stat-index-item">N/A</div>';
+        };
         
         indexPerformanceHTML = `
             <div class="stat-card stat-index-performance">
                 <div class="stat-label">🔥 Más TP</div>
-                ${sortedByTp.length > 0 ? 
-                    sortedByTp.map(([symbol, stats]) => {
-                        const shortName = symbol.replace(' Index', '');
-                        return `<div class="stat-index-item stat-index-tp">${shortName}: ${stats.tp}</div>`;
-                    }).join('') 
-                    : '<div class="stat-index-item">N/A</div>'}
+                ${renderIndexItems(sortedByTp, 'stat-index-tp')}
             </div>
             <div class="stat-card stat-index-performance">
                 <div class="stat-label">⚠️ Más SL</div>
-                ${sortedBySl.length > 0 ? 
-                    sortedBySl.map(([symbol, stats]) => {
-                        const shortName = symbol.replace(' Index', '');
-                        return `<div class="stat-index-item stat-index-sl">${shortName}: ${stats.sl}</div>`;
-                    }).join('') 
-                    : '<div class="stat-index-item">N/A</div>'}
+                ${renderIndexItems(sortedBySl, 'stat-index-sl')}
             </div>
         `;
     }
