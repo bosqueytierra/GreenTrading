@@ -385,6 +385,7 @@ function calculateDistanceToZone(currentPrice, zona_desde, zona_hasta) {
 async function cleanupZonesByProximity(symbol, currentPrice) {
     try {
         // Get all live zones for this symbol (excluding TP, SL, DESCARTADA)
+        // Note: ordered by created_at.desc for tie-breaking when zones have equal distance
         const url = `${SUPABASE_URL}/rest/v1/smc_m15_setups?symbol=eq.${encodeURIComponent(symbol)}&estado=in.(ACTIVA,EN_ZONA,PROFIT,ESPERANDO_ACOMODO)&order=created_at.desc`;
         
         const response = await fetch(url, {
@@ -415,7 +416,14 @@ async function cleanupZonesByProximity(symbol, currentPrice) {
         }));
         
         // Sort by distance (ascending) - closest first
-        zonesWithDistance.sort((a, b) => a.distance - b.distance);
+        // Zones with equal distance maintain created_at.desc order (most recent first)
+        zonesWithDistance.sort((a, b) => {
+            if (a.distance !== b.distance) {
+                return a.distance - b.distance;
+            }
+            // Tie-breaker: keep more recent zone (already ordered by created_at.desc)
+            return 0;
+        });
         
         // Keep the closest zone, discard the rest
         const closestZone = zonesWithDistance[0];
@@ -431,7 +439,7 @@ async function cleanupZonesByProximity(symbol, currentPrice) {
             await updateSetup(zone.id, {
                 estado: 'DESCARTADA',
                 fecha_cierre: new Date().toISOString(),
-                motivo_cierre: 'Nueva zona descartada por menor proximidad / zona menos cercana al precio actual'
+                motivo_cierre: 'Zona descartada: mayor distancia al precio actual'
             });
         }
         
