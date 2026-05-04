@@ -12,6 +12,22 @@ const VALID_USERS = {
 let autoRefreshInterval = null;
 const AUTO_REFRESH_SECONDS = 30;
 let currentUser = null;
+let currentStrategy = 'SMC_M15_PRO'; // Estrategia seleccionada en dashboard
+let currentHistoryStrategy = 'SMC_M15_PRO'; // Estrategia seleccionada en historial
+
+// Configuración de estrategias
+const STRATEGIES = {
+    SMC_M15_PRO: {
+        name: 'SMC M15 PRO',
+        table: 'smc_m15_setups',
+        displayName: 'SMC M15 PRO'
+    },
+    SMC_H1_M15_PRO: {
+        name: 'SMC PRO TENDENCIA H1 + CHOCH/BOS (M15)',
+        table: 'smc_h1_m15_setups',
+        displayName: 'SMC PRO TENDENCIA H1 + CHOCH/BOS (M15)'
+    }
+};
 
 // Lista de todos los índices
 const ALL_INDICES = {
@@ -209,6 +225,9 @@ function initializeDashboard() {
     // Initialize navigation
     initNavigation();
     
+    // Initialize strategy tabs
+    initStrategyTabs();
+    
     // Event listeners
     const refreshBtn = document.getElementById('refreshBtn');
     if (refreshBtn) {
@@ -222,6 +241,70 @@ function initializeDashboard() {
     startAutoRefresh();
 }
 
+// ========================================
+// STRATEGY TABS LOGIC
+// ========================================
+
+function initStrategyTabs() {
+    // Dashboard tabs
+    const dashboardTabs = document.querySelectorAll('#dashboardView .strategy-tab');
+    dashboardTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const strategy = tab.getAttribute('data-strategy');
+            switchDashboardStrategy(strategy);
+        });
+    });
+    
+    // History tabs
+    const historyTabs = document.querySelectorAll('#historyView .strategy-tab');
+    historyTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const strategy = tab.getAttribute('data-strategy');
+            switchHistoryStrategy(strategy);
+        });
+    });
+}
+
+function switchDashboardStrategy(strategy) {
+    currentStrategy = strategy;
+    
+    // Update active tab
+    const dashboardTabs = document.querySelectorAll('#dashboardView .strategy-tab');
+    dashboardTabs.forEach(tab => {
+        if (tab.getAttribute('data-strategy') === strategy) {
+            tab.classList.add('active');
+        } else {
+            tab.classList.remove('active');
+        }
+    });
+    
+    // Reload dashboard with new strategy
+    fetchAllIndices();
+}
+
+function switchHistoryStrategy(strategy) {
+    currentHistoryStrategy = strategy;
+    
+    // Update active tab
+    const historyTabs = document.querySelectorAll('#historyView .strategy-tab');
+    historyTabs.forEach(tab => {
+        if (tab.getAttribute('data-strategy') === strategy) {
+            tab.classList.add('active');
+        } else {
+            tab.classList.remove('active');
+        }
+    });
+    
+    // Update history title
+    const historyTitle = document.querySelector('.history-title');
+    if (historyTitle) {
+        historyTitle.textContent = `📊 ${STRATEGIES[strategy].displayName}`;
+    }
+    
+    // Reload history with new strategy
+    updateHistoryTable();
+}
+
 function startAutoRefresh() {
     if (autoRefreshInterval) {
         clearInterval(autoRefreshInterval);
@@ -233,12 +316,18 @@ function startAutoRefresh() {
 }
 
 // ========================================
-// SMC M15 SETUPS TRACKING
+// SMC SETUPS TRACKING (STRATEGY-AWARE)
 // ========================================
+
+function getStrategyTable(strategy = null) {
+    const strat = strategy || currentStrategy;
+    return STRATEGIES[strat]?.table || 'smc_m15_setups';
+}
 
 async function getAllActiveSetups(symbol) {
     // Get all setups with estado ACTIVA, EN_ZONA, PROFIT, PAUSADA, or TP (not yet released) for this symbol
-    const url = `${SUPABASE_URL}/rest/v1/smc_m15_setups?symbol=eq.${encodeURIComponent(symbol)}&estado=in.(ACTIVA,EN_ZONA,PROFIT,PAUSADA,TP)&order=created_at.desc`;
+    const table = getStrategyTable();
+    const url = `${SUPABASE_URL}/rest/v1/${table}?symbol=eq.${encodeURIComponent(symbol)}&estado=in.(ACTIVA,EN_ZONA,PROFIT,PAUSADA,TP)&order=created_at.desc`;
 
     const response = await fetch(url, {
         method: 'GET',
@@ -270,7 +359,8 @@ async function getAllActiveSetups(symbol) {
 }
 
 async function createSetup(setupData) {
-    const url = `${SUPABASE_URL}/rest/v1/smc_m15_setups`;
+    const table = getStrategyTable();
+    const url = `${SUPABASE_URL}/rest/v1/${table}`;
     
     const response = await fetch(url, {
         method: 'POST',
@@ -291,7 +381,8 @@ async function createSetup(setupData) {
 }
 
 async function updateSetup(id, updateData) {
-    const url = `${SUPABASE_URL}/rest/v1/smc_m15_setups?id=eq.${id}`;
+    const table = getStrategyTable();
+    const url = `${SUPABASE_URL}/rest/v1/${table}?id=eq.${id}`;
     
     const response = await fetch(url, {
         method: 'PATCH',
@@ -321,7 +412,8 @@ async function closeSetup(id, motivo) {
 
 async function getSetupEnZonaOrProfit(symbol) {
     // Get the most recent EN_ZONA, PROFIT, or TP (not yet released) setup for this symbol
-    const url = `${SUPABASE_URL}/rest/v1/smc_m15_setups?symbol=eq.${encodeURIComponent(symbol)}&estado=in.(EN_ZONA,PROFIT,TP)&order=created_at.desc&limit=5`;
+    const table = getStrategyTable();
+    const url = `${SUPABASE_URL}/rest/v1/${table}?symbol=eq.${encodeURIComponent(symbol)}&estado=in.(EN_ZONA,PROFIT,TP)&order=created_at.desc&limit=5`;
     
     try {
         const response = await fetch(url, {
@@ -646,7 +738,8 @@ async function updateSetupState(setup, currentPrice, analysis = null) {
 async function handleSLHitAndReactivatePausedZones(symbol, currentPrice, analysis) {
     try {
         // Get all PAUSADA zones for this symbol
-        const url = `${SUPABASE_URL}/rest/v1/smc_m15_setups?symbol=eq.${encodeURIComponent(symbol)}&estado=eq.PAUSADA&order=created_at.desc`;
+        const table = getStrategyTable();
+        const url = `${SUPABASE_URL}/rest/v1/${table}?symbol=eq.${encodeURIComponent(symbol)}&estado=eq.PAUSADA&order=created_at.desc`;
         
         const response = await fetch(url, {
             method: 'GET',
@@ -946,8 +1039,9 @@ async function trackZoneHistory(symbol, analysis) {
  */
 async function ensureSingleOperativeZone(symbol, currentPrice, analysis) {
     try {
-        // Get all operative zones (ACTIVA, EN_ZONA, PROFIT) for this symbol
-        const url = `${SUPABASE_URL}/rest/v1/smc_m15_setups?symbol=eq.${encodeURIComponent(symbol)}&estado=in.(ACTIVA,EN_ZONA,PROFIT)&order=created_at.desc`;
+        // Get all operative zones (ACTIVA, EN_ZONA, PROFIT) for this symbol from current strategy
+        const table = getStrategyTable();
+        const url = `${SUPABASE_URL}/rest/v1/${table}?symbol=eq.${encodeURIComponent(symbol)}&estado=in.(ACTIVA,EN_ZONA,PROFIT)&order=created_at.desc`;
         
         const response = await fetch(url, {
             method: 'GET',
@@ -2005,7 +2099,8 @@ let currentFilters = {
 };
 
 async function fetchSetupHistory(limit = 50) {
-    const url = `${SUPABASE_URL}/rest/v1/smc_m15_setups?order=created_at.desc&limit=${limit}`;
+    const table = getStrategyTable(currentHistoryStrategy);
+    const url = `${SUPABASE_URL}/rest/v1/${table}?order=created_at.desc&limit=${limit}`;
     
     const response = await fetch(url, {
         method: 'GET',
