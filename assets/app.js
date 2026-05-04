@@ -412,8 +412,9 @@ async function createSetup(setupData) {
     return await response.json();
 }
 
-async function updateSetup(id, updateData) {
-    const table = getStrategyTable();
+async function updateSetup(id, updateData, explicitTable = null) {
+    // If explicitTable is provided, use it; otherwise fall back to currentStrategy
+    const table = explicitTable || getStrategyTable();
     const url = `${SUPABASE_URL}/rest/v1/${table}?id=eq.${id}`;
     
     const response = await fetch(url, {
@@ -434,12 +435,12 @@ async function updateSetup(id, updateData) {
     return await response.json();
 }
 
-async function closeSetup(id, motivo) {
+async function closeSetup(id, motivo, explicitTable = null) {
     return await updateSetup(id, {
         estado: 'DESCARTADA',
         fecha_cierre: new Date().toISOString(),
         motivo_cierre: motivo
-    });
+    }, explicitTable);
 }
 
 async function getSetupEnZonaOrProfit(symbol) {
@@ -518,6 +519,13 @@ async function reevaluatePausedZone(setup, currentPrice, analysis) {
         updated_at: new Date().toISOString()
     };
     
+    // Determine which strategy this setup belongs to
+    // Use setup.strategy if available, otherwise infer from setup properties
+    // For SMC_M15_PRO: zones should only be discarded if price touches SL
+    // For SMC_H1_M15_PRO: zones can be discarded for H1/M15 context changes too
+    const setupStrategy = setup.strategy || 'SMC_M15_PRO'; // Default to SMC_M15_PRO if not set
+    const setupTable = STRATEGIES[setupStrategy]?.table || 'smc_m15_setups';
+    
     let shouldDiscard = false;
     let discardReason = null;
     
@@ -532,7 +540,7 @@ async function reevaluatePausedZone(setup, currentPrice, analysis) {
     
     // 2. Check H1/M15 context compatibility (ONLY for SMC_H1_M15_PRO)
     // For SMC_M15_PRO, PAUSADA zones should NOT be discarded by H1/M15 context changes
-    if (!shouldDiscard && currentStrategy === 'SMC_H1_M15_PRO' && analysis && analysis.smc) {
+    if (!shouldDiscard && setupStrategy === 'SMC_H1_M15_PRO' && analysis && analysis.smc) {
         const tendenciaH1 = analysis.smc.tendenciaH1;
         const tendenciaM15 = analysis.smc.tendenciaM15;
         
@@ -548,7 +556,7 @@ async function reevaluatePausedZone(setup, currentPrice, analysis) {
     
     // 3. Check if M15 event still makes sense (ONLY for SMC_H1_M15_PRO)
     // For SMC_M15_PRO, PAUSADA zones should NOT be discarded by M15 event changes
-    if (!shouldDiscard && currentStrategy === 'SMC_H1_M15_PRO') {
+    if (!shouldDiscard && setupStrategy === 'SMC_H1_M15_PRO') {
         const ultimoEvento = getUltimoEventoM15(analysis);
         if (ultimoEvento) {
             const lastEventDireccion = ultimoEvento.includes('ALCISTA') ? 'ALCISTA' : 'BAJISTA';
@@ -564,7 +572,7 @@ async function reevaluatePausedZone(setup, currentPrice, analysis) {
     // 4. Check minimum confluence (at least one of OB, FVG, or Barrida must be present)
     // This only applies to SMC_H1_M15_PRO
     // For SMC_M15_PRO, zones were already created with initial confluence, so we don't revalidate it
-    if (!shouldDiscard && currentStrategy === 'SMC_H1_M15_PRO') {
+    if (!shouldDiscard && setupStrategy === 'SMC_H1_M15_PRO') {
         const hasConfluence = setup.ob || setup.fvg || setup.barrida;
         if (!hasConfluence) {
             shouldDiscard = true;
@@ -572,13 +580,13 @@ async function reevaluatePausedZone(setup, currentPrice, analysis) {
         }
     }
     
-    // If zone should be discarded, update it
+    // If zone should be discarded, update it using the correct table
     if (shouldDiscard) {
         updateData.estado = 'DESCARTADA';
         updateData.fecha_cierre = new Date().toISOString();
         updateData.motivo_cierre = discardReason;
-        await updateSetup(setup.id, updateData);
-        console.log(`✓ Zona PAUSADA ${setup.id} → DESCARTADA: ${discardReason} para ${setup.symbol} (estrategia: ${currentStrategy})`);
+        await updateSetup(setup.id, updateData, setupTable);
+        console.log(`✓ Zona PAUSADA ${setup.id} → DESCARTADA: ${discardReason} para ${setup.symbol} (estrategia: ${setupStrategy})`);
         return 'DESCARTADA';
     }
     
@@ -763,7 +771,9 @@ async function updateSetupState(setup, currentPrice, analysis = null) {
     // Only update if there are meaningful changes
     const hasChanges = Object.keys(updateData).length > 1; // more than just updated_at
     if (hasChanges) {
-        await updateSetup(setup.id, updateData);
+        // Use the setup's strategy to determine the correct table
+        const setupTable = setup.strategy ? STRATEGIES[setup.strategy]?.table : null;
+        await updateSetup(setup.id, updateData, setupTable);
         
         // If transitioned to SL, check for paused zones to reactivate
         if (updateData.estado === 'SL') {
@@ -832,11 +842,12 @@ async function handleSLHitAndReactivatePausedZones(symbol, currentPrice, analysi
             }
         }
         
-        // Reactivate the closest zone
+        // Reactivate the closest zone, using its correct table
+        const closestZoneTable = closestZone.strategy ? STRATEGIES[closestZone.strategy]?.table : table;
         await updateSetup(closestZone.id, {
             estado: 'ACTIVA',
             updated_at: new Date().toISOString()
-        });
+        }, closestZoneTable);
         console.log(`✓ Zona PAUSADA ${closestZone.id} → ACTIVA (reactivada tras SL) para ${symbol}`);
         
         // Update closestZone object with new estado before calling updateSetupState
@@ -1045,7 +1056,9 @@ async function trackZoneHistory(symbol, analysis) {
                 updateData.tendencia_m15 = analysis.smc.tendenciaM15;
             }
             
-            await updateSetup(matchingSetup.id, updateData);
+            // Use the matching setup's strategy to determine the correct table
+            const matchingSetupTable = matchingSetup.strategy ? STRATEGIES[matchingSetup.strategy]?.table : null;
+            await updateSetup(matchingSetup.id, updateData, matchingSetupTable);
             console.log(`✓ Setup ${matchingSetup.id} actualizado (mantiene zona original) para ${symbol}`);
             
             // Update state based on price movement (only if in an active state)
@@ -1088,7 +1101,8 @@ async function trackZoneHistory(symbol, analysis) {
                 max_reaccion_puntos: null,
                 resultado_puntos: null,
                 fecha_cierre: null,
-                motivo_cierre: null
+                motivo_cierre: null,
+                strategy: currentStrategy  // Store which strategy created this setup
             };
             
             // VALIDACIÓN H1+M15: Si estamos en estrategia H1+M15, validar antes de determinar el estado
@@ -1205,13 +1219,14 @@ async function ensureSingleOperativeZone(symbol, currentPrice, analysis) {
             }
         }
         
-        // Pause all other zones
+        // Pause all other zones, using the correct table based on their strategy
         for (const zone of operativeZones) {
             if (zone.id !== closestZone.id) {
+                const zoneTable = zone.strategy ? STRATEGIES[zone.strategy]?.table : table;
                 await updateSetup(zone.id, {
                     estado: 'PAUSADA',
                     updated_at: new Date().toISOString()
-                });
+                }, zoneTable);
                 console.log(`✓ Zona ${zone.id} → PAUSADA (no es la más próxima) para ${symbol}`);
             }
         }
