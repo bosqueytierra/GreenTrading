@@ -1866,32 +1866,13 @@ function calculateIndexStats(setups) {
         }
     });
     
-    // Find index with most TP and most SL
-    let maxTpSymbol = null;
-    let maxTpCount = 0;
-    let maxSlSymbol = null;
-    let maxSlCount = 0;
-    
-    Object.entries(indexStats).forEach(([symbol, stats]) => {
-        if (stats.tp > maxTpCount) {
-            maxTpCount = stats.tp;
-            maxTpSymbol = symbol;
-        }
-        if (stats.sl > maxSlCount) {
-            maxSlCount = stats.sl;
-            maxSlSymbol = symbol;
-        }
-    });
-    
     return {
-        indexStats,
-        maxTpSymbol,
-        maxSlSymbol
+        indexStats
     };
 }
 
 /**
- * Render statistics cards in the stats bar with index performance
+ * Render statistics cards in the stats bar with per-index TP/SL counts
  * @param {Object} stats - Stats object from calculateStats
  * @param {Array} setups - Array of all filtered setups
  */
@@ -1904,41 +1885,38 @@ function renderStats(stats, setups = []) {
     const winrate = totalClosed > 0 ? ((stats.tp / totalClosed) * 100).toFixed(1) : '0.0';
     
     // Calculate index statistics
-    const { indexStats, maxTpSymbol, maxSlSymbol } = calculateIndexStats(setups);
+    const { indexStats } = calculateIndexStats(setups);
     
-    // Create index performance section HTML
-    let indexPerformanceHTML = '';
+    // Create per-index TP/SL counters HTML (dynamic and scalable)
+    let perIndexHTML = '';
     if (Object.keys(indexStats).length > 0) {
-        // Helper function to get top performers by metric
-        const getTopPerformers = (metric) => {
-            return Object.entries(indexStats)
-                .filter(([_, stats]) => stats[metric] > 0)
-                .sort((a, b) => b[1][metric] - a[1][metric])
-                .slice(0, 3);
-        };
+        // Sort symbols alphabetically for consistent display
+        const sortedSymbols = Object.keys(indexStats).sort();
         
-        const sortedByTp = getTopPerformers('tp');
-        const sortedBySl = getTopPerformers('sl');
+        // Create SL row
+        const slRow = sortedSymbols.map(symbol => {
+            const shortName = symbol.replace(' Index', '');
+            const slCount = indexStats[symbol].sl;
+            return `<div class="stat-index-box stat-index-sl-box">${shortName} | ${slCount}</div>`;
+        }).join('');
         
-        // Helper function to render index items
-        const renderIndexItems = (items, cssClass) => {
-            return items.length > 0
-                ? items.map(([symbol, stats]) => {
-                    const shortName = symbol.replace(' Index', '');
-                    const metric = cssClass === 'stat-index-tp' ? stats.tp : stats.sl;
-                    return `<div class="stat-index-item ${cssClass}">${shortName}: ${metric}</div>`;
-                  }).join('')
-                : '<div class="stat-index-item">N/A</div>';
-        };
+        // Create TP row
+        const tpRow = sortedSymbols.map(symbol => {
+            const shortName = symbol.replace(' Index', '');
+            const tpCount = indexStats[symbol].tp;
+            return `<div class="stat-index-box stat-index-tp-box">${shortName} | ${tpCount}</div>`;
+        }).join('');
         
-        indexPerformanceHTML = `
-            <div class="stat-card stat-index-performance">
-                <div class="stat-label">🔥 Más TP</div>
-                ${renderIndexItems(sortedByTp, 'stat-index-tp')}
-            </div>
-            <div class="stat-card stat-index-performance">
-                <div class="stat-label">⚠️ Más SL</div>
-                ${renderIndexItems(sortedBySl, 'stat-index-sl')}
+        perIndexHTML = `
+            <div class="stat-per-index-container">
+                <div class="stat-per-index-row">
+                    <div class="stat-per-index-label">SL →</div>
+                    <div class="stat-per-index-boxes">${slRow}</div>
+                </div>
+                <div class="stat-per-index-row">
+                    <div class="stat-per-index-label">TP →</div>
+                    <div class="stat-per-index-boxes">${tpRow}</div>
+                </div>
             </div>
         `;
     }
@@ -1977,7 +1955,7 @@ function renderStats(stats, setups = []) {
             <div class="stat-label">Winrate</div>
             <div class="stat-value">${winrate}%</div>
         </div>
-        ${indexPerformanceHTML}
+        ${perIndexHTML}
     `;
 }
 
