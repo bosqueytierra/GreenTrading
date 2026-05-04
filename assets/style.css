@@ -976,6 +976,12 @@ select:focus {
     border-bottom: none;
 }
 
+/* Zone cell waiting state */
+.zone-esperando {
+    font-style: italic;
+    color: var(--text-tertiary);
+}
+
 /* Status badges for history */
 .status-activa {
     background: var(--accent-green-light);
