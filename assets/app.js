@@ -362,7 +362,17 @@ async function updateSetupState(setup, currentPrice) {
     const sl_price = updateData.sl_price || setup.sl_price;
     
     // State transition logic
-    if (setup.estado === 'ACTIVA') {
+    // ⚠️ CRITICAL RULE: If price is in zone, state MUST be EN_ZONA (unless final state)
+    // This ensures dynamic behavior: EN_ZONA → PROFIT → EN_ZONA → PROFIT
+    if (isInZone && setup.estado !== 'TP' && setup.estado !== 'SL') {
+        // Price is back in zone - force EN_ZONA state
+        if (setup.estado !== 'EN_ZONA') {
+            updateData.estado = 'EN_ZONA';
+            console.log(`✓ Setup ${setup.id} returned to zone: ${setup.estado} → EN_ZONA for ${setup.symbol}`);
+        }
+    }
+    // If NOT in zone, proceed with normal state logic
+    else if (setup.estado === 'ACTIVA') {
         // ACTIVA → EN_ZONA: Price enters the zone
         if (isInZone) {
             updateData.estado = 'EN_ZONA';
