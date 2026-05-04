@@ -505,6 +505,17 @@ function getUltimoEventoM15(analysis) {
  * - Not invalidated by new SMC readings
  * - Still has minimum OB/FVG/Sweep confluence
  */
+/**
+ * Reevaluate a PAUSADA zone to determine if it should be discarded or remain paused
+ * @param {Object} setup - The zone setup to reevaluate
+ * @param {Number} currentPrice - Current market price
+ * @param {Object} analysis - SMC analysis data
+ * @returns {String} - 'PAUSADA' or 'DESCARTADA'
+ * 
+ * Note: Uses global variable `currentStrategy` to determine which validation rules to apply.
+ * - For SMC_M15_PRO: Only discards if SL is hit or no confluence
+ * - For SMC_H1_M15_PRO: Also discards if H1/M15 context or M15 event changes against zone
+ */
 async function reevaluatePausedZone(setup, currentPrice, analysis) {
     const updateData = {
         updated_at: new Date().toISOString()
