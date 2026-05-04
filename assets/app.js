@@ -361,6 +361,18 @@ async function getSetupEnZonaOrProfit(symbol) {
 }
 
 /**
+ * Extract ultimo_evento_m15 from analysis
+ * Helper function to reduce code duplication
+ */
+function getUltimoEventoM15(analysis) {
+    if (analysis && analysis.smc && analysis.smc.eventosM15 && analysis.smc.eventosM15.length > 0) {
+        const lastEvent = analysis.smc.eventosM15[analysis.smc.eventosM15.length - 1];
+        return lastEvent?.evento || null;
+    }
+    return null;
+}
+
+/**
  * Reevaluate a PAUSADA zone to determine if it should remain PAUSADA or transition to DESCARTADA
  * A zone stays PAUSADA only if:
  * - Price hasn't touched its SL
@@ -402,14 +414,16 @@ async function reevaluatePausedZone(setup, currentPrice, analysis) {
     }
     
     // 3. Check if M15 event still makes sense
-    if (!shouldDiscard && analysis && analysis.smc && analysis.smc.eventosM15 && analysis.smc.eventosM15.length > 0) {
-        const lastEvent = analysis.smc.eventosM15[analysis.smc.eventosM15.length - 1];
-        const lastEventDireccion = lastEvent.evento.includes('ALCISTA') ? 'ALCISTA' : 'BAJISTA';
-        
-        // If last event direction is opposite to zone direction, it may invalidate the zone
-        if (lastEventDireccion !== setup.direccion) {
-            shouldDiscard = true;
-            discardReason = 'Evento M15 dejó de tener sentido para la zona';
+    if (!shouldDiscard) {
+        const ultimoEvento = getUltimoEventoM15(analysis);
+        if (ultimoEvento) {
+            const lastEventDireccion = ultimoEvento.includes('ALCISTA') ? 'ALCISTA' : 'BAJISTA';
+            
+            // If last event direction is opposite to zone direction, it may invalidate the zone
+            if (lastEventDireccion !== setup.direccion) {
+                shouldDiscard = true;
+                discardReason = 'Evento M15 dejó de tener sentido para la zona';
+            }
         }
     }
     
@@ -688,6 +702,9 @@ async function handleSLHitAndReactivatePausedZones(symbol, currentPrice, analysi
         });
         console.log(`✓ Zona PAUSADA ${closestZone.id} → ACTIVA (reactivada tras SL) para ${symbol}`);
         
+        // Update closestZone object with new estado before calling updateSetupState
+        closestZone.estado = 'ACTIVA';
+        
         // Immediately check if it should transition to EN_ZONA
         await updateSetupState(closestZone, currentPrice, analysis);
         
@@ -819,11 +836,7 @@ async function trackZoneHistory(symbol, analysis) {
         // If we found a matching setup (contained or overlapped), update it instead of creating new
         if (matchingSetup) {
             // Get ultimo_evento_m15 from analysis
-            let ultimo_evento_m15 = null;
-            if (analysis.smc.eventosM15 && analysis.smc.eventosM15.length > 0) {
-                const lastEvent = analysis.smc.eventosM15[analysis.smc.eventosM15.length - 1];
-                ultimo_evento_m15 = lastEvent?.evento;
-            }
+            const ultimo_evento_m15 = getUltimoEventoM15(analysis);
             
             const updateData = {
                 updated_at: new Date().toISOString(),
@@ -851,11 +864,7 @@ async function trackZoneHistory(symbol, analysis) {
         // If zone doesn't exist and not contained/overlapped, check if we can create a new setup
         else if (!exactZoneExists) {
             // Get ultimo_evento_m15 from analysis
-            let ultimo_evento_m15 = null;
-            if (analysis.smc.eventosM15 && analysis.smc.eventosM15.length > 0) {
-                const lastEvent = analysis.smc.eventosM15[analysis.smc.eventosM15.length - 1];
-                ultimo_evento_m15 = lastEvent?.evento;
-            }
+            const ultimo_evento_m15 = getUltimoEventoM15(analysis);
             
             // Calculate TP and SL for 1:1 ratio
             let tp_price, sl_price;
