@@ -362,7 +362,7 @@ async function getSetupEnZonaOrProfit(symbol) {
 
 /**
  * Check and update setup state based on price movements
- * Handles transitions: ACTIVA → EN_ZONA → PROFIT → TP (1:1) → [1:2 or SL return] → LIBERAR
+ * Handles transitions: ACTIVA → EN_ZONA ⇄ PROFIT → TP (1:1) → [1:2 or SL return] → LIBERAR
  */
 async function updateSetupState(setup, currentPrice) {
     const updateData = {
@@ -420,9 +420,9 @@ async function updateSetupState(setup, currentPrice) {
         }
     }
     // ⚠️ CRITICAL RULE: If price is in zone, state MUST be EN_ZONA (unless TP or SL state)
-    // This ensures dynamic behavior: EN_ZONA → PROFIT → EN_ZONA → PROFIT
+    // This ensures dynamic behavior: EN_ZONA ⇄ PROFIT (reversible transition)
     else if (isInZone && setup.estado !== 'SL') {
-        // Price is back in zone - force EN_ZONA state
+        // Price is back in zone - force EN_ZONA state (reversible from PROFIT)
         if (setup.estado !== 'EN_ZONA') {
             updateData.estado = 'EN_ZONA';
             console.log(`✓ Setup ${setup.id} returned to zone: ${setup.estado} → EN_ZONA for ${setup.symbol}`);
@@ -543,8 +543,17 @@ async function trackZoneHistory(symbol, analysis) {
         const zonaM15 = analysis.smc.zonaM15;
         const currentPrice = analysis.currentPrice;
         
+        // SIN SETUP: If no valid zone exists, don't create or track anything
         if (!zonaM15 || !zonaM15.es_util) {
-            return; // Only track useful zones
+            // Get all active setups to update their states based on price
+            const existingSetups = await getAllActiveSetups(symbol);
+            
+            // Update state of existing setups
+            for (const setup of existingSetups) {
+                await updateSetupState(setup, currentPrice);
+            }
+            
+            return; // Don't create new records for SIN SETUP
         }
         
         // Get tipo_indice (Boom or Crash)
@@ -700,8 +709,8 @@ async function fetchAllIndices() {
             const analysis = await fetchAndAnalyzeSymbol(symbol);
             results[symbol] = analysis;
             
-            // Track zone history for SMC M15 PRO
-            if (analysis && !analysis.error && analysis.smc && analysis.smc.zonaM15) {
+            // Track zone history for SMC M15 PRO (handles SIN SETUP case internally)
+            if (analysis && !analysis.error) {
                 await trackZoneHistory(symbol, analysis);
             }
         } catch (error) {
@@ -920,7 +929,7 @@ async function createTableRow(symbol, data) {
     if (!data || data.error) {
         tr.innerHTML = `
             <td class="index-name">${symbol}</td>
-            <td colspan="13" class="loading">${data ? data.message : 'Cargando...'}</td>
+            <td colspan="12" class="loading">${data ? data.message : 'Cargando...'}</td>
         `;
         return tr;
     }
@@ -938,13 +947,7 @@ async function createTableRow(symbol, data) {
     
     if (setupEnZonaOrProfit) {
         // Use EN_ZONA, PROFIT, or TP setup data for display
-        displayZonaDesde = setupEnZonaOrProfit.zona_desde;
-        displayZonaHasta = setupEnZonaOrProfit.zona_hasta;
         displayDireccion = setupEnZonaOrProfit.direccion;
-        displayScore = setupEnZonaOrProfit.score;
-        displayOB = setupEnZonaOrProfit.ob;
-        displayFVG = setupEnZonaOrProfit.fvg;
-        displayBarrida = setupEnZonaOrProfit.barrida;
         
         // Handle estado display - check if TP is waiting for release
         if (setupEnZonaOrProfit.estado === 'TP') {
@@ -952,12 +955,32 @@ async function createTableRow(symbol, data) {
             if (!isReleased) {
                 // TP reached 1:1 but not yet released - show ESPERANDO_ACOMODO
                 displayEstado = 'ESPERANDO_ACOMODO';
+                // Don't show zone info when ESPERANDO_ACOMODO
+                displayZonaDesde = null;
+                displayZonaHasta = null;
+                displayScore = 0;
+                displayOB = false;
+                displayFVG = false;
+                displayBarrida = false;
             } else {
                 // TP released - this shouldn't appear in dashboard, but handle it anyway
                 displayEstado = setupEnZonaOrProfit.estado;
+                displayZonaDesde = setupEnZonaOrProfit.zona_desde;
+                displayZonaHasta = setupEnZonaOrProfit.zona_hasta;
+                displayScore = setupEnZonaOrProfit.score;
+                displayOB = setupEnZonaOrProfit.ob;
+                displayFVG = setupEnZonaOrProfit.fvg;
+                displayBarrida = setupEnZonaOrProfit.barrida;
             }
         } else {
-            displayEstado = setupEnZonaOrProfit.estado; // Will be 'EN_ZONA' or 'PROFIT'
+            // EN_ZONA, PROFIT, or ACTIVA - show zone info normally
+            displayEstado = setupEnZonaOrProfit.estado;
+            displayZonaDesde = setupEnZonaOrProfit.zona_desde;
+            displayZonaHasta = setupEnZonaOrProfit.zona_hasta;
+            displayScore = setupEnZonaOrProfit.score;
+            displayOB = setupEnZonaOrProfit.ob;
+            displayFVG = setupEnZonaOrProfit.fvg;
+            displayBarrida = setupEnZonaOrProfit.barrida;
         }
     } else if (!hasValidZone) {
         // Part 1: SIN SETUP - No valid zone available
@@ -978,7 +1001,7 @@ async function createTableRow(symbol, data) {
         displayOB = smc.zonaM15.ob ? true : false;
         displayFVG = smc.zonaM15.fvg ? true : false;
         displayBarrida = smc.zonaM15.barrida ? true : false;
-        displayEstado = smc.estado || '--';
+        displayEstado = 'ACTIVA'; // New zone, not yet tracked
     }
     
     // Get last event M15
@@ -990,7 +1013,7 @@ async function createTableRow(symbol, data) {
     
     // Zone M15 with individual boxes
     let zonaM15HTML = '<span class="zone-cell">--</span>';
-    if (displayZonaDesde !== null && displayZonaHasta !== null) {
+    if (displayZonaDesde !== null && displayZonaHasta !== null && displayEstado !== 'ESPERANDO_ACOMODO') {
         zonaM15HTML = `
             <div class="zone-boxes">
                 <div class="zone-price-row">
@@ -1005,25 +1028,8 @@ async function createTableRow(symbol, data) {
                 </div>
             </div>
         `;
-    }
-    
-    // Zone M1 with individual boxes (keep using current analysis for M1)
-    let zonaM1HTML = '<span class="zone-cell">--</span>';
-    if (smc.zonaM1 && displayEstado !== 'SIN_SETUP') {
-        zonaM1HTML = `
-            <div class="zone-boxes">
-                <div class="zone-price-row">
-                    <span class="zone-label">Desde:</span>
-                    <span class="zone-price">${formatPrice(smc.zonaM1.zona_m1_desde)}</span>
-                    <button class="copy-btn" onclick="copyToClipboard('${smc.zonaM1.zona_m1_desde}', this)">📋</button>
-                </div>
-                <div class="zone-price-row">
-                    <span class="zone-label">Hasta:</span>
-                    <span class="zone-price">${formatPrice(smc.zonaM1.zona_m1_hasta)}</span>
-                    <button class="copy-btn" onclick="copyToClipboard('${smc.zonaM1.zona_m1_hasta}', this)">📋</button>
-                </div>
-            </div>
-        `;
+    } else if (displayEstado === 'ESPERANDO_ACOMODO') {
+        zonaM15HTML = '<span class="zone-cell zona-esperando">Esperando...</span>';
     }
     
     // Score
@@ -1032,7 +1038,7 @@ async function createTableRow(symbol, data) {
     if (score >= 8) scoreClass = 'score-high';
     else if (score >= 5) scoreClass = 'score-medium';
     
-    // OB, FVG, Barrida
+    // OB, FVG, Barrida - show NO for SIN_SETUP and ESPERANDO_ACOMODO
     const ob = displayOB ? 'SÍ' : 'NO';
     const fvg = displayFVG ? 'SÍ' : 'NO';
     const barrida = displayBarrida ? 'SÍ' : 'NO';
@@ -1040,15 +1046,18 @@ async function createTableRow(symbol, data) {
     // Estado
     let estadoText = displayEstado;
     let estadoClass = 'status-badge ';
-    if (estadoText === 'EN_ZONA' || estadoText.includes('DENTRO')) {
+    if (estadoText === 'ACTIVA') {
+        estadoClass += 'status-activa';
+        estadoText = 'ACTIVA';
+    } else if (estadoText === 'EN_ZONA' || estadoText.includes('DENTRO')) {
         estadoClass += 'status-esperando';
-        estadoText = 'En Zona';
+        estadoText = 'EN ZONA';
     } else if (estadoText === 'PROFIT') {
         estadoClass += 'status-profit';
-        estadoText = 'En Profit';
+        estadoText = 'PROFIT';
     } else if (estadoText === 'ESPERANDO_ACOMODO') {
         estadoClass += 'status-esperando-acomodo';
-        estadoText = 'Esperando Acomodo';
+        estadoText = 'ESPERANDO ACOMODO';
     } else if (estadoText === 'SIN_SETUP') {
         estadoClass += 'status-sin-setup';
         estadoText = 'SIN SETUP';
@@ -1067,7 +1076,7 @@ async function createTableRow(symbol, data) {
     
     // Dirección
     const direccion = displayDireccion;
-    const direccionClass = direccion === 'ALCISTA' ? 'direction-alcista' : 'direction-bajista';
+    const direccionClass = direccion === 'ALCISTA' ? 'direction-alcista' : (direccion === 'BAJISTA' ? 'direction-bajista' : '');
     
     tr.innerHTML = `
         <td class="index-name">${symbol}</td>
@@ -1076,7 +1085,6 @@ async function createTableRow(symbol, data) {
         <td class="direction-cell ${direccionClass}">${direccion}</td>
         <td>${lastEventM15}</td>
         <td>${zonaM15HTML}</td>
-        <td>${zonaM1HTML}</td>
         <td class="score-cell ${scoreClass}">${score}</td>
         <td class="${ob === 'SÍ' ? 'indicator-yes' : 'indicator-no'}">${ob}</td>
         <td class="${fvg === 'SÍ' ? 'indicator-yes' : 'indicator-no'}">${fvg}</td>
