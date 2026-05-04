@@ -747,6 +747,113 @@ select:focus {
 }
 
 /* ========================================
+   STATS BAR
+   ======================================== */
+
+.stats-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 20px;
+}
+
+.stat-card {
+    flex: 1;
+    min-width: 120px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 12px 16px;
+    text-align: center;
+    transition: all 0.2s;
+}
+
+.stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
+.stat-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+}
+
+.stat-value {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+/* Stat color variations */
+.stat-card.stat-total {
+    border-left: 3px solid var(--accent-blue);
+}
+
+.stat-card.stat-activas {
+    border-left: 3px solid #6b7280;
+}
+
+.stat-card.stat-activas .stat-value {
+    color: #6b7280;
+}
+
+.stat-card.stat-en-zona {
+    border-left: 3px solid #10b981;
+}
+
+.stat-card.stat-en-zona .stat-value {
+    color: #10b981;
+}
+
+.stat-card.stat-profit {
+    border-left: 3px solid var(--accent-blue);
+}
+
+.stat-card.stat-profit .stat-value {
+    color: var(--accent-blue);
+}
+
+.stat-card.stat-tp {
+    border-left: 3px solid var(--accent-green);
+}
+
+.stat-card.stat-tp .stat-value {
+    color: var(--accent-green);
+}
+
+.stat-card.stat-sl {
+    border-left: 3px solid var(--accent-red);
+}
+
+.stat-card.stat-sl .stat-value {
+    color: var(--accent-red);
+}
+
+.stat-card.stat-descartadas {
+    border-left: 3px solid #f59e0b;
+}
+
+.stat-card.stat-descartadas .stat-value {
+    color: #f59e0b;
+}
+
+.stat-card.stat-winrate {
+    border-left: 3px solid #8b5cf6;
+}
+
+.stat-card.stat-winrate .stat-value {
+    color: #8b5cf6;
+}
+
+/* ========================================
    HISTORY SECTION
    ======================================== */
 
