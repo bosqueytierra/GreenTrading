@@ -2172,7 +2172,10 @@ let currentFilters = {
 };
 
 async function fetchSetupHistory(limit = 50) {
-    const table = getStrategyTable(currentHistoryStrategy);
+    // ⚠️ IMPORTANTE: El historial siempre lee de smc_m15_setups
+    // porque es la única tabla que tiene datos reales
+    // La tabla smc_h1_m15_setups está vacía (solo para el procesador backend cuando se active)
+    const table = 'smc_m15_setups';  // Siempre usar esta tabla para el historial
     const url = `${SUPABASE_URL}/rest/v1/${table}?order=created_at.desc&limit=${limit}`;
     
     const response = await fetch(url, {
@@ -2419,6 +2422,17 @@ function applyFilters() {
         // Estado filter
         if (currentFilters.estado !== 'todos' && setup.estado !== currentFilters.estado) {
             return false;
+        }
+        
+        // ⚠️ FILTRO H1+M15: Si el historial está en modo H1+M15, aplicar validación
+        if (currentHistoryStrategy === 'SMC_H1_M15_PRO') {
+            // Verificar que la zona cumpla con validación H1+M15
+            const tendenciaH1 = setup.tendencia_h1 || '--';
+            const evento = setup.evento || '--';
+            
+            if (!validarH1M15(setup.symbol, tendenciaH1, evento)) {
+                return false;  // Excluir zonas que no cumplen validación H1+M15
+            }
         }
         
         return true;
