@@ -513,7 +513,7 @@ async function reevaluatePausedZone(setup, currentPrice, analysis) {
     let shouldDiscard = false;
     let discardReason = null;
     
-    // 1. Check if price touched SL
+    // 1. Check if price touched SL (applies to all strategies)
     if (setup.direccion === 'ALCISTA' && currentPrice < setup.sl_price) {
         shouldDiscard = true;
         discardReason = 'Precio tocó SL de zona pausada';
@@ -522,8 +522,9 @@ async function reevaluatePausedZone(setup, currentPrice, analysis) {
         discardReason = 'Precio tocó SL de zona pausada';
     }
     
-    // 2. Check H1/M15 context compatibility
-    if (!shouldDiscard && analysis && analysis.smc) {
+    // 2. Check H1/M15 context compatibility (ONLY for SMC_H1_M15_PRO)
+    // For SMC_M15_PRO, PAUSADA zones should NOT be discarded by H1/M15 context changes
+    if (!shouldDiscard && currentStrategy === 'SMC_H1_M15_PRO' && analysis && analysis.smc) {
         const tendenciaH1 = analysis.smc.tendenciaH1;
         const tendenciaM15 = analysis.smc.tendenciaM15;
         
@@ -537,8 +538,9 @@ async function reevaluatePausedZone(setup, currentPrice, analysis) {
         }
     }
     
-    // 3. Check if M15 event still makes sense
-    if (!shouldDiscard) {
+    // 3. Check if M15 event still makes sense (ONLY for SMC_H1_M15_PRO)
+    // For SMC_M15_PRO, PAUSADA zones should NOT be discarded by M15 event changes
+    if (!shouldDiscard && currentStrategy === 'SMC_H1_M15_PRO') {
         const ultimoEvento = getUltimoEventoM15(analysis);
         if (ultimoEvento) {
             const lastEventDireccion = ultimoEvento.includes('ALCISTA') ? 'ALCISTA' : 'BAJISTA';
@@ -552,6 +554,7 @@ async function reevaluatePausedZone(setup, currentPrice, analysis) {
     }
     
     // 4. Check minimum confluence (at least one of OB, FVG, or Barrida must be present)
+    // This applies to all strategies
     if (!shouldDiscard) {
         const hasConfluence = setup.ob || setup.fvg || setup.barrida;
         if (!hasConfluence) {
@@ -566,11 +569,12 @@ async function reevaluatePausedZone(setup, currentPrice, analysis) {
         updateData.fecha_cierre = new Date().toISOString();
         updateData.motivo_cierre = discardReason;
         await updateSetup(setup.id, updateData);
-        console.log(`✓ Zona PAUSADA ${setup.id} → DESCARTADA: ${discardReason} para ${setup.symbol}`);
+        console.log(`✓ Zona PAUSADA ${setup.id} → DESCARTADA: ${discardReason} para ${setup.symbol} (estrategia: ${currentStrategy})`);
         return 'DESCARTADA';
     }
     
     // Zone remains PAUSADA
+    console.log(`✓ Zona PAUSADA ${setup.id} mantiene estado PAUSADA para ${setup.symbol} (estrategia: ${currentStrategy})`);
     return 'PAUSADA';
 }
 
