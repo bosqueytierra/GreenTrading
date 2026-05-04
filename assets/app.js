@@ -387,7 +387,12 @@ async function updateSetupState(setup, currentPrice) {
             updateData.motivo_cierre = 'Stop Loss alcanzado';
             console.log(`✓ Setup ${setup.id} transitioned EN_ZONA → SL for ${setup.symbol}`);
         }
-        // EN_ZONA → PROFIT: Price moves favorably but hasn't reached TP yet
+        // Check if price is still IN zone - must remain EN_ZONA
+        else if (isInZone) {
+            // Price is still within the zone, keep state as EN_ZONA
+            // No state change, just continue tracking
+        }
+        // EN_ZONA → PROFIT: Price exits zone favorably but hasn't reached TP yet
         else if (setup.direccion === 'ALCISTA' && currentPrice > setup.zona_hasta && currentPrice < tp_price) {
             updateData.estado = 'PROFIT';
             console.log(`✓ Setup ${setup.id} transitioned EN_ZONA → PROFIT for ${setup.symbol}`);
