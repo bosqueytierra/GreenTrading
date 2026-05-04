@@ -612,13 +612,29 @@ async function trackZoneHistory(symbol, analysis) {
         
         // If we found a matching setup (contained or overlapped), update it instead of creating new
         if (matchingSetup) {
+            // Get ultimo_evento_m15 from analysis
+            let ultimo_evento_m15 = null;
+            if (analysis.smc.eventosM15 && analysis.smc.eventosM15.length > 0) {
+                const lastEvent = analysis.smc.eventosM15[analysis.smc.eventosM15.length - 1];
+                ultimo_evento_m15 = lastEvent?.evento;
+            }
+            
             const updateData = {
                 updated_at: new Date().toISOString(),
                 score: zonaM15.score,
                 ob: zonaM15.ob ? true : false,
                 fvg: zonaM15.fvg ? true : false,
-                barrida: zonaM15.barrida ? true : false
+                barrida: zonaM15.barrida ? true : false,
+                evento: ultimo_evento_m15
             };
+            
+            // Update tendencias if they are missing (null or empty)
+            if (!matchingSetup.tendencia_h1 && analysis.smc.tendenciaH1) {
+                updateData.tendencia_h1 = analysis.smc.tendenciaH1;
+            }
+            if (!matchingSetup.tendencia_m15 && analysis.smc.tendenciaM15) {
+                updateData.tendencia_m15 = analysis.smc.tendenciaM15;
+            }
             
             await updateSetup(matchingSetup.id, updateData);
             console.log(`✓ Setup ${matchingSetup.id} actualizado (mantiene zona original) para ${symbol}`);
@@ -665,13 +681,12 @@ async function trackZoneHistory(symbol, analysis) {
                 precio_actual_detectado: currentPrice,
                 precio_entrada_referencia: zonaM15.direccion === 'ALCISTA' ? newZonaHasta : newZonaDesde,
                 score: zonaM15.score,
-                evento: zonaM15.evento ? zonaM15.evento.evento : null,
+                evento: ultimo_evento_m15,
                 ob: zonaM15.ob ? true : false,
                 fvg: zonaM15.fvg ? true : false,
                 barrida: zonaM15.barrida ? true : false,
                 tendencia_h1: analysis.smc.tendenciaH1 || null,
                 tendencia_m15: analysis.smc.tendenciaM15 || null,
-                ultimo_evento_m15: ultimo_evento_m15,
                 estado: 'ACTIVA',
                 tp_price: tp_price,
                 sl_price: sl_price,
@@ -1708,8 +1723,7 @@ function copyToClipboard(value, button) {
 let allSetups = [];
 let currentFilters = {
     symbol: 'todos',
-    estado: 'todos',
-    direccion: 'todos'
+    estado: 'todos'
 };
 
 async function fetchSetupHistory(limit = 50) {
@@ -1754,17 +1768,6 @@ function initializeHistoryFilters() {
             estadoFilters.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             currentFilters.estado = btn.getAttribute('data-filter');
-            applyFilters();
-        });
-    });
-    
-    // Direccion filters
-    const direccionFilters = document.querySelectorAll('#direccionFilters .filter-btn');
-    direccionFilters.forEach(btn => {
-        btn.addEventListener('click', () => {
-            direccionFilters.forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            currentFilters.direccion = btn.getAttribute('data-filter');
             applyFilters();
         });
     });
@@ -1994,11 +1997,6 @@ function applyFilters() {
             return false;
         }
         
-        // Direccion filter
-        if (currentFilters.direccion !== 'todos' && setup.direccion !== currentFilters.direccion) {
-            return false;
-        }
-        
         return true;
     });
     
@@ -2060,15 +2058,13 @@ async function updateHistoryTable() {
         // Reset filters to default
         currentFilters = {
             symbol: 'todos',
-            estado: 'todos',
-            direccion: 'todos'
+            estado: 'todos'
         };
         
         // Reset active states
         document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
         document.querySelector('#symbolFilters .filter-btn[data-filter="todos"]').classList.add('active');
         document.querySelector('#estadoFilters .filter-btn[data-filter="todos"]').classList.add('active');
-        document.querySelector('#direccionFilters .filter-btn[data-filter="todos"]').classList.add('active');
         
         // Apply filters (which will show all since filters are 'todos')
         applyFilters();
@@ -2117,8 +2113,8 @@ function createHistoryRow(setup) {
     const tendH1Class = getTrendClass(tendH1);
     const tendM15Class = getTrendClass(tendM15);
     
-    // Último evento M15
-    const ultimoEventoM15 = setup.ultimo_evento_m15 || '--';
+    // Último evento M15 - read from evento column
+    const ultimoEventoM15 = setup.evento || '--';
     
     // Score class
     let scoreClass = 'score-low';
