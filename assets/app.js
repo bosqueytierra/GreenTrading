@@ -1346,6 +1346,9 @@ async function createTableRow(symbol, data) {
     } else if (estadoText === 'PROFIT') {
         estadoClass += 'status-profit';
         estadoText = 'PROFIT';
+    } else if (estadoText === 'PAUSADA') {
+        estadoClass += 'status-pausada';
+        estadoText = 'PAUSADA';
     } else if (estadoText === 'ESPERANDO_ACOMODO') {
         estadoClass += 'status-esperando-acomodo';
         estadoText = 'ESPERANDO ACOMODO';
@@ -2380,6 +2383,9 @@ function createHistoryRow(setup) {
         case 'PROFIT':
             estadoClass += 'status-profit';
             break;
+        case 'PAUSADA':
+            estadoClass += 'status-pausada';
+            break;
         case 'DESCARTADA':
             estadoClass += 'status-descartada';
             break;
@@ -2401,10 +2407,10 @@ function createHistoryRow(setup) {
     // Resultado puntos
     const resultadoPuntos = setup.resultado_puntos != null ? formatPrice(setup.resultado_puntos) : '--';
     
-    // Max reaccion - show "--" if estado is ACTIVA, only show value for EN_ZONA, PROFIT and other states
+    // Max reaccion - show "--" if estado is ACTIVA or PAUSADA, only show value for EN_ZONA, PROFIT and other states
     let maxReaccion = '--';
-    if (setup.estado === 'ACTIVA') {
-        // For ACTIVA setups, always show "--" (as per requirement)
+    if (setup.estado === 'ACTIVA' || setup.estado === 'PAUSADA') {
+        // For ACTIVA and PAUSADA setups, always show "--"
         maxReaccion = '--';
     } else if (setup.estado === 'EN_ZONA' || setup.estado === 'PROFIT') {
         // For EN_ZONA and PROFIT setups, calculate and show max_reaccion_puntos
