@@ -1817,16 +1817,126 @@ function calculateStats(setups) {
 }
 
 /**
- * Render statistics cards in the stats bar
- * @param {Object} stats - Stats object from calculateStats
+ * Calculate statistics per index from filtered setups
+ * @param {Array} setups - Array of setup objects
+ * @returns {Object} Stats per symbol
  */
-function renderStats(stats) {
+function calculateIndexStats(setups) {
+    const indexStats = {};
+    
+    setups.forEach(setup => {
+        const symbol = setup.symbol;
+        
+        if (!indexStats[symbol]) {
+            indexStats[symbol] = {
+                total: 0,
+                tp: 0,
+                sl: 0,
+                activas: 0,
+                enZona: 0,
+                profit: 0,
+                descartadas: 0
+            };
+        }
+        
+        indexStats[symbol].total++;
+        
+        switch (setup.estado) {
+            case 'TP':
+                indexStats[symbol].tp++;
+                break;
+            case 'SL':
+                indexStats[symbol].sl++;
+                break;
+            case 'ACTIVA':
+                indexStats[symbol].activas++;
+                break;
+            case 'EN_ZONA':
+                indexStats[symbol].enZona++;
+                break;
+            case 'PROFIT':
+                indexStats[symbol].profit++;
+                break;
+            case 'DESCARTADA':
+                indexStats[symbol].descartadas++;
+                break;
+        }
+    });
+    
+    // Find index with most TP and most SL
+    let maxTpSymbol = null;
+    let maxTpCount = 0;
+    let maxSlSymbol = null;
+    let maxSlCount = 0;
+    
+    Object.entries(indexStats).forEach(([symbol, stats]) => {
+        if (stats.tp > maxTpCount) {
+            maxTpCount = stats.tp;
+            maxTpSymbol = symbol;
+        }
+        if (stats.sl > maxSlCount) {
+            maxSlCount = stats.sl;
+            maxSlSymbol = symbol;
+        }
+    });
+    
+    return {
+        indexStats,
+        maxTpSymbol,
+        maxSlSymbol
+    };
+}
+
+/**
+ * Render statistics cards in the stats bar with index performance
+ * @param {Object} stats - Stats object from calculateStats
+ * @param {Array} setups - Array of all filtered setups
+ */
+function renderStats(stats, setups = []) {
     const statsBar = document.getElementById('stats-bar');
     if (!statsBar) return;
     
     // Calculate winrate
     const totalClosed = stats.tp + stats.sl;
     const winrate = totalClosed > 0 ? ((stats.tp / totalClosed) * 100).toFixed(1) : '0.0';
+    
+    // Calculate index statistics
+    const { indexStats, maxTpSymbol, maxSlSymbol } = calculateIndexStats(setups);
+    
+    // Create index performance section HTML
+    let indexPerformanceHTML = '';
+    if (Object.keys(indexStats).length > 0) {
+        const sortedByTp = Object.entries(indexStats)
+            .filter(([_, stats]) => stats.tp > 0)
+            .sort((a, b) => b[1].tp - a[1].tp)
+            .slice(0, 3);
+        
+        const sortedBySl = Object.entries(indexStats)
+            .filter(([_, stats]) => stats.sl > 0)
+            .sort((a, b) => b[1].sl - a[1].sl)
+            .slice(0, 3);
+        
+        indexPerformanceHTML = `
+            <div class="stat-card stat-index-performance">
+                <div class="stat-label">🔥 Más TP</div>
+                ${sortedByTp.length > 0 ? 
+                    sortedByTp.map(([symbol, stats]) => {
+                        const shortName = symbol.replace(' Index', '');
+                        return `<div class="stat-index-item stat-index-tp">${shortName}: ${stats.tp}</div>`;
+                    }).join('') 
+                    : '<div class="stat-index-item">N/A</div>'}
+            </div>
+            <div class="stat-card stat-index-performance">
+                <div class="stat-label">⚠️ Más SL</div>
+                ${sortedBySl.length > 0 ? 
+                    sortedBySl.map(([symbol, stats]) => {
+                        const shortName = symbol.replace(' Index', '');
+                        return `<div class="stat-index-item stat-index-sl">${shortName}: ${stats.sl}</div>`;
+                    }).join('') 
+                    : '<div class="stat-index-item">N/A</div>'}
+            </div>
+        `;
+    }
     
     // Create stats cards
     statsBar.innerHTML = `
@@ -1862,6 +1972,7 @@ function renderStats(stats) {
             <div class="stat-label">Winrate</div>
             <div class="stat-value">${winrate}%</div>
         </div>
+        ${indexPerformanceHTML}
     `;
 }
 
@@ -1891,7 +2002,7 @@ function applyFilters() {
     
     // Calculate and render stats for filtered data
     const stats = calculateStats(filteredSetups);
-    renderStats(stats);
+    renderStats(stats, filteredSetups);
     
     // Update table
     tbody.innerHTML = '';
