@@ -365,6 +365,28 @@ async function getAllActiveSetups(symbol) {
     });
 }
 
+async function getAllSetupsForMatching(symbol) {
+    // Get ALL setups for this symbol to check for duplicates (including closed/discarded ones)
+    // This is used to prevent duplicate zone creation
+    const table = getStrategyTable();
+    const url = `${SUPABASE_URL}/rest/v1/${table}?symbol=eq.${encodeURIComponent(symbol)}&order=created_at.desc`;
+
+    const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+            'Content-Type': 'application/json'
+        }
+    });
+    
+    if (!response.ok) {
+        throw new Error(`Error HTTP: ${response.status}`);
+    }
+    
+    return await response.json();
+}
+
 async function createSetup(setupData) {
     const table = getStrategyTable();
     const url = `${SUPABASE_URL}/rest/v1/${table}`;
@@ -876,14 +898,20 @@ async function trackZoneHistory(symbol, analysis) {
         // Get tipo_indice (Boom or Crash)
         const tipoIndice = symbol.includes('Boom') ? 'Boom' : 'Crash';
         
-        // Get all active/in-zone/profit/pausada/TP setups for this symbol
-        const existingSetups = await getAllActiveSetups(symbol);
+        // Get ultimo_evento_m15 from analysis for matching
+        const ultimo_evento_m15 = getUltimoEventoM15(analysis);
+        
+        // Get all active/in-zone/profit/pausada/TP setups for this symbol (for state management)
+        const activeSetups = await getAllActiveSetups(symbol);
+        
+        // Get ALL setups for this symbol (including closed/discarded) for duplicate checking
+        const allSetups = await getAllSetupsForMatching(symbol);
         
         // Separate operative zones from paused zones
-        const operativeSetups = existingSetups.filter(s => 
+        const operativeSetups = activeSetups.filter(s => 
             s.estado === 'ACTIVA' || s.estado === 'EN_ZONA' || s.estado === 'PROFIT' || s.estado === 'TP'
         );
-        const pausedSetups = existingSetups.filter(s => s.estado === 'PAUSADA');
+        const pausedSetups = activeSetups.filter(s => s.estado === 'PAUSADA');
         
         // Reevaluate all PAUSADA zones first
         for (const setup of pausedSetups) {
@@ -922,26 +950,31 @@ async function trackZoneHistory(symbol, analysis) {
         const newZonaHasta = zonaM15.zona_hasta;
         const newZonaSize = Math.abs(newZonaHasta - newZonaDesde);
         
-        // Check if this exact zone already exists (with tolerance for floating-point precision)
-        const tolerance = 0.00001;
-        const exactZoneExists = existingSetups.some(setup => 
-            Math.abs(setup.zona_desde - newZonaDesde) < tolerance &&
-            Math.abs(setup.zona_hasta - newZonaHasta) < tolerance &&
-            setup.direccion === zonaM15.direccion
-        );
-        
-        // Check for containment or strong overlap with existing zones
+        // MATCHING LOGIC: Find if this zone already exists
+        // Matching criteria: symbol (implicit), zona_desde, zona_hasta, evento, direccion
+        const tolerance = 0.001; // Increased tolerance for price comparison (handles decimals better)
         let matchingSetup = null;
         
-        if (!exactZoneExists) {
-            for (const setup of existingSetups) {
-                // Skip PAUSADA zones for matching
-                if (setup.estado === 'PAUSADA') {
-                    continue;
-                }
-                
+        // First, check for exact match (same zone boundaries, evento, and direccion)
+        for (const setup of allSetups) {
+            const zonaDesdeMatch = Math.abs(setup.zona_desde - newZonaDesde) < tolerance;
+            const zonaHastaMatch = Math.abs(setup.zona_hasta - newZonaHasta) < tolerance;
+            const direccionMatch = setup.direccion === zonaM15.direccion;
+            const eventoMatch = setup.evento === ultimo_evento_m15;
+            
+            if (zonaDesdeMatch && zonaHastaMatch && direccionMatch && eventoMatch) {
+                matchingSetup = setup;
+                console.log(`✓ Zona exacta encontrada (ID: ${setup.id}, estado: ${setup.estado}) para ${symbol}`);
+                break;
+            }
+        }
+        
+        // If no exact match, check for containment or strong overlap (only with active/paused zones)
+        if (!matchingSetup) {
+            for (const setup of activeSetups) {
                 // Check if new zone is contained within existing zone
-                const isContained = newZonaDesde >= setup.zona_desde && newZonaHasta <= setup.zona_hasta;
+                const isContained = newZonaDesde >= (setup.zona_desde - tolerance) && 
+                                   newZonaHasta <= (setup.zona_hasta + tolerance);
                 
                 // Check for strong overlap (>= 70%)
                 const overlap = Math.min(newZonaHasta, setup.zona_hasta) - Math.max(newZonaDesde, setup.zona_desde);
@@ -949,7 +982,7 @@ async function trackZoneHistory(symbol, analysis) {
                 const minSize = Math.min(newZonaSize, existingZonaSize);
                 const overlapRatio = overlap > 0 ? overlap / minSize : 0;
                 
-                if (isContained || overlapRatio >= 0.70) {
+                if ((isContained || overlapRatio >= 0.70) && setup.direccion === zonaM15.direccion) {
                     matchingSetup = setup;
                     console.log(`✓ Nueva zona ${isContained ? 'contenida' : 'solapa ' + (overlapRatio * 100).toFixed(1) + '%'} en setup existente ${setup.id} para ${symbol}`);
                     break;
@@ -957,11 +990,8 @@ async function trackZoneHistory(symbol, analysis) {
             }
         }
         
-        // If we found a matching setup (contained or overlapped), update it instead of creating new
+        // If we found a matching setup, update it instead of creating new
         if (matchingSetup) {
-            // Get ultimo_evento_m15 from analysis
-            const ultimo_evento_m15 = getUltimoEventoM15(analysis);
-            
             const updateData = {
                 updated_at: new Date().toISOString(),
                 score: zonaM15.score,
@@ -982,13 +1012,14 @@ async function trackZoneHistory(symbol, analysis) {
             await updateSetup(matchingSetup.id, updateData);
             console.log(`✓ Setup ${matchingSetup.id} actualizado (mantiene zona original) para ${symbol}`);
             
-            // Update state based on price movement
-            await updateSetupState(matchingSetup, currentPrice, analysis);
+            // Update state based on price movement (only if in an active state)
+            const activeStates = ['ACTIVA', 'EN_ZONA', 'PROFIT', 'PAUSADA', 'TP'];
+            if (activeStates.includes(matchingSetup.estado)) {
+                await updateSetupState(matchingSetup, currentPrice, analysis);
+            }
         }
-        // If zone doesn't exist and not contained/overlapped, check if we can create a new setup
-        else if (!exactZoneExists) {
-            // Get ultimo_evento_m15 from analysis
-            const ultimo_evento_m15 = getUltimoEventoM15(analysis);
+        // If zone doesn't exist, create a new setup
+        else {
             
             // Calculate TP and SL for 1:1 ratio
             let tp_price, sl_price;
