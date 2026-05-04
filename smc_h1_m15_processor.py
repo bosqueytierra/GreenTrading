@@ -108,6 +108,41 @@ def calculate_zone_size(zona_desde, zona_hasta):
     return abs(zona_hasta - zona_desde)
 
 
+def calculate_tp_sl_prices(zona, direccion):
+    """
+    Calcula los precios de TP y SL con ratio 1:1.
+    
+    Para zonas alcistas:
+    - Entrada: zona_desde (parte baja de la zona)
+    - SL: zona_desde - zona_size (por debajo de la zona)
+    - TP: zona_hasta + zona_size (por encima de la zona)
+    
+    Para zonas bajistas:
+    - Entrada: zona_hasta (parte alta de la zona)
+    - SL: zona_hasta + zona_size (por encima de la zona)
+    - TP: zona_desde - zona_size (por debajo de la zona)
+    
+    Args:
+        zona: Diccionario con zona_desde y zona_hasta
+        direccion: "ALCISTA" o "BAJISTA"
+    
+    Returns:
+        Tupla (precio_entrada, sl_price, tp_price)
+    """
+    zona_size = calculate_zone_size(zona['zona_desde'], zona['zona_hasta'])
+    
+    if direccion == "ALCISTA":
+        precio_entrada = zona['zona_desde']
+        sl_price = zona['zona_desde'] - zona_size
+        tp_price = zona['zona_hasta'] + zona_size
+    else:
+        precio_entrada = zona['zona_hasta']
+        sl_price = zona['zona_hasta'] + zona_size
+        tp_price = zona['zona_desde'] - zona_size
+    
+    return precio_entrada, sl_price, tp_price
+
+
 
 def get_candles_from_supabase(symbol, timeframe, limit=1000):
     """
@@ -249,15 +284,7 @@ def save_zone_to_supabase(symbol, result, zona):
     
     # Calcular TP y SL (ratio 1:1) usando helper
     zona_size = calculate_zone_size(zona['zona_desde'], zona['zona_hasta'])
-    
-    if zona['direccion'] == "ALCISTA":
-        precio_entrada = zona['zona_desde']
-        sl_price = zona['zona_desde'] - zona_size
-        tp_price = zona['zona_hasta'] + zona_size
-    else:
-        precio_entrada = zona['zona_hasta']
-        sl_price = zona['zona_hasta'] + zona_size
-        tp_price = zona['zona_desde'] - zona_size
+    precio_entrada, sl_price, tp_price = calculate_tp_sl_prices(zona, zona['direccion'])
     
     data = {
         "symbol": symbol,
