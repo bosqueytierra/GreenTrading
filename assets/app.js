@@ -901,6 +901,21 @@ async function trackZoneHistory(symbol, analysis) {
         // Get ultimo_evento_m15 from analysis for matching
         const ultimo_evento_m15 = getUltimoEventoM15(analysis);
         
+        // If no valid evento is detected, we can't perform proper matching
+        if (!ultimo_evento_m15) {
+            console.warn(`⚠️ No se pudo obtener ultimo_evento_m15 para ${symbol}, omitiendo matching`);
+            // Still update existing setups' states, but don't try to match/create
+            const existingSetups = await getAllActiveSetups(symbol);
+            for (const setup of existingSetups) {
+                if (setup.estado === 'PAUSADA') {
+                    await reevaluatePausedZone(setup, currentPrice, analysis);
+                } else {
+                    await updateSetupState(setup, currentPrice, analysis);
+                }
+            }
+            return;
+        }
+        
         // Get all active/in-zone/profit/pausada/TP setups for this symbol (for state management)
         const activeSetups = await getAllActiveSetups(symbol);
         
@@ -972,9 +987,9 @@ async function trackZoneHistory(symbol, analysis) {
         // If no exact match, check for containment or strong overlap (only with active/paused zones)
         if (!matchingSetup) {
             for (const setup of activeSetups) {
-                // Check if new zone is contained within existing zone
-                const isContained = newZonaDesde >= (setup.zona_desde - tolerance) && 
-                                   newZonaHasta <= (setup.zona_hasta + tolerance);
+                // Check if new zone is contained within existing zone (strict containment)
+                const isContained = newZonaDesde >= setup.zona_desde && 
+                                   newZonaHasta <= setup.zona_hasta;
                 
                 // Check for strong overlap (>= 70%)
                 const overlap = Math.min(newZonaHasta, setup.zona_hasta) - Math.max(newZonaDesde, setup.zona_desde);
