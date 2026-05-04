@@ -1866,27 +1866,8 @@ function calculateIndexStats(setups) {
         }
     });
     
-    // Find index with most TP and most SL
-    let maxTpSymbol = null;
-    let maxTpCount = 0;
-    let maxSlSymbol = null;
-    let maxSlCount = 0;
-    
-    Object.entries(indexStats).forEach(([symbol, stats]) => {
-        if (stats.tp > maxTpCount) {
-            maxTpCount = stats.tp;
-            maxTpSymbol = symbol;
-        }
-        if (stats.sl > maxSlCount) {
-            maxSlCount = stats.sl;
-            maxSlSymbol = symbol;
-        }
-    });
-    
     return {
-        indexStats,
-        maxTpSymbol,
-        maxSlSymbol
+        indexStats
     };
 }
 
