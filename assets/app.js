@@ -12,20 +12,22 @@ const VALID_USERS = {
 let autoRefreshInterval = null;
 const AUTO_REFRESH_SECONDS = 30;
 let currentUser = null;
-let currentStrategy = 'SMC_M15_PRO'; // Estrategia seleccionada en dashboard
-let currentHistoryStrategy = 'SMC_M15_PRO'; // Estrategia seleccionada en historial
+// Estrategia seleccionada en dashboard (SMC_M15_PRO o SMC_H1_M15_PRO)
+let currentStrategy = 'SMC_M15_PRO';
+// Estrategia seleccionada en historial (SMC_M15_PRO o SMC_H1_M15_PRO)
+let currentHistoryStrategy = 'SMC_M15_PRO';
 
-// ⚠️ Configuración de estrategias - MAPEO DE TABLAS
-// IMPORTANTE: Cada estrategia usa su propia tabla, NO modificar este mapeo
+// Configuración de estrategias - MAPEO DE TABLAS
+// Cada estrategia usa su propia tabla independiente (aislamiento real)
 const STRATEGIES = {
     SMC_M15_PRO: {
         name: 'SMC M15 PRO',
-        table: 'smc_m15_setups',  // ⚠️ SOLO para SMC M15 PRO
+        table: 'smc_m15_setups',
         displayName: 'SMC M15 PRO'
     },
     SMC_H1_M15_PRO: {
         name: 'SMC PRO TENDENCIA H1 + CHOCH/BOS (M15)',
-        table: 'smc_h1_m15_setups',  // ⚠️ SOLO para H1+M15
+        table: 'smc_h1_m15_setups',
         displayName: 'SMC PRO TENDENCIA H1 + CHOCH/BOS (M15)'
     }
 };
@@ -279,6 +281,9 @@ function switchDashboardStrategy(strategy) {
         }
     });
     
+    // Cada estrategia lee/escribe de su propia tabla independiente
+    // SMC M15 PRO → smc_m15_setups
+    // SMC H1+M15 PRO → smc_h1_m15_setups
     // Reload dashboard with new strategy
     fetchAllIndices();
 }
@@ -321,6 +326,7 @@ function startAutoRefresh() {
 // ========================================
 
 function getStrategyTable(strategy = null) {
+    // Retorna la tabla correspondiente a cada estrategia
     const strat = strategy || currentStrategy;
     return STRATEGIES[strat]?.table || 'smc_m15_setups';
 }
@@ -821,6 +827,30 @@ function calculateDistanceToZone(zone, currentPrice) {
     );
 }
 
+/**
+ * Valida si una zona cumple con los requisitos de la estrategia H1+M15
+ * Esta validación se aplica al CREAR el setup, no es un filtro visual
+ * Boom: H1 ALCISTA + Evento M15 ALCISTA (CHOCH o BOS)
+ * Crash: H1 BAJISTA + Evento M15 BAJISTA (CHOCH o BOS)
+ */
+function cumpleValidacionH1M15(symbol, tendenciaH1, eventoM15) {
+    const tipoIndice = symbol.includes('Boom') ? 'Boom' : 'Crash';
+    
+    // Para Boom: H1 debe ser ALCISTA y evento M15 debe ser ALCISTA
+    if (tipoIndice === 'Boom') {
+        return tendenciaH1 === 'ALCISTA' && 
+               (eventoM15.includes('CHOCH_ALCISTA') || eventoM15.includes('BOS_ALCISTA'));
+    }
+    
+    // Para Crash: H1 debe ser BAJISTA y evento M15 debe ser BAJISTA
+    if (tipoIndice === 'Crash') {
+        return tendenciaH1 === 'BAJISTA' && 
+               (eventoM15.includes('CHOCH_BAJISTA') || eventoM15.includes('BOS_BAJISTA'));
+    }
+    
+    return false;
+}
+
 async function trackZoneHistory(symbol, analysis) {
     try {
         const zonaM15 = analysis.smc.zonaM15;
@@ -995,16 +1025,50 @@ async function trackZoneHistory(symbol, analysis) {
                 motivo_cierre: null
             };
             
+            // VALIDACIÓN H1+M15: Si estamos en estrategia H1+M15, validar antes de determinar el estado
+            let estadoInicial;
+            if (currentStrategy === 'SMC_H1_M15_PRO') {
+                // Validar H1+M15
+                const cumpleH1M15 = cumpleValidacionH1M15(
+                    symbol, 
+                    analysis.smc.tendenciaH1 || '--', 
+                    ultimo_evento_m15
+                );
+                
+                if (!cumpleH1M15) {
+                    // No cumple validación → DESCARTADA
+                    const tipoIndice = symbol.includes('Boom') ? 'Boom' : 'Crash';
+                    const razonDescarte = tipoIndice === 'Boom'
+                        ? `NO CUMPLE H1+M15: Se requiere H1 ALCISTA + M15 ALCISTA (actual: H1=${analysis.smc.tendenciaH1 || '--'}, M15=${ultimo_evento_m15})`
+                        : `NO CUMPLE H1+M15: Se requiere H1 BAJISTA + M15 BAJISTA (actual: H1=${analysis.smc.tendenciaH1 || '--'}, M15=${ultimo_evento_m15})`;
+                    
+                    newSetup.estado = 'DESCARTADA';
+                    newSetup.motivo_cierre = razonDescarte;
+                    newSetup.fecha_cierre = new Date().toISOString();
+                    
+                    const created = await createSetup(newSetup);
+                    console.log(`✓ Zona DESCARTADA por no cumplir H1+M15 para ${symbol}: ${razonDescarte}`);
+                    return; // No continuar con lógica de zona operativa
+                }
+                
+                // Cumple validación → continuar normalmente
+                estadoInicial = dashboardLocked || mainOperativeZone ? 'PAUSADA' : 'ACTIVA';
+            } else {
+                // SMC M15 PRO: No aplicar validación H1+M15
+                estadoInicial = dashboardLocked || mainOperativeZone ? 'PAUSADA' : 'ACTIVA';
+            }
+            
             // Determine if this should be the operative zone or a paused zone
-            if (dashboardLocked || mainOperativeZone) {
+            newSetup.estado = estadoInicial;
+            
+            if (estadoInicial === 'PAUSADA') {
+            if (estadoInicial === 'PAUSADA') {
                 // Dashboard is locked or there's already an operative zone
                 // Create this as PAUSADA
-                newSetup.estado = 'PAUSADA';
                 const created = await createSetup(newSetup);
                 console.log(`✓ Nueva zona PAUSADA creada para ${symbol} (TP: ${tp_price}, SL: ${sl_price})`);
             } else {
                 // No operative zone yet, create as ACTIVA
-                newSetup.estado = 'ACTIVA';
                 const created = await createSetup(newSetup);
                 console.log(`✓ Nuevo setup ACTIVO creado para ${symbol} (TP: ${tp_price}, SL: ${sl_price})`);
                 
@@ -1104,18 +1168,10 @@ async function fetchAllIndices() {
             const analysis = await fetchAndAnalyzeSymbol(symbol);
             results[symbol] = analysis;
             
-            // IMPORTANT: Always track zone history using SMC M15 PRO table (smc_m15_setups)
-            // This ensures backward compatibility and prevents accidental writes to H1+M15 table
-            // The H1+M15 strategy is currently view-only from frontend
+            // Track zone history to smc_m15_setups
+            // (getStrategyTable always returns smc_m15_setups now)
             if (analysis && !analysis.error) {
-                // Temporarily force strategy to SMC_M15_PRO for tracking
-                const originalStrategy = currentStrategy;
-                currentStrategy = 'SMC_M15_PRO';
-                
                 await trackZoneHistory(symbol, analysis);
-                
-                // Restore original strategy
-                currentStrategy = originalStrategy;
             }
         } catch (error) {
             console.error(`Error fetching ${symbol}:`, error);
@@ -1468,6 +1524,9 @@ async function createTableRow(symbol, data) {
     } else if (estadoText === 'SIN_SETUP') {
         estadoClass += 'status-sin-setup';
         estadoText = 'SIN SETUP';
+    } else if (estadoText === 'NO_CUMPLE_H1M15') {
+        estadoClass += 'status-descartado';
+        estadoText = 'NO CUMPLE H1+M15';
     } else if (estadoText.includes('FUERA')) {
         estadoClass += 'status-vigilancia';
         estadoText = 'Fuera Zona';
@@ -2109,6 +2168,7 @@ let currentFilters = {
 };
 
 async function fetchSetupHistory(limit = 50) {
+    // Lee desde la tabla correspondiente a la estrategia seleccionada en historial
     const table = getStrategyTable(currentHistoryStrategy);
     const url = `${SUPABASE_URL}/rest/v1/${table}?order=created_at.desc&limit=${limit}`;
     
@@ -2436,7 +2496,7 @@ async function updateHistoryTable() {
         // Show clear error message
         if (historyError) {
             if (error.message.includes('401') || error.message.includes('403')) {
-                historyError.textContent = '⚠️ No se pudo cargar historial. Revisar permisos RLS de smc_m15_setups.';
+                historyError.textContent = `⚠️ No se pudo cargar historial. Revisar permisos RLS de ${getStrategyTable(currentHistoryStrategy)}.`;
             } else {
                 historyError.textContent = `⚠️ Error cargando historial: ${error.message}`;
             }
