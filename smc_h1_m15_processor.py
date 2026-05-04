@@ -57,6 +57,9 @@ CANDLES_BY_TIMEFRAME = {
 # Intervalo de procesamiento (en segundos)
 PROCESS_INTERVAL_SECONDS = 180  # 3 minutos
 
+# Umbral de similitud de zona (en puntos)
+ZONE_SIMILARITY_THRESHOLD = 10  # Diferencia máxima para considerar zonas similares
+
 # =========================
 # SUPABASE HELPERS
 # =========================
@@ -355,8 +358,8 @@ def process_symbol(symbol):
     for z in zonas_activas:
         # Verificar si es la misma dirección y rango similar
         if (z['direccion'] == zona['direccion'] and
-            abs(z['zona_desde'] - zona['zona_desde']) < 10 and
-            abs(z['zona_hasta'] - zona['zona_hasta']) < 10):
+            abs(z['zona_desde'] - zona['zona_desde']) < ZONE_SIMILARITY_THRESHOLD and
+            abs(z['zona_hasta'] - zona['zona_hasta']) < ZONE_SIMILARITY_THRESHOLD):
             zona_existe = True
             print(f"  ℹ️  Zona similar ya existe (ID: {z['id']})")
             break
@@ -397,8 +400,12 @@ def update_active_zones_states(symbol, precio_actual):
         sl_price = zona['sl_price']
         estado_actual = zona['estado']
         
+        # Calcular límites de zona (mínimo y máximo) independientemente de la dirección
+        zona_min = min(zona_desde, zona_hasta)
+        zona_max = max(zona_desde, zona_hasta)
+        
         # Verificar si precio está EN_ZONA
-        if zona_desde <= precio_actual <= zona_hasta:
+        if zona_min <= precio_actual <= zona_max:
             if estado_actual == "ACTIVA":
                 update_zone_state(zone_id, "EN_ZONA", precio_actual)
         
@@ -418,8 +425,8 @@ def update_active_zones_states(symbol, precio_actual):
         
         # Verificar PROFIT (salió de zona favorablemente pero no llegó a TP)
         elif estado_actual == "EN_ZONA":
-            if (direccion == "ALCISTA" and precio_actual > zona_hasta) or \
-               (direccion == "BAJISTA" and precio_actual < zona_desde):
+            if (direccion == "ALCISTA" and precio_actual > zona_max) or \
+               (direccion == "BAJISTA" and precio_actual < zona_min):
                 update_zone_state(zone_id, "PROFIT", precio_actual, "Salió de zona en profit")
 
 
