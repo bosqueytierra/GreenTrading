@@ -1671,6 +1671,10 @@ function calculateStats(setups) {
             case 'DESCARTADA':
                 stats.descartadas++;
                 break;
+            default:
+                // Handle unexpected state values
+                console.warn(`Unexpected estado value: ${setup.estado} for setup ID ${setup.id}`);
+                break;
         }
     });
     
@@ -1687,7 +1691,7 @@ function renderStats(stats) {
     
     // Calculate winrate
     const totalClosed = stats.tp + stats.sl;
-    const winrate = totalClosed > 0 ? ((stats.tp / totalClosed) * 100).toFixed(1) : 0;
+    const winrate = totalClosed > 0 ? ((stats.tp / totalClosed) * 100).toFixed(1) : '0.0';
     
     // Create stats cards
     statsBar.innerHTML = `
