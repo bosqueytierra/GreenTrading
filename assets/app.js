@@ -12,7 +12,10 @@ const VALID_USERS = {
 let autoRefreshInterval = null;
 const AUTO_REFRESH_SECONDS = 30;
 let currentUser = null;
+// ⚠️ IMPORTANTE: currentStrategy solo controla qué datos se MUESTRAN en el dashboard
+// NO debe controlar a qué tabla se ESCRIBE (el tracking siempre va a smc_m15_setups)
 let currentStrategy = 'SMC_M15_PRO'; // Estrategia seleccionada en dashboard
+// ⚠️ currentHistoryStrategy siempre debe ser 'SMC_M15_PRO' para el historial principal
 let currentHistoryStrategy = 'SMC_M15_PRO'; // Estrategia seleccionada en historial
 
 // ⚠️ Configuración de estrategias - MAPEO DE TABLAS
@@ -279,6 +282,9 @@ function switchDashboardStrategy(strategy) {
         }
     });
     
+    // ⚠️ IMPORTANTE: Ambas estrategias leen de la misma tabla (smc_m15_setups)
+    // La diferencia es que H1+M15 aplica filtro adicional al MOSTRAR los datos
+    // NO al escribirlos (el tracking siempre va a smc_m15_setups)
     // Reload dashboard with new strategy
     fetchAllIndices();
 }
@@ -321,8 +327,11 @@ function startAutoRefresh() {
 // ========================================
 
 function getStrategyTable(strategy = null) {
-    const strat = strategy || currentStrategy;
-    return STRATEGIES[strat]?.table || 'smc_m15_setups';
+    // ⚠️ IMPORTANTE: TODAS las operaciones de escritura/tracking van a smc_m15_setups
+    // La estrategia H1+M15 NO tiene tabla separada desde el frontend
+    // Solo se diferencia en cómo se FILTRAN y MUESTRAN los datos
+    // El procesador backend smc_h1_m15_processor.py usa smc_h1_m15_setups, pero no está activo
+    return 'smc_m15_setups';
 }
 
 async function getAllActiveSetups(symbol) {
@@ -1104,18 +1113,10 @@ async function fetchAllIndices() {
             const analysis = await fetchAndAnalyzeSymbol(symbol);
             results[symbol] = analysis;
             
-            // IMPORTANT: Always track zone history using SMC M15 PRO table (smc_m15_setups)
-            // This ensures backward compatibility and prevents accidental writes to H1+M15 table
-            // The H1+M15 strategy is currently view-only from frontend
+            // Track zone history to smc_m15_setups
+            // (getStrategyTable always returns smc_m15_setups now)
             if (analysis && !analysis.error) {
-                // Temporarily force strategy to SMC_M15_PRO for tracking
-                const originalStrategy = currentStrategy;
-                currentStrategy = 'SMC_M15_PRO';
-                
                 await trackZoneHistory(symbol, analysis);
-                
-                // Restore original strategy
-                currentStrategy = originalStrategy;
             }
         } catch (error) {
             console.error(`Error fetching ${symbol}:`, error);
@@ -1307,6 +1308,29 @@ async function fetchCandles(symbol, timeframe, limit) {
     return data.reverse();
 }
 
+/**
+ * Valida si una zona cumple con los requisitos de la estrategia H1+M15
+ * Boom: H1 ALCISTA + Evento M15 ALCISTA
+ * Crash: H1 BAJISTA + Evento M15 BAJISTA
+ */
+function validarH1M15(symbol, tendenciaH1, eventoM15) {
+    const tipoIndice = symbol.includes('Boom') ? 'Boom' : 'Crash';
+    
+    // Para Boom: H1 debe ser ALCISTA y evento M15 debe ser ALCISTA
+    if (tipoIndice === 'Boom') {
+        return tendenciaH1 === 'ALCISTA' && 
+               (eventoM15.includes('CHOCH_ALCISTA') || eventoM15.includes('BOS_ALCISTA'));
+    }
+    
+    // Para Crash: H1 debe ser BAJISTA y evento M15 debe ser BAJISTA
+    if (tipoIndice === 'Crash') {
+        return tendenciaH1 === 'BAJISTA' && 
+               (eventoM15.includes('CHOCH_BAJISTA') || eventoM15.includes('BOS_BAJISTA'));
+    }
+    
+    return false;
+}
+
 async function updateBoomTable(results) {
     const tbody = document.getElementById('boomTableBody');
     tbody.innerHTML = '';
@@ -1342,6 +1366,32 @@ async function createTableRow(symbol, data) {
     
     // Check for existing EN_ZONA, PROFIT, or TP (not yet released) setup
     const setupEnZonaOrProfit = await getSetupEnZonaOrProfit(symbol);
+    
+    // ⚠️ VALIDACIÓN H1+M15: Si estamos en estrategia H1+M15, verificar validación
+    let cumpleH1M15 = true;
+    let razonDescarte = '';
+    
+    if (currentStrategy === 'SMC_H1_M15_PRO') {
+        // Obtener tendencia H1 y último evento M15
+        const tendenciaH1 = smc.tendenciaH1 || '--';
+        let eventoM15 = '--';
+        
+        if (smc.eventosM15 && smc.eventosM15.length > 0) {
+            eventoM15 = smc.eventosM15[smc.eventosM15.length - 1].evento;
+        }
+        
+        // Validar H1+M15
+        cumpleH1M15 = validarH1M15(symbol, tendenciaH1, eventoM15);
+        
+        if (!cumpleH1M15) {
+            const tipoIndice = symbol.includes('Boom') ? 'Boom' : 'Crash';
+            if (tipoIndice === 'Boom') {
+                razonDescarte = `NO CUMPLE: Se requiere H1 ALCISTA + M15 ALCISTA (actual: H1=${tendenciaH1}, M15=${eventoM15})`;
+            } else {
+                razonDescarte = `NO CUMPLE: Se requiere H1 BAJISTA + M15 BAJISTA (actual: H1=${tendenciaH1}, M15=${eventoM15})`;
+            }
+        }
+    }
     
     // Decide which data source to use for display
     let displayZonaDesde, displayZonaHasta, displayDireccion, displayScore, displayOB, displayFVG, displayBarrida, displayEstado;
@@ -1408,6 +1458,14 @@ async function createTableRow(symbol, data) {
         displayEstado = 'ACTIVA'; // New zone, not yet tracked
     }
     
+    // ⚠️ APLICAR FILTRO H1+M15: Si no cumple validación, marcar como NO_CUMPLE_H1M15
+    if (currentStrategy === 'SMC_H1_M15_PRO' && !cumpleH1M15 && displayEstado !== 'SIN_SETUP') {
+        displayEstado = 'NO_CUMPLE_H1M15';
+        // No mostrar la zona cuando no cumple
+        displayZonaDesde = null;
+        displayZonaHasta = null;
+    }
+    
     // Get last event M15
     let lastEventM15 = '--';
     if (smc.eventosM15 && smc.eventosM15.length > 0) {
@@ -1417,7 +1475,7 @@ async function createTableRow(symbol, data) {
     
     // Zone M15 with individual boxes
     let zonaM15HTML = '<span class="zone-cell">--</span>';
-    if (displayZonaDesde !== null && displayZonaHasta !== null && displayEstado !== 'ESPERANDO_ACOMODO') {
+    if (displayZonaDesde !== null && displayZonaHasta !== null && displayEstado !== 'ESPERANDO_ACOMODO' && displayEstado !== 'NO_CUMPLE_H1M15') {
         zonaM15HTML = `
             <div class="zone-boxes">
                 <div class="zone-price-row">
@@ -1434,6 +1492,8 @@ async function createTableRow(symbol, data) {
         `;
     } else if (displayEstado === 'ESPERANDO_ACOMODO') {
         zonaM15HTML = '<span class="zone-cell zona-esperando">Esperando...</span>';
+    } else if (displayEstado === 'NO_CUMPLE_H1M15') {
+        zonaM15HTML = `<span class="zone-cell zona-descartada" title="${razonDescarte}">No cumple validación H1+M15</span>`;
     }
     
     // Score
@@ -1468,6 +1528,9 @@ async function createTableRow(symbol, data) {
     } else if (estadoText === 'SIN_SETUP') {
         estadoClass += 'status-sin-setup';
         estadoText = 'SIN SETUP';
+    } else if (estadoText === 'NO_CUMPLE_H1M15') {
+        estadoClass += 'status-descartado';
+        estadoText = 'NO CUMPLE H1+M15';
     } else if (estadoText.includes('FUERA')) {
         estadoClass += 'status-vigilancia';
         estadoText = 'Fuera Zona';
