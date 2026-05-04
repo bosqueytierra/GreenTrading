@@ -1839,9 +1839,6 @@ function createHistoryRow(setup) {
     
     return tr;
 }
-    
-    return tr;
-}
 
 // Cleanup
 window.addEventListener('beforeunload', () => {
