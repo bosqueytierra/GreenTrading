@@ -15,14 +15,18 @@ Esto confirmaba que **SMC M15 PRO** estaba descartando zonas PAUSADAS por cambio
   - Contexto H1 cambió contra la zona
   - Contexto M15 cambió contra la zona
   - Evento M15 dejó de tener sentido para la zona
-- PAUSADA debe mantenerse como PAUSADA, salvo que se defina una invalidación propia por precio (SL)
+  - Falta de confluencia OB/FVG/Barrida (zona ya fue creada con confluencia inicial)
+- PAUSADA debe mantenerse como PAUSADA, salvo que:
+  - El precio toque SL
+  - Se cierre manualmente por una regla explícita de precio
 
 ### Para SMC H1+M15 PRO:
 - Una zona PAUSADA **SÍ** puede pasar a DESCARTADA por:
   - Contexto H1 cambió contra la zona
   - Contexto M15 cambió contra la zona
   - Evento M15 dejó de tener sentido para la zona
-- Esta lógica de descarte por H1/M15/evento es específica de esta estrategia
+  - Falta de confluencia OB/FVG/Barrida (validación dinámica)
+- Esta lógica de descarte completa (H1/M15/evento/confluencia) es específica de esta estrategia
 
 ## Solución Implementada
 
@@ -73,7 +77,24 @@ Esto confirmaba que **SMC M15 PRO** estaba descartando zonas PAUSADAS por cambio
    }
    ```
 
-3. **Logging mejorado**
+3. **Validación 4: Check minimum confluence**
+   - **ANTES**: Se aplicaba a todas las estrategias
+   - **AHORA**: Solo se aplica si `currentStrategy === 'SMC_H1_M15_PRO'`
+   - Código:
+   ```javascript
+   // 4. Check minimum confluence (at least one of OB, FVG, or Barrida must be present)
+   // This only applies to SMC_H1_M15_PRO
+   // For SMC_M15_PRO, zones were already created with initial confluence, so we don't revalidate it
+   if (!shouldDiscard && currentStrategy === 'SMC_H1_M15_PRO') {
+       const hasConfluence = setup.ob || setup.fvg || setup.barrida;
+       if (!hasConfluence) {
+           shouldDiscard = true;
+           discardReason = 'Zona no tiene confluencia OB/FVG/Barrida mínima';
+       }
+   }
+   ```
+
+4. **Logging mejorado**
    - Se agregó la estrategia actual a los mensajes de log para facilitar debugging
 
 ### Validaciones que SÍ se aplican a ambas estrategias:
@@ -82,15 +103,21 @@ Esto confirmaba que **SMC M15 PRO** estaba descartando zonas PAUSADAS por cambio
    - Aplica a todas las estrategias
    - Si el precio toca el SL, la zona PAUSADA pasa a DESCARTADA
 
-2. **Check minimum confluence** (Validación 4)
-   - Aplica a todas las estrategias
-   - Si la zona no tiene confluencia OB/FVG/Barrida mínima, se descarta
+### Validaciones que SOLO se aplican a SMC_H1_M15_PRO:
+
+1. **Check H1/M15 context compatibility** (Validación 2)
+2. **Check if M15 event still makes sense** (Validación 3)
+3. **Check minimum confluence** (Validación 4)
 
 ## Impacto
 
 ### ✅ Lo que cambia:
-- En **SMC M15 PRO**: Las zonas PAUSADAS ya NO se descartarán por cambios de contexto H1/M15 o eventos M15
-- En **SMC H1+M15 PRO**: Las zonas PAUSADAS SÍ se siguen descartando por cambios de contexto H1/M15 o eventos M15 (comportamiento sin cambios)
+- En **SMC M15 PRO**: Las zonas PAUSADAS ya NO se descartarán por:
+  - Cambios de contexto H1/M15
+  - Cambios de eventos M15
+  - Falta de confluencia (zona ya fue creada con confluencia inicial)
+  - **Solo se descartan si el precio toca SL**
+- En **SMC H1+M15 PRO**: Las zonas PAUSADAS SÍ se siguen descartando por cambios de contexto H1/M15, eventos M15, o falta de confluencia (comportamiento sin cambios)
 
 ### ✅ Lo que NO cambia:
 - Estados ACTIVA, EN_ZONA, PROFIT, TP, SL: No se tocan

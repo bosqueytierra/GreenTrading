@@ -506,12 +506,12 @@ function getUltimoEventoM15(analysis) {
  * 
  * A zone stays PAUSADA only if:
  * - Price hasn't touched its SL
- * - Has minimum OB/FVG/Sweep confluence
+ * - (For SMC_H1_M15_PRO only) Has minimum OB/FVG/Sweep confluence
  * - (For SMC_H1_M15_PRO only) H1/M15 trends and M15 event are still compatible
  * 
  * Note: Uses global variable `currentStrategy` to determine which validation rules to apply.
- * - For SMC_M15_PRO: Only discards if SL is hit or no confluence
- * - For SMC_H1_M15_PRO: Also discards if H1/M15 context or M15 event changes against zone
+ * - For SMC_M15_PRO: Only discards if SL is hit (zones maintain initial confluence)
+ * - For SMC_H1_M15_PRO: Also discards if H1/M15 context, M15 event, or confluence changes
  */
 async function reevaluatePausedZone(setup, currentPrice, analysis) {
     const updateData = {
@@ -562,8 +562,9 @@ async function reevaluatePausedZone(setup, currentPrice, analysis) {
     }
     
     // 4. Check minimum confluence (at least one of OB, FVG, or Barrida must be present)
-    // This applies to all strategies
-    if (!shouldDiscard) {
+    // This only applies to SMC_H1_M15_PRO
+    // For SMC_M15_PRO, zones were already created with initial confluence, so we don't revalidate it
+    if (!shouldDiscard && currentStrategy === 'SMC_H1_M15_PRO') {
         const hasConfluence = setup.ob || setup.fvg || setup.barrida;
         if (!hasConfluence) {
             shouldDiscard = true;
