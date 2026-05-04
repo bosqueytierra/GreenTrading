@@ -59,6 +59,9 @@ const BARRIDA_LOOKBACK = 40;
 const MIN_SEGMENT_LENGTH = 10;
 const BARRIDA_INITIAL_OFFSET = 5;
 
+// Estados de setup activos (pueden ser actualizados por precio)
+const ACTIVE_SETUP_STATES = ['ACTIVA', 'EN_ZONA', 'PROFIT', 'PAUSADA', 'TP'];
+
 // ========================================
 // LOGIN LOGIC
 // ========================================
@@ -967,7 +970,9 @@ async function trackZoneHistory(symbol, analysis) {
         
         // MATCHING LOGIC: Find if this zone already exists
         // Matching criteria: symbol (implicit), zona_desde, zona_hasta, evento, direccion
-        const tolerance = 0.001; // Increased tolerance for price comparison (handles decimals better)
+        // Tolerance: 0.001 represents ~0.1% difference for typical Boom/Crash prices (~1000)
+        // This handles floating-point precision and minor rounding differences
+        const tolerance = 0.001;
         let matchingSetup = null;
         
         // First, check for exact match (same zone boundaries, evento, and direccion)
@@ -985,6 +990,8 @@ async function trackZoneHistory(symbol, analysis) {
         }
         
         // If no exact match, check for containment or strong overlap (only with active/paused zones)
+        // Note: Containment uses strict comparison (no tolerance) to ensure a zone is truly within another
+        // This prevents incorrectly matching zones that are merely adjacent
         if (!matchingSetup) {
             for (const setup of activeSetups) {
                 // Check if new zone is contained within existing zone (strict containment)
@@ -1028,8 +1035,7 @@ async function trackZoneHistory(symbol, analysis) {
             console.log(`✓ Setup ${matchingSetup.id} actualizado (mantiene zona original) para ${symbol}`);
             
             // Update state based on price movement (only if in an active state)
-            const activeStates = ['ACTIVA', 'EN_ZONA', 'PROFIT', 'PAUSADA', 'TP'];
-            if (activeStates.includes(matchingSetup.estado)) {
+            if (ACTIVE_SETUP_STATES.includes(matchingSetup.estado)) {
                 await updateSetupState(matchingSetup, currentPrice, analysis);
             }
         }
