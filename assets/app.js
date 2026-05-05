@@ -68,6 +68,14 @@ const BARRIDA_INITIAL_OFFSET = 5;
 const ACTIVE_SETUP_STATES = ['ACTIVA', 'EN_ZONA', 'PROFIT', 'PAUSADA', 'TP'];
 
 // ========================================
+// BACKEND PROCESSORS MODE
+// ========================================
+// Cuando está habilitado, el frontend NO escribe en la base de datos.
+// Solo lee y visualiza. El procesamiento lo hacen los procesadores backend.
+// Evita doble escritura: frontend + backend procesando simultáneamente.
+const BACKEND_PROCESSORS_ENABLED = true;
+
+// ========================================
 // LOGIN LOGIC
 // ========================================
 
@@ -419,6 +427,12 @@ async function getAllSetupsForMatching(symbol) {
 }
 
 async function createSetup(setupData) {
+    // GUARD: No escribir si backend processors están habilitados
+    if (BACKEND_PROCESSORS_ENABLED) {
+        console.log('⚠️ BACKEND_PROCESSORS_ENABLED: createSetup() deshabilitado - solo lectura');
+        return null;
+    }
+    
     const table = getStrategyTable();
     const url = `${SUPABASE_URL}/rest/v1/${table}`;
     
@@ -441,6 +455,12 @@ async function createSetup(setupData) {
 }
 
 async function updateSetup(id, updateData, explicitTable = null) {
+    // GUARD: No escribir si backend processors están habilitados
+    if (BACKEND_PROCESSORS_ENABLED) {
+        console.log('⚠️ BACKEND_PROCESSORS_ENABLED: updateSetup() deshabilitado - solo lectura');
+        return null;
+    }
+    
     // If explicitTable is provided, use it; otherwise fall back to currentStrategy
     const table = explicitTable || getStrategyTable();
     const url = `${SUPABASE_URL}/rest/v1/${table}?id=eq.${id}`;
@@ -591,6 +611,11 @@ function getUltimoEventoM15(analysis) {
  * - For SMC_H1_M15_PRO: Also discards if H1/M15 context, M15 event, or confluence changes
  */
 async function reevaluatePausedZone(setup, currentPrice, analysis) {
+    // GUARD: No escribir si backend processors están habilitados
+    if (BACKEND_PROCESSORS_ENABLED) {
+        return 'PAUSADA'; // Retornar sin cambios
+    }
+    
     const updateData = {
         updated_at: new Date().toISOString()
     };
@@ -690,6 +715,11 @@ async function reevaluatePausedZone(setup, currentPrice, analysis) {
  * PAUSADA zones are skipped from normal state updates (they are reevaluated separately)
  */
 async function updateSetupState(setup, currentPrice, analysis = null) {
+    // GUARD: No escribir si backend processors están habilitados
+    if (BACKEND_PROCESSORS_ENABLED) {
+        return false;
+    }
+    
     // Skip PAUSADA zones - they are reevaluated separately
     if (setup.estado === 'PAUSADA') {
         return false;
@@ -990,6 +1020,12 @@ function cumpleValidacionH1M15(symbol, tendenciaH1, eventoM15) {
 }
 
 async function trackZoneHistory(symbol, analysis) {
+    // GUARD: No procesar ni escribir si backend processors están habilitados
+    if (BACKEND_PROCESSORS_ENABLED) {
+        console.log(`⚠️ BACKEND_PROCESSORS_ENABLED: trackZoneHistory() deshabilitado para ${symbol} - solo lectura`);
+        return;
+    }
+    
     try {
         const zonaM15 = analysis.smc.zonaM15;
         const currentPrice = analysis.currentPrice;
@@ -1363,6 +1399,7 @@ async function fetchAllIndices() {
             
             // Track zone history to smc_m15_setups
             // (getStrategyTable always returns smc_m15_setups now)
+            // NOTA: Si BACKEND_PROCESSORS_ENABLED=true, trackZoneHistory() no escribe
             if (analysis && !analysis.error) {
                 await trackZoneHistory(symbol, analysis);
             }
