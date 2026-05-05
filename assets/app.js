@@ -305,7 +305,18 @@ async function switchDashboardStrategy(strategy) {
     // SMC H1+M15 PRO → smc_h1_m15_setups
     // SMC_TENDENCY_H1_M15 → smc_tendency_h1_m15_setups
     // Force immediate refresh - no esperar auto-refresh
-    await fetchAllIndices();
+    try {
+        await fetchAllIndices();
+    } catch (error) {
+        console.error('Error al cambiar estrategia:', error);
+        // Show error in tables
+        if (boomTableBody) {
+            boomTableBody.innerHTML = '<tr><td colspan="12" class="error">Error al cargar datos</td></tr>';
+        }
+        if (crashTableBody) {
+            crashTableBody.innerHTML = '<tr><td colspan="12" class="error">Error al cargar datos</td></tr>';
+        }
+    }
 }
 
 function switchHistoryStrategy(strategy) {
