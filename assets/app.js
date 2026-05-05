@@ -73,7 +73,7 @@ const ACTIVE_SETUP_STATES = ['ACTIVA', 'EN_ZONA', 'PROFIT', 'PAUSADA', 'TP'];
 // Cuando está habilitado, el frontend NO escribe en la base de datos.
 // Solo lee y visualiza. El procesamiento lo hacen los procesadores backend.
 // Evita doble escritura: frontend + backend procesando simultáneamente.
-const BACKEND_PROCESSORS_ENABLED = true;
+const BACKEND_PROCESSORS_ENABLED = false;
 
 // ========================================
 // LOGIN LOGIC
