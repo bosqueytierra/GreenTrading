@@ -1535,7 +1535,8 @@ function SMC_TENDENCY_H1_M15_isValidSetup(symbol, smc) {
     // Validation rules for BOOM
     if (isBoom) {
         // Valid only if: tendencia_h1 = ALCISTA AND ultimo_evento_m15 = CHOCH_ALCISTA or BOS_ALCISTA
-        const isValid = tendenciaH1 === 'ALCISTA' && (ultimoEventoM15 === 'CHOCH_ALCISTA' || ultimoEventoM15 === 'BOS_ALCISTA');
+        const isValid = tendenciaH1 === 'ALCISTA' && 
+            ultimoEventoM15 && (ultimoEventoM15.includes('CHOCH_ALCISTA') || ultimoEventoM15.includes('BOS_ALCISTA'));
         if (!isValid) {
             console.log(`❌ SMC_TENDENCY_H1_M15 filter: ${symbol} NO cumple (BOOM requiere H1=ALCISTA + M15=CHOCH/BOS_ALCISTA, actual: H1=${tendenciaH1}, M15=${ultimoEventoM15})`);
         }
@@ -1545,7 +1546,8 @@ function SMC_TENDENCY_H1_M15_isValidSetup(symbol, smc) {
     // Validation rules for CRASH
     if (isCrash) {
         // Valid only if: tendencia_h1 = BAJISTA AND ultimo_evento_m15 = CHOCH_BAJISTA or BOS_BAJISTA
-        const isValid = tendenciaH1 === 'BAJISTA' && (ultimoEventoM15 === 'CHOCH_BAJISTA' || ultimoEventoM15 === 'BOS_BAJISTA');
+        const isValid = tendenciaH1 === 'BAJISTA' && 
+            ultimoEventoM15 && (ultimoEventoM15.includes('CHOCH_BAJISTA') || ultimoEventoM15.includes('BOS_BAJISTA'));
         if (!isValid) {
             console.log(`❌ SMC_TENDENCY_H1_M15 filter: ${symbol} NO cumple (CRASH requiere H1=BAJISTA + M15=CHOCH/BOS_BAJISTA, actual: H1=${tendenciaH1}, M15=${ultimoEventoM15})`);
         }
