@@ -1598,6 +1598,15 @@ async function createTableRow(symbol, data) {
     } else if (estadoText === 'PAUSADA') {
         estadoClass += 'status-pausada';
         estadoText = 'PAUSADA';
+    } else if (estadoText === 'TP') {
+        estadoClass += 'status-tp';
+        estadoText = 'TP';
+    } else if (estadoText === 'SL') {
+        estadoClass += 'status-sl';
+        estadoText = 'SL';
+    } else if (estadoText === 'DESCARTADA') {
+        estadoClass += 'status-descartado';
+        estadoText = 'DESCARTADA';
     } else if (estadoText === 'ESPERANDO_ACOMODO') {
         estadoClass += 'status-esperando-acomodo';
         estadoText = 'ESPERANDO ACOMODO';
@@ -1611,7 +1620,9 @@ async function createTableRow(symbol, data) {
         estadoClass += 'status-vigilancia';
         estadoText = 'Fuera Zona';
     } else {
-        estadoClass += 'status-descartado';
+        // Catch-all for any unexpected states
+        estadoClass += 'status-sin-setup';
+        estadoText = estadoText || '--';
     }
     
     // Tendencias
@@ -2640,17 +2651,18 @@ function createHistoryRow(setup) {
         case 'PAUSADA':
             estadoClass += 'status-pausada';
             break;
-        case 'DESCARTADA':
-            estadoClass += 'status-descartada';
-            break;
         case 'TP':
             estadoClass += 'status-tp';
             break;
         case 'SL':
             estadoClass += 'status-sl';
             break;
-        default:
+        case 'DESCARTADA':
             estadoClass += 'status-descartado';
+            break;
+        default:
+            // Unknown state - use default style
+            estadoClass += 'status-sin-setup';
     }
     
     // OB, FVG, Barrida
