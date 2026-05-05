@@ -29,6 +29,11 @@ const STRATEGIES = {
         name: 'SMC PRO TENDENCIA H1 + CHOCH/BOS (M15)',
         table: 'smc_h1_m15_setups',
         displayName: 'SMC PRO TENDENCIA H1 + CHOCH/BOS (M15)'
+    },
+    SMC_TENDENCY_H1_M15: {
+        name: 'SMC_TENDENCY_H1_M15',
+        table: 'smc_tendency_h1_m15_setups',
+        displayName: 'SMC_TENDENCY_H1_M15'
     }
 };
 
@@ -512,6 +517,7 @@ function getUltimoEventoM15(analysis) {
  * 
  * Note: Uses global variable `currentStrategy` to determine which validation rules to apply.
  * - For SMC_M15_PRO: Only discards if SL is hit (zones maintain initial confluence)
+ * - For SMC_TENDENCY_H1_M15: Only discards if SL is hit (zones maintain initial validation)
  * - For SMC_H1_M15_PRO: Also discards if H1/M15 context, M15 event, or confluence changes
  */
 async function reevaluatePausedZone(setup, currentPrice, analysis) {
@@ -539,7 +545,7 @@ async function reevaluatePausedZone(setup, currentPrice, analysis) {
     }
     
     // 2. Check H1/M15 context compatibility (ONLY for SMC_H1_M15_PRO)
-    // For SMC_M15_PRO, PAUSADA zones should NOT be discarded by H1/M15 context changes
+    // For SMC_M15_PRO and SMC_TENDENCY_H1_M15, PAUSADA zones should NOT be discarded by H1/M15 context changes
     if (!shouldDiscard && setupStrategy === 'SMC_H1_M15_PRO' && analysis && analysis.smc) {
         const tendenciaH1 = analysis.smc.tendenciaH1;
         const tendenciaM15 = analysis.smc.tendenciaM15;
@@ -555,7 +561,7 @@ async function reevaluatePausedZone(setup, currentPrice, analysis) {
     }
     
     // 3. Check if M15 event still makes sense (ONLY for SMC_H1_M15_PRO)
-    // For SMC_M15_PRO, PAUSADA zones should NOT be discarded by M15 event changes
+    // For SMC_M15_PRO and SMC_TENDENCY_H1_M15, PAUSADA zones should NOT be discarded by M15 event changes
     if (!shouldDiscard && setupStrategy === 'SMC_H1_M15_PRO') {
         const ultimoEvento = getUltimoEventoM15(analysis);
         if (ultimoEvento) {
@@ -571,7 +577,7 @@ async function reevaluatePausedZone(setup, currentPrice, analysis) {
     
     // 4. Check minimum confluence (at least one of OB, FVG, or Barrida must be present)
     // This only applies to SMC_H1_M15_PRO
-    // For SMC_M15_PRO, zones were already created with initial confluence, so we don't revalidate it
+    // For SMC_M15_PRO and SMC_TENDENCY_H1_M15, zones were already created with initial confluence, so we don't revalidate it
     if (!shouldDiscard && setupStrategy === 'SMC_H1_M15_PRO') {
         const hasConfluence = setup.ob || setup.fvg || setup.barrida;
         if (!hasConfluence) {
@@ -582,12 +588,26 @@ async function reevaluatePausedZone(setup, currentPrice, analysis) {
     
     // If zone should be discarded, update it using the correct table
     if (shouldDiscard) {
-        updateData.estado = 'DESCARTADA';
-        updateData.fecha_cierre = new Date().toISOString();
-        updateData.motivo_cierre = discardReason;
-        await updateSetup(setup.id, updateData, setupTable);
-        console.log(`✓ Zona PAUSADA ${setup.id} → DESCARTADA: ${discardReason} para ${setup.symbol} (estrategia: ${setupStrategy})`);
-        return 'DESCARTADA';
+        // Check if this is an SL hit vs. validation failure
+        if (discardReason === 'Precio tocó SL de zona pausada') {
+            // SL hit → estado SL (applies to all strategies)
+            const zona_size_puntos = Math.abs(setup.zona_hasta - setup.zona_desde);
+            updateData.estado = 'SL';
+            updateData.resultado_puntos = -zona_size_puntos;
+            updateData.fecha_cierre = new Date().toISOString();
+            updateData.motivo_cierre = 'Stop Loss alcanzado en zona pausada';
+            await updateSetup(setup.id, updateData, setupTable);
+            console.log(`✓ Zona PAUSADA ${setup.id} → SL: Stop Loss alcanzado para ${setup.symbol} (estrategia: ${setupStrategy})`);
+            return 'SL';
+        } else {
+            // Validation failure → DESCARTADA (only for SMC_H1_M15_PRO)
+            updateData.estado = 'DESCARTADA';
+            updateData.fecha_cierre = new Date().toISOString();
+            updateData.motivo_cierre = discardReason;
+            await updateSetup(setup.id, updateData, setupTable);
+            console.log(`✓ Zona PAUSADA ${setup.id} → DESCARTADA: ${discardReason} para ${setup.symbol} (estrategia: ${setupStrategy})`);
+            return 'DESCARTADA';
+        }
     }
     
     // Zone remains PAUSADA (no log to avoid cluttering console)
@@ -1105,7 +1125,7 @@ async function trackZoneHistory(symbol, analysis) {
                 strategy: currentStrategy  // Store which strategy created this setup
             };
             
-            // VALIDACIÓN H1+M15: Si estamos en estrategia H1+M15, validar antes de determinar el estado
+            // VALIDACIÓN: Validar antes de determinar el estado según estrategia
             let estadoInicial;
             if (currentStrategy === 'SMC_H1_M15_PRO') {
                 // Validar H1+M15
@@ -1129,6 +1149,29 @@ async function trackZoneHistory(symbol, analysis) {
                     const created = await createSetup(newSetup);
                     console.log(`✓ Zona DESCARTADA por no cumplir H1+M15 para ${symbol}: ${razonDescarte}`);
                     return; // No continuar con lógica de zona operativa
+                }
+                
+                // Cumple validación → continuar normalmente
+                estadoInicial = dashboardLocked || mainOperativeZone ? 'PAUSADA' : 'ACTIVA';
+            } else if (currentStrategy === 'SMC_TENDENCY_H1_M15') {
+                // Validar SMC_TENDENCY_H1_M15: índice direction + H1 trend + M15 event
+                const tendenciaH1 = analysis.smc.tendenciaH1;
+                
+                // BOOM: H1 ALCISTA + M15 evento ALCISTA (CHOCH o BOS)
+                // CRASH: H1 BAJISTA + M15 evento BAJISTA (CHOCH o BOS)
+                let cumpleValidacion = false;
+                if (tipoIndice === 'Boom') {
+                    cumpleValidacion = tendenciaH1 === 'ALCISTA' && 
+                        (ultimo_evento_m15.includes('CHOCH_ALCISTA') || ultimo_evento_m15.includes('BOS_ALCISTA'));
+                } else if (tipoIndice === 'Crash') {
+                    cumpleValidacion = tendenciaH1 === 'BAJISTA' && 
+                        (ultimo_evento_m15.includes('CHOCH_BAJISTA') || ultimo_evento_m15.includes('BOS_BAJISTA'));
+                }
+                
+                if (!cumpleValidacion) {
+                    // No cumple validación → NO crear setup, solo retornar
+                    console.log(`✗ Zona NO creada para ${symbol} - NO cumple validación SMC_TENDENCY_H1_M15 (${tipoIndice}: H1=${tendenciaH1}, M15=${ultimo_evento_m15})`);
+                    return; // No crear zona, no guardar DESCARTADA, solo retornar
                 }
                 
                 // Cumple validación → continuar normalmente
@@ -2261,7 +2304,15 @@ let currentFilters = {
 async function fetchSetupHistory(limit = 50) {
     // Lee desde la tabla correspondiente a la estrategia seleccionada en historial
     const table = getStrategyTable(currentHistoryStrategy);
-    const url = `${SUPABASE_URL}/rest/v1/${table}?order=created_at.desc&limit=${limit}`;
+    
+    // Para SMC_M15_PRO y SMC_TENDENCY_H1_M15: excluir DESCARTADA del historial
+    // Solo SMC_H1_M15_PRO muestra registros DESCARTADA
+    let url = `${SUPABASE_URL}/rest/v1/${table}?order=created_at.desc&limit=${limit}`;
+    
+    if (currentHistoryStrategy === 'SMC_M15_PRO' || currentHistoryStrategy === 'SMC_TENDENCY_H1_M15') {
+        // Excluir DESCARTADA: solo mostrar ACTIVA, EN_ZONA, PROFIT, TP, SL, PAUSADA
+        url += '&estado=in.(ACTIVA,EN_ZONA,PROFIT,TP,SL,PAUSADA)';
+    }
     
     const response = await fetch(url, {
         method: 'GET',
