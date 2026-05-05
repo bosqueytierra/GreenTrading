@@ -276,7 +276,7 @@ function initStrategyTabs() {
     });
 }
 
-function switchDashboardStrategy(strategy) {
+async function switchDashboardStrategy(strategy) {
     currentStrategy = strategy;
     
     // Update active tab
@@ -289,11 +289,23 @@ function switchDashboardStrategy(strategy) {
         }
     });
     
+    // Clear tables visually and show loading state
+    const boomTableBody = document.getElementById('boomTableBody');
+    const crashTableBody = document.getElementById('crashTableBody');
+    
+    if (boomTableBody) {
+        boomTableBody.innerHTML = '<tr><td colspan="12" class="loading">Cargando datos...</td></tr>';
+    }
+    if (crashTableBody) {
+        crashTableBody.innerHTML = '<tr><td colspan="12" class="loading">Cargando datos...</td></tr>';
+    }
+    
     // Cada estrategia lee/escribe de su propia tabla independiente
     // SMC M15 PRO → smc_m15_setups
     // SMC H1+M15 PRO → smc_h1_m15_setups
-    // Reload dashboard with new strategy
-    fetchAllIndices();
+    // SMC_TENDENCY_H1_M15 → smc_tendency_h1_m15_setups
+    // Force immediate refresh - no esperar auto-refresh
+    await fetchAllIndices();
 }
 
 function switchHistoryStrategy(strategy) {
