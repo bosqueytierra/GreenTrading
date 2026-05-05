@@ -27,6 +27,18 @@ Dashboard → SOLO lee y visualiza ✅
 
 ## Cómo ejecutar
 
+### Paso 0: Verificar flag en frontend
+
+Abrir `assets/app.js` y verificar que el flag esté habilitado:
+
+```javascript
+const BACKEND_PROCESSORS_ENABLED = true; // ← Debe estar en true
+```
+
+**¿Por qué?** Para evitar que frontend y backend escriban simultáneamente (doble escritura).
+
+Ver más: `README_FRONTEND_READONLY_MODE.md`
+
 ### Paso 1: Asegurar que el collector MT5 está corriendo
 
 ```bash
@@ -191,14 +203,18 @@ Solución: Asegúrate que `mt5_to_supabase.py` está corriendo y hay datos en `p
 
 ## Siguiente paso
 
-Este trabajo crea los procesadores backend. El siguiente paso sería:
+~~Este trabajo crea los procesadores backend. El siguiente paso sería:~~
 
-**Modificar el frontend para que NO procese**:
-- Eliminar lógica de procesamiento en `trackZoneHistory()`
-- Solo leer y visualizar zonas
-- No ejecutar análisis SMC en navegador
+~~**Modificar el frontend para que NO procese**:~~
+~~- Eliminar lógica de procesamiento en `trackZoneHistory()`~~
+~~- Solo leer y visualizar zonas~~
+~~- No ejecutar análisis SMC en navegador~~
 
-⚠️ **IMPORTANTE:** Por ahora NO se debe modificar el frontend. Primero correr los procesadores backend y verificar que funcionan correctamente.
+✅ **COMPLETADO:** Frontend ahora tiene modo read-only con `BACKEND_PROCESSORS_ENABLED = true`.
+
+Ver documentación completa: `README_FRONTEND_READONLY_MODE.md`
+
+⚠️ **IMPORTANTE:** El flag debe mantenerse en `true` cuando los procesadores backend están corriendo para evitar doble escritura.
 
 ## Resumen
 
@@ -207,6 +223,13 @@ Este trabajo crea los procesadores backend. El siguiente paso sería:
 - `processor_smc_tendency_h1_m15.py`
 - `run_processors.py`
 - `README_BACKEND_PROCESSORS.md` (documentación completa)
+- `README_FRONTEND_READONLY_MODE.md` (modo read-only del frontend)
+
+✅ **Flag añadido:**
+```javascript
+// assets/app.js
+const BACKEND_PROCESSORS_ENABLED = true;
+```
 
 ✅ **Para ejecutar:**
 ```bash
@@ -216,6 +239,7 @@ python run_processors.py
 ✅ **Resultado:**
 - Procesamiento independiente del navegador
 - Actualización cada 60 segundos
-- Frontend queda como visualizador
+- Frontend en modo read-only (no escribe)
+- Sin doble escritura ni conflictos
 
-🎯 **Objetivo logrado:** El historial se actualiza sin necesidad de tener el dashboard abierto.
+🎯 **Objetivo logrado:** El historial se actualiza sin necesidad de tener el dashboard abierto y sin conflictos de escritura.

@@ -338,7 +338,23 @@ Validación H1+M15: ✅ VÁLIDO - ...
 
 ## Frontend (Dashboard)
 
-**IMPORTANTE:** El frontend ahora **SOLO LEE Y VISUALIZA**.
+**IMPORTANTE:** El frontend ahora está en **modo read-only** cuando los procesadores backend están activos.
+
+### Flag BACKEND_PROCESSORS_ENABLED
+
+En `assets/app.js` existe el flag:
+```javascript
+const BACKEND_PROCESSORS_ENABLED = true;
+```
+
+**Cuando está en `true` (RECOMENDADO):**
+- ✅ Frontend SOLO lee y visualiza
+- ❌ Frontend NO procesa SMC
+- ❌ Frontend NO crea zonas
+- ❌ Frontend NO actualiza estados
+- ❌ Frontend NO escribe en base de datos
+
+Ver documentación completa: `README_FRONTEND_READONLY_MODE.md`
 
 ### Qué hace el frontend:
 - ✅ Lee zonas desde tablas
@@ -347,10 +363,12 @@ Validación H1+M15: ✅ VÁLIDO - ...
 - ✅ Actualiza visualización cada 60 segundos
 
 ### Qué NO hace el frontend:
-- ❌ NO procesa SMC
-- ❌ NO crea zonas nuevas
-- ❌ NO actualiza estados de zonas
-- ❌ NO ejecuta trackZoneHistory() para PROCESAR
+- ❌ NO procesa SMC (cuando `BACKEND_PROCESSORS_ENABLED = true`)
+- ❌ NO crea zonas nuevas (cuando `BACKEND_PROCESSORS_ENABLED = true`)
+- ❌ NO actualiza estados de zonas (cuando `BACKEND_PROCESSORS_ENABLED = true`)
+- ❌ NO ejecuta trackZoneHistory() para PROCESAR (cuando `BACKEND_PROCESSORS_ENABLED = true`)
+
+**⚠️ CRÍTICO:** Mantener `BACKEND_PROCESSORS_ENABLED = true` en producción para evitar doble escritura.
 
 **ANTES (malo):**
 ```
