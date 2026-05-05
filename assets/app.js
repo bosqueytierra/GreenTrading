@@ -1535,19 +1535,21 @@ function SMC_TENDENCY_H1_M15_isValidSetup(symbol, smc) {
     // Validation rules for BOOM
     if (isBoom) {
         // Valid only if: tendencia_h1 = ALCISTA AND ultimo_evento_m15 = CHOCH_ALCISTA or BOS_ALCISTA
-        if (tendenciaH1 === 'ALCISTA' && (ultimoEventoM15 === 'CHOCH_ALCISTA' || ultimoEventoM15 === 'BOS_ALCISTA')) {
-            return true;
+        const isValid = tendenciaH1 === 'ALCISTA' && (ultimoEventoM15 === 'CHOCH_ALCISTA' || ultimoEventoM15 === 'BOS_ALCISTA');
+        if (!isValid) {
+            console.log(`❌ SMC_TENDENCY_H1_M15 filter: ${symbol} NO cumple (BOOM requiere H1=ALCISTA + M15=CHOCH/BOS_ALCISTA, actual: H1=${tendenciaH1}, M15=${ultimoEventoM15})`);
         }
-        return false;
+        return isValid;
     }
     
     // Validation rules for CRASH
     if (isCrash) {
         // Valid only if: tendencia_h1 = BAJISTA AND ultimo_evento_m15 = CHOCH_BAJISTA or BOS_BAJISTA
-        if (tendenciaH1 === 'BAJISTA' && (ultimoEventoM15 === 'CHOCH_BAJISTA' || ultimoEventoM15 === 'BOS_BAJISTA')) {
-            return true;
+        const isValid = tendenciaH1 === 'BAJISTA' && (ultimoEventoM15 === 'CHOCH_BAJISTA' || ultimoEventoM15 === 'BOS_BAJISTA');
+        if (!isValid) {
+            console.log(`❌ SMC_TENDENCY_H1_M15 filter: ${symbol} NO cumple (CRASH requiere H1=BAJISTA + M15=CHOCH/BOS_BAJISTA, actual: H1=${tendenciaH1}, M15=${ultimoEventoM15})`);
         }
-        return false;
+        return isValid;
     }
     
     // Unknown index type - not valid
