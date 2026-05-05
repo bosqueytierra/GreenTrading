@@ -505,14 +505,23 @@ function getUltimoEventoM15(analysis) {
  * @param {Object} analysis - SMC analysis data
  * @returns {String} - 'PAUSADA' or 'DESCARTADA'
  * 
- * A zone stays PAUSADA only if:
- * - Price hasn't touched its SL
- * - (For SMC_H1_M15_PRO only) Has minimum OB/FVG/Sweep confluence
- * - (For SMC_H1_M15_PRO only) H1/M15 trends and M15 event are still compatible
+ * ⚠️ IMPORTANTE - VALIDACIONES POR ESTRATEGIA:
  * 
- * Note: Uses global variable `currentStrategy` to determine which validation rules to apply.
- * - For SMC_M15_PRO: Only discards if SL is hit (zones maintain initial confluence)
- * - For SMC_H1_M15_PRO: Also discards if H1/M15 context, M15 event, or confluence changes
+ * SMC_M15_PRO:
+ * - SOLO descarta si el precio toca SL
+ * - NO descarta por cambios de Contexto H1
+ * - NO descarta por cambios de Contexto M15
+ * - NO descarta por cambios de Evento M15
+ * - NO descarta por falta de confluencia (zona ya fue creada con confluencia inicial)
+ * 
+ * SMC_H1_M15_PRO:
+ * - Descarta si el precio toca SL
+ * - Descarta si Contexto H1 cambia contra la zona
+ * - Descarta si Contexto M15 cambia contra la zona
+ * - Descarta si Evento M15 deja de tener sentido
+ * - Descarta si pierde confluencia mínima OB/FVG/Barrida
+ * 
+ * Note: Uses setup.strategy field to determine which validation rules to apply.
  */
 async function reevaluatePausedZone(setup, currentPrice, analysis) {
     const updateData = {
@@ -993,6 +1002,10 @@ async function trackZoneHistory(symbol, analysis) {
         const newZonaHasta = zonaM15.zona_hasta;
         const newZonaSize = Math.abs(newZonaHasta - newZonaDesde);
         
+        // ⚠️ IMPORTANTE - PREVENCIÓN DE DUPLICADOS
+        // NO permitir múltiples registros para la misma zona: (symbol + zona_desde + zona_hasta + evento)
+        // Si ya existe: UPDATE estado en lugar de INSERT
+        // 
         // MATCHING LOGIC: Find if this zone already exists
         // Matching criteria: symbol (implicit), zona_desde, zona_hasta, evento, direccion
         // Tolerance: 0.001 represents ~0.1% difference for typical Boom/Crash prices (~1000)
@@ -1056,13 +1069,26 @@ async function trackZoneHistory(symbol, analysis) {
                 updateData.tendencia_m15 = analysis.smc.tendenciaM15;
             }
             
+            // If matching zone is in a terminal state (DESCARTADA, SL, closed), reactivate it
+            // Determine the appropriate estado based on dashboard lock status
+            if (['DESCARTADA', 'SL', 'TP'].includes(matchingSetup.estado) && matchingSetup.fecha_cierre) {
+                const shouldBePaused = dashboardLocked || mainOperativeZone;
+                updateData.estado = shouldBePaused ? 'PAUSADA' : 'ACTIVA';
+                updateData.fecha_cierre = null;
+                updateData.motivo_cierre = null;
+                console.log(`✓ Zona duplicada ${matchingSetup.id} reactivada desde ${matchingSetup.estado} → ${updateData.estado} para ${symbol}`);
+            }
+            
             // Use the matching setup's strategy to determine the correct table
             const matchingSetupTable = matchingSetup.strategy ? STRATEGIES[matchingSetup.strategy]?.table : null;
             await updateSetup(matchingSetup.id, updateData, matchingSetupTable);
             console.log(`✓ Setup ${matchingSetup.id} actualizado (mantiene zona original) para ${symbol}`);
             
-            // Update state based on price movement (only if in an active state)
-            if (ACTIVE_SETUP_STATES.includes(matchingSetup.estado)) {
+            // Update state based on price movement (only if in an active state after update)
+            const finalEstado = updateData.estado || matchingSetup.estado;
+            if (ACTIVE_SETUP_STATES.includes(finalEstado)) {
+                // Update matchingSetup with the final estado
+                matchingSetup.estado = finalEstado;
                 await updateSetupState(matchingSetup, currentPrice, analysis);
             }
         }

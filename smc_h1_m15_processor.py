@@ -243,6 +243,38 @@ def get_active_zones_for_symbol(symbol):
         return []
 
 
+def get_all_zones_for_symbol(symbol):
+    """
+    Obtiene TODAS las zonas para un símbolo específico (incluyendo cerradas y descartadas).
+    
+    ⚠️ Lee SOLO de smc_h1_m15_setups (estrategia H1+M15)
+    
+    Args:
+        symbol: Símbolo del índice
+    
+    Returns:
+        Lista de todas las zonas
+    """
+    url = (
+        f"{SUPABASE_URL}/rest/v1/{TARGET_TABLE}"
+        f"?symbol=eq.{symbol}"
+        f"&select=*"
+        f"&order=created_at.desc"
+    )
+    
+    try:
+        response = requests.get(url, headers=supabase_headers(), timeout=15)
+        
+        if response.status_code == 200:
+            return response.json()
+        
+        return []
+    
+    except Exception as e:
+        print(f"❌ Error obteniendo todas las zonas para {symbol}: {e}")
+        return []
+
+
 def pause_zone(zone_id, motivo="Pausada por nueva zona activa"):
     """
     Pausa una zona existente.
@@ -430,33 +462,91 @@ def process_symbol(symbol):
     print(f"  Zona detectada: {zona['direccion']} | Score: {zona['score']}")
     print(f"  Validación H1+M15: {'✅ VÁLIDO' if es_valido else '❌ DESCARTADO'} - {razon_validacion}")
     
-    # 4. Obtener zonas activas para este símbolo
-    zonas_activas = get_active_zones_for_symbol(symbol)
+    # 4. Obtener TODAS las zonas para este símbolo (para detectar duplicados exactos)
+    todas_zonas = get_all_zones_for_symbol(symbol)
     
-    # 5. Verificar si ya existe una zona similar (misma dirección, rango similar)
-    zona_existe = False
-    for z in zonas_activas:
-        # Verificar si es la misma dirección y rango similar
-        if (z['direccion'] == zona['direccion'] and
-            abs(z['zona_desde'] - zona['zona_desde']) < ZONE_SIMILARITY_THRESHOLD and
-            abs(z['zona_hasta'] - zona['zona_hasta']) < ZONE_SIMILARITY_THRESHOLD):
-            zona_existe = True
-            print(f"  ℹ️  Zona similar ya existe (ID: {z['id']})")
+    # 5. Verificar si ya existe una zona EXACTA (symbol + zona_desde + zona_hasta + evento)
+    # Tolerancia para comparación de floats
+    tolerance = 0.001
+    zona_duplicada = None
+    ultimo_evento = zona['evento']['evento']
+    
+    for z in todas_zonas:
+        zona_desde_match = abs(z['zona_desde'] - zona['zona_desde']) < tolerance
+        zona_hasta_match = abs(z['zona_hasta'] - zona['zona_hasta']) < tolerance
+        evento_match = z['evento'] == ultimo_evento
+        
+        if zona_desde_match and zona_hasta_match and evento_match:
+            zona_duplicada = z
+            print(f"  ℹ️  Zona duplicada encontrada (ID: {z['id']}, estado: {z['estado']})")
             break
     
-    if zona_existe:
+    # 6. Si encontramos una zona duplicada, UPDATE en lugar de INSERT
+    if zona_duplicada:
+        # Calcular nuevo estado según validación y estado de dashboard
+        zonas_activas = get_active_zones_for_symbol(symbol)
+        
+        # Determinar si hay dashboard lock
+        dashboard_locked = any(
+            zact['estado'] in ['EN_ZONA', 'PROFIT', 'TP'] 
+            for zact in zonas_activas
+        )
+        
+        # Determinar nuevo estado
+        if not es_valido:
+            nuevo_estado = 'DESCARTADA'
+            fecha_cierre = datetime.now(timezone.utc).isoformat()
+            motivo_cierre = razon_validacion
+        elif zona_duplicada['estado'] in ['DESCARTADA', 'SL', 'TP'] and zona_duplicada.get('fecha_cierre'):
+            # Reactivar zona que estaba cerrada
+            nuevo_estado = 'PAUSADA' if dashboard_locked else 'ACTIVA'
+            fecha_cierre = None
+            motivo_cierre = None
+            print(f"  🔄 Reactivando zona desde {zona_duplicada['estado']} → {nuevo_estado}")
+        else:
+            # Zona en otros estados (ACTIVA, PAUSADA, EN_ZONA, PROFIT, etc.): mantener estado actual
+            nuevo_estado = zona_duplicada['estado']
+            fecha_cierre = zona_duplicada.get('fecha_cierre')
+            motivo_cierre = zona_duplicada.get('motivo_cierre')
+        
+        # UPDATE la zona duplicada
+        update_data = {
+            "estado": nuevo_estado,
+            "score": zona['score'],
+            "ob": bool(zona['ob']),
+            "fvg": bool(zona['fvg']),
+            "barrida": bool(zona['barrida']),
+            "tendencia_h1": tendencia_h1,
+            "tendencia_m15": tendencia_m15,
+            "fecha_cierre": fecha_cierre,
+            "motivo_cierre": motivo_cierre
+        }
+        
+        url = f"{SUPABASE_URL}/rest/v1/{TARGET_TABLE}?id=eq.{zona_duplicada['id']}"
+        
+        try:
+            response = requests.patch(url, headers=supabase_headers(), json=update_data, timeout=15)
+            
+            if response.status_code in [200, 204]:
+                print(f"  ✅ Zona duplicada actualizada: ID {zona_duplicada['id']} → estado: {nuevo_estado}")
+            else:
+                print(f"  ❌ Error actualizando zona duplicada: {response.status_code} - {response.text}")
+        except Exception as e:
+            print(f"  ❌ Error actualizando zona duplicada: {e}")
+        
         return
     
-    # 6. Si hay zona nueva válida, pausar zonas activas anteriores
+    # 7. Si no hay duplicado exacto, verificar zonas activas para pausar
+    zonas_activas = get_active_zones_for_symbol(symbol)
     if es_valido and zonas_activas:
         print(f"  ⏸️  Pausando {len(zonas_activas)} zona(s) activa(s)...")
         for z in zonas_activas:
             pause_zone(z['id'], "Pausada por nueva zona activa")
     
-    # 7. Guardar nueva zona (válida o descartada)
+    # 8. Guardar nueva zona (válida o descartada)
     save_zone_to_supabase(symbol, result, zona)
     
-    # 8. Actualizar estados de zonas activas según precio actual
+    # 9. Actualizar estados de zonas activas según precio actual
     # (Esto se podría hacer en un procesador separado que corre más frecuentemente)
     update_active_zones_states(symbol, precio_actual)
 
