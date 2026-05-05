@@ -1528,9 +1528,10 @@ function SMC_TENDENCY_H1_M15_isValidSetup(symbol, smc) {
         ultimoEventoM15 = evento.evento;
     }
     
-    // Determine index type
-    const isBoom = symbol.includes('Boom');
-    const isCrash = symbol.includes('Crash');
+    // Determine index type (case-insensitive for safety)
+    const symbolLower = symbol.toLowerCase();
+    const isBoom = symbolLower.includes('boom');
+    const isCrash = symbolLower.includes('crash');
     
     // Validation rules for BOOM
     if (isBoom) {
@@ -1538,6 +1539,7 @@ function SMC_TENDENCY_H1_M15_isValidSetup(symbol, smc) {
         const isValid = tendenciaH1 === 'ALCISTA' && 
             ultimoEventoM15 && (ultimoEventoM15.includes('CHOCH_ALCISTA') || ultimoEventoM15.includes('BOS_ALCISTA'));
         if (!isValid) {
+            // Log validation failures for troubleshooting dashboard display issues
             console.log(`❌ SMC_TENDENCY_H1_M15 filter: ${symbol} NO cumple (BOOM requiere H1=ALCISTA + M15=CHOCH/BOS_ALCISTA, actual: H1=${tendenciaH1}, M15=${ultimoEventoM15})`);
         }
         return isValid;
@@ -1549,6 +1551,7 @@ function SMC_TENDENCY_H1_M15_isValidSetup(symbol, smc) {
         const isValid = tendenciaH1 === 'BAJISTA' && 
             ultimoEventoM15 && (ultimoEventoM15.includes('CHOCH_BAJISTA') || ultimoEventoM15.includes('BOS_BAJISTA'));
         if (!isValid) {
+            // Log validation failures for troubleshooting dashboard display issues
             console.log(`❌ SMC_TENDENCY_H1_M15 filter: ${symbol} NO cumple (CRASH requiere H1=BAJISTA + M15=CHOCH/BOS_BAJISTA, actual: H1=${tendenciaH1}, M15=${ultimoEventoM15})`);
         }
         return isValid;
