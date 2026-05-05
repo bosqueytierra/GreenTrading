@@ -1056,13 +1056,27 @@ async function trackZoneHistory(symbol, analysis) {
                 updateData.tendencia_m15 = analysis.smc.tendenciaM15;
             }
             
+            // If matching zone is in a terminal state (DESCARTADA, SL, closed), reactivate it
+            // Determine the appropriate estado based on dashboard lock status
+            if (['DESCARTADA', 'SL', 'TP'].includes(matchingSetup.estado) && matchingSetup.fecha_cierre) {
+                const shouldBePaused = dashboardLocked || mainOperativeZone;
+                updateData.estado = shouldBePaused ? 'PAUSADA' : 'ACTIVA';
+                updateData.fecha_cierre = null;
+                updateData.motivo_cierre = null;
+                console.log(`✓ Zona duplicada ${matchingSetup.id} reactivada desde ${matchingSetup.estado} → ${updateData.estado} para ${symbol}`);
+            }
+            
             // Use the matching setup's strategy to determine the correct table
             const matchingSetupTable = matchingSetup.strategy ? STRATEGIES[matchingSetup.strategy]?.table : null;
             await updateSetup(matchingSetup.id, updateData, matchingSetupTable);
             console.log(`✓ Setup ${matchingSetup.id} actualizado (mantiene zona original) para ${symbol}`);
             
             // Update state based on price movement (only if in an active state)
-            if (ACTIVE_SETUP_STATES.includes(matchingSetup.estado)) {
+            if (ACTIVE_SETUP_STATES.includes(matchingSetup.estado) || updateData.estado) {
+                // Refresh matchingSetup with updated estado if it was changed
+                if (updateData.estado) {
+                    matchingSetup.estado = updateData.estado;
+                }
                 await updateSetupState(matchingSetup, currentPrice, analysis);
             }
         }
