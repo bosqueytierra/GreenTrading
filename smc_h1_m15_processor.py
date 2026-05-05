@@ -503,13 +503,8 @@ def process_symbol(symbol):
             fecha_cierre = None
             motivo_cierre = None
             print(f"  🔄 Reactivando zona desde {zona_duplicada['estado']} → {nuevo_estado}")
-        elif zona_duplicada['estado'] in ['ACTIVA', 'PAUSADA', 'EN_ZONA', 'PROFIT']:
-            # Zona ya activa, solo actualizar datos
-            nuevo_estado = zona_duplicada['estado']
-            fecha_cierre = zona_duplicada.get('fecha_cierre')
-            motivo_cierre = zona_duplicada.get('motivo_cierre')
         else:
-            # Default: mantener estado actual
+            # Zona en otros estados (ACTIVA, PAUSADA, EN_ZONA, PROFIT, etc.): mantener estado actual
             nuevo_estado = zona_duplicada['estado']
             fecha_cierre = zona_duplicada.get('fecha_cierre')
             motivo_cierre = zona_duplicada.get('motivo_cierre')

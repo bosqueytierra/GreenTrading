@@ -1085,7 +1085,8 @@ async function trackZoneHistory(symbol, analysis) {
             console.log(`✓ Setup ${matchingSetup.id} actualizado (mantiene zona original) para ${symbol}`);
             
             // Update state based on price movement (only if in an active state)
-            if (ACTIVE_SETUP_STATES.includes(matchingSetup.estado) || updateData.estado) {
+            if (ACTIVE_SETUP_STATES.includes(matchingSetup.estado) || 
+                (updateData.estado && ACTIVE_SETUP_STATES.includes(updateData.estado))) {
                 // Refresh matchingSetup with updated estado if it was changed
                 if (updateData.estado) {
                     matchingSetup.estado = updateData.estado;
