@@ -689,8 +689,8 @@ select:focus {
 }
 
 .status-esperando {
-    background: var(--accent-green-light);
-    color: var(--accent-green);
+    background: #fee2e2;
+    color: #b91c1c;
 }
 
 .status-activo {
@@ -704,8 +704,8 @@ select:focus {
 }
 
 .status-descartado {
-    background: var(--accent-red-light);
-    color: var(--accent-red);
+    background: #fef3c7;
+    color: #92400e;
 }
 
 .price-cell {
@@ -1070,33 +1070,34 @@ select:focus {
 
 /* Status badges for history */
 .status-activa {
-    background: var(--accent-green-light);
-    color: var(--accent-green);
+    background: #dbeafe;
+    color: #1e40af;
 }
 
 .status-descartada {
-    background: var(--accent-red-light);
-    color: var(--accent-red);
-}
-
-.status-profit {
-    background: #d1fae5;
-    color: #059669;
-}
-
-.status-pausada {
     background: #fef3c7;
     color: #92400e;
 }
 
+.status-profit {
+    background: #dcfce7;
+    color: #16a34a;
+}
+
+.status-pausada {
+    background: #ffffff;
+    color: #1f2937;
+    border: 1px solid #9ca3af;
+}
+
 .status-tp {
-    background: #dbeafe;
-    color: var(--accent-blue);
+    background: #d1fae5;
+    color: #047857;
 }
 
 .status-sl {
-    background: #fef3c7;
-    color: #d97706;
+    background: #fecaca;
+    color: #991b1b;
 }
 
 .status-esperando-acomodo {
