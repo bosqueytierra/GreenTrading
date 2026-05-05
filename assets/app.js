@@ -492,6 +492,52 @@ async function getSetupEnZonaOrProfit(symbol) {
 }
 
 /**
+ * Get setup for SMC_TENDENCY_H1_M15 strategy - reads ONLY from smc_tendency_h1_m15_setups table
+ * Does NOT read from other strategies' tables
+ */
+async function getSetupEnZonaOrProfit_SMC_TENDENCY_H1_M15(symbol) {
+    // Only query the SMC_TENDENCY_H1_M15 specific table
+    const table = 'smc_tendency_h1_m15_setups';
+    const url = `${SUPABASE_URL}/rest/v1/${table}?symbol=eq.${encodeURIComponent(symbol)}&estado=in.(ACTIVA,EN_ZONA,PROFIT,TP)&order=created_at.desc&limit=5`;
+    
+    try {
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'apikey': SUPABASE_ANON_KEY,
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            console.error(`Error fetching SMC_TENDENCY_H1_M15 setup for ${symbol}: ${response.status}`);
+            return null;
+        }
+        
+        const data = await response.json();
+        
+        // Filter out TP setups that have been released
+        const activeSetup = data.find(setup => {
+            if (setup.estado === 'ACTIVA' || setup.estado === 'EN_ZONA' || setup.estado === 'PROFIT') {
+                return true;
+            }
+            if (setup.estado === 'TP') {
+                // Only include TP if it hasn't been released yet
+                const isReleased = setup.motivo_cierre && setup.motivo_cierre.includes('liberada');
+                return !isReleased;
+            }
+            return false;
+        });
+        
+        return activeSetup || null;
+    } catch (error) {
+        console.error(`Error fetching SMC_TENDENCY_H1_M15 setup for ${symbol}:`, error);
+        return null;
+    }
+}
+
+/**
  * Extract ultimo_evento_m15 from analysis
  * Helper function to reduce code duplication
  */
@@ -1492,7 +1538,13 @@ async function updateBoomTable(results) {
     tbody.innerHTML = '';
     
     for (const symbol of ALL_INDICES.boom) {
-        const row = await createTableRow(symbol, results[symbol]);
+        // Use separate renderer for SMC_TENDENCY_H1_M15 strategy
+        let row;
+        if (currentStrategy === 'SMC_TENDENCY_H1_M15') {
+            row = await createTableRow_SMC_TENDENCY_H1_M15(symbol, results[symbol]);
+        } else {
+            row = await createTableRow(symbol, results[symbol]);
+        }
         tbody.appendChild(row);
     }
 }
@@ -1502,63 +1554,15 @@ async function updateCrashTable(results) {
     tbody.innerHTML = '';
     
     for (const symbol of ALL_INDICES.crash) {
-        const row = await createTableRow(symbol, results[symbol]);
+        // Use separate renderer for SMC_TENDENCY_H1_M15 strategy
+        let row;
+        if (currentStrategy === 'SMC_TENDENCY_H1_M15') {
+            row = await createTableRow_SMC_TENDENCY_H1_M15(symbol, results[symbol]);
+        } else {
+            row = await createTableRow(symbol, results[symbol]);
+        }
         tbody.appendChild(row);
     }
-}
-
-// Validation function for SMC_TENDENCY_H1_M15 strategy
-function SMC_TENDENCY_H1_M15_isValidSetup(symbol, smc) {
-    // Only apply this validation if currentStrategy is SMC_TENDENCY_H1_M15
-    if (currentStrategy !== 'SMC_TENDENCY_H1_M15') {
-        return true; // Don't filter for other strategies
-    }
-    
-    // Must have a valid zone to validate
-    if (!smc.zonaM15 || !smc.zonaM15.es_util) {
-        return false;
-    }
-    
-    // Get H1 trend and last M15 event
-    const tendenciaH1 = smc.tendenciaH1;
-    let ultimoEventoM15 = null;
-    
-    if (smc.eventosM15 && smc.eventosM15.length > 0) {
-        const evento = smc.eventosM15[smc.eventosM15.length - 1];
-        ultimoEventoM15 = evento.evento;
-    }
-    
-    // Determine index type (case-insensitive for safety)
-    const symbolLower = symbol.toLowerCase();
-    const isBoom = symbolLower.includes('boom');
-    const isCrash = symbolLower.includes('crash');
-    
-    // Validation rules for BOOM
-    if (isBoom) {
-        // Valid only if: tendencia_h1 = ALCISTA AND ultimo_evento_m15 = CHOCH_ALCISTA or BOS_ALCISTA
-        const isValid = tendenciaH1 === 'ALCISTA' && 
-            ultimoEventoM15 && (ultimoEventoM15.includes('CHOCH_ALCISTA') || ultimoEventoM15.includes('BOS_ALCISTA'));
-        if (!isValid) {
-            // Log validation failures for troubleshooting dashboard display issues
-            console.log(`❌ SMC_TENDENCY_H1_M15 filter: ${symbol} NO cumple (BOOM requiere H1=ALCISTA + M15=CHOCH/BOS_ALCISTA, actual: H1=${tendenciaH1}, M15=${ultimoEventoM15})`);
-        }
-        return isValid;
-    }
-    
-    // Validation rules for CRASH
-    if (isCrash) {
-        // Valid only if: tendencia_h1 = BAJISTA AND ultimo_evento_m15 = CHOCH_BAJISTA or BOS_BAJISTA
-        const isValid = tendenciaH1 === 'BAJISTA' && 
-            ultimoEventoM15 && (ultimoEventoM15.includes('CHOCH_BAJISTA') || ultimoEventoM15.includes('BOS_BAJISTA'));
-        if (!isValid) {
-            // Log validation failures for troubleshooting dashboard display issues
-            console.log(`❌ SMC_TENDENCY_H1_M15 filter: ${symbol} NO cumple (CRASH requiere H1=BAJISTA + M15=CHOCH/BOS_BAJISTA, actual: H1=${tendenciaH1}, M15=${ultimoEventoM15})`);
-        }
-        return isValid;
-    }
-    
-    // Unknown index type - not valid
-    return false;
 }
 
 async function createTableRow(symbol, data) {
@@ -1582,12 +1586,6 @@ async function createTableRow(symbol, data) {
     
     // Determine if there's a valid zone
     let hasValidZone = smc.zonaM15 && smc.zonaM15.es_util;
-    
-    // Apply SMC_TENDENCY_H1_M15 validation filter BEFORE rendering
-    if (currentStrategy === 'SMC_TENDENCY_H1_M15') {
-        const isValidForStrategy = SMC_TENDENCY_H1_M15_isValidSetup(symbol, smc);
-        hasValidZone = hasValidZone && isValidForStrategy;
-    }
     
     if (setupEnZonaOrProfit) {
         // Use EN_ZONA, PROFIT, or TP setup data for display
@@ -1740,6 +1738,226 @@ async function createTableRow(symbol, data) {
         <td class="${tendH1Class}">${tendH1}</td>
         <td class="${tendM15Class}">${tendM15}</td>
         <td>${lastEventM15}</td>
+        <td>${zonaM15HTML}</td>
+        <td class="score-cell ${scoreClass}">${score}</td>
+        <td class="${ob === 'SÍ' ? 'indicator-yes' : 'indicator-no'}">${ob}</td>
+        <td class="${fvg === 'SÍ' ? 'indicator-yes' : 'indicator-no'}">${fvg}</td>
+        <td class="${barrida === 'SÍ' ? 'indicator-yes' : 'indicator-no'}">${barrida}</td>
+        <td><span class="${estadoClass}">${estadoText}</span></td>
+        <td class="price-cell">${formatPrice(data.currentPrice)}</td>
+        <td class="time-cell">${formatTime(data.timestamp)}</td>
+    `;
+    
+    return tr;
+}
+
+/**
+ * Create table row specifically for SMC_TENDENCY_H1_M15 strategy
+ * Applies strict validation: BOOM requires H1=ALCISTA + M15 CHOCH/BOS_ALCISTA
+ * CRASH requires H1=BAJISTA + M15 CHOCH/BOS_BAJISTA
+ * If validation fails, shows SIN_SETUP with no data
+ * NO fallback to saved setup if validation fails
+ */
+async function createTableRow_SMC_TENDENCY_H1_M15(symbol, data) {
+    const tr = document.createElement('tr');
+    
+    if (!data || data.error) {
+        tr.innerHTML = `
+            <td class="index-name">${symbol}</td>
+            <td colspan="11" class="loading">${data ? data.message : 'Cargando...'}</td>
+        `;
+        return tr;
+    }
+    
+    const smc = data.smc;
+    
+    // Get H1 trend and last M15 event
+    const tendenciaH1 = smc.tendenciaH1 || '--';
+    const tendenciaM15 = smc.tendenciaM15 || '--';
+    
+    let ultimoEventoM15 = '--';
+    if (smc.eventosM15 && smc.eventosM15.length > 0) {
+        const evento = smc.eventosM15[smc.eventosM15.length - 1];
+        ultimoEventoM15 = evento.evento || '--';
+    }
+    
+    // Determine index type
+    const symbolLower = symbol.toLowerCase();
+    const isBoom = symbolLower.includes('boom');
+    const isCrash = symbolLower.includes('crash');
+    
+    // VALIDATION: Apply strict rules
+    let cumpleValidacion = false;
+    
+    if (isBoom) {
+        // BOOM: Valid only if H1=ALCISTA AND M15 event contains CHOCH_ALCISTA or BOS_ALCISTA
+        cumpleValidacion = tendenciaH1 === 'ALCISTA' && 
+            ultimoEventoM15 !== '--' && 
+            (ultimoEventoM15.includes('CHOCH_ALCISTA') || ultimoEventoM15.includes('BOS_ALCISTA'));
+    } else if (isCrash) {
+        // CRASH: Valid only if H1=BAJISTA AND M15 event contains CHOCH_BAJISTA or BOS_BAJISTA
+        cumpleValidacion = tendenciaH1 === 'BAJISTA' && 
+            ultimoEventoM15 !== '--' && 
+            (ultimoEventoM15.includes('CHOCH_BAJISTA') || ultimoEventoM15.includes('BOS_BAJISTA'));
+    }
+    
+    // Variables for display
+    let displayZonaDesde = null;
+    let displayZonaHasta = null;
+    let displayScore = 0;
+    let displayOB = false;
+    let displayFVG = false;
+    let displayBarrida = false;
+    let displayEstado = 'SIN_SETUP';
+    
+    // If validation FAILS, show SIN_SETUP with no data
+    if (!cumpleValidacion) {
+        console.log(`❌ SMC_TENDENCY_H1_M15: ${symbol} NO cumple validación (H1=${tendenciaH1}, M15=${ultimoEventoM15})`);
+        
+        // Show SIN_SETUP - no zone data, no score, no indicators
+        displayZonaDesde = null;
+        displayZonaHasta = null;
+        displayScore = 0;
+        displayOB = false;
+        displayFVG = false;
+        displayBarrida = false;
+        displayEstado = 'SIN_SETUP';
+    } else {
+        // Validation PASSED - check if there's a saved setup in DB
+        const setupEnZonaOrProfit = await getSetupEnZonaOrProfit_SMC_TENDENCY_H1_M15(symbol);
+        
+        if (setupEnZonaOrProfit) {
+            // Use saved setup data
+            console.log(`✅ SMC_TENDENCY_H1_M15: ${symbol} usando setup guardado (estado=${setupEnZonaOrProfit.estado})`);
+            
+            // Handle estado display - check if TP is waiting for release
+            if (setupEnZonaOrProfit.estado === 'TP') {
+                const isReleased = setupEnZonaOrProfit.motivo_cierre && setupEnZonaOrProfit.motivo_cierre.includes('liberada');
+                if (!isReleased) {
+                    // TP reached 1:1 but not yet released - show ESPERANDO_ACOMODO
+                    displayEstado = 'ESPERANDO_ACOMODO';
+                    displayZonaDesde = null;
+                    displayZonaHasta = null;
+                    displayScore = 0;
+                    displayOB = false;
+                    displayFVG = false;
+                    displayBarrida = false;
+                } else {
+                    // TP released
+                    displayEstado = setupEnZonaOrProfit.estado;
+                    displayZonaDesde = setupEnZonaOrProfit.zona_desde;
+                    displayZonaHasta = setupEnZonaOrProfit.zona_hasta;
+                    displayScore = setupEnZonaOrProfit.score;
+                    displayOB = setupEnZonaOrProfit.ob;
+                    displayFVG = setupEnZonaOrProfit.fvg;
+                    displayBarrida = setupEnZonaOrProfit.barrida;
+                }
+            } else {
+                // ACTIVA, EN_ZONA, or PROFIT - show zone info normally
+                displayEstado = setupEnZonaOrProfit.estado;
+                displayZonaDesde = setupEnZonaOrProfit.zona_desde;
+                displayZonaHasta = setupEnZonaOrProfit.zona_hasta;
+                displayScore = setupEnZonaOrProfit.score;
+                displayOB = setupEnZonaOrProfit.ob;
+                displayFVG = setupEnZonaOrProfit.fvg;
+                displayBarrida = setupEnZonaOrProfit.barrida;
+            }
+        } else if (smc.zonaM15 && smc.zonaM15.es_util) {
+            // No saved setup but analysis shows a valid zone
+            console.log(`✅ SMC_TENDENCY_H1_M15: ${symbol} zona nueva detectada (no guardada aún)`);
+            displayZonaDesde = smc.zonaM15.zona_desde;
+            displayZonaHasta = smc.zonaM15.zona_hasta;
+            displayScore = smc.zonaM15.score;
+            displayOB = smc.zonaM15.ob ? true : false;
+            displayFVG = smc.zonaM15.fvg ? true : false;
+            displayBarrida = smc.zonaM15.barrida ? true : false;
+            displayEstado = 'ACTIVA';
+        } else {
+            // Validation passed but no zone available
+            console.log(`⚠️ SMC_TENDENCY_H1_M15: ${symbol} cumple validación pero sin zona útil`);
+            displayZonaDesde = null;
+            displayZonaHasta = null;
+            displayScore = 0;
+            displayOB = false;
+            displayFVG = false;
+            displayBarrida = false;
+            displayEstado = 'SIN_SETUP';
+        }
+    }
+    
+    // Build zone HTML
+    let zonaM15HTML = '<span class="zone-cell">--</span>';
+    if (displayZonaDesde !== null && displayZonaHasta !== null && displayEstado !== 'ESPERANDO_ACOMODO') {
+        zonaM15HTML = `
+            <div class="zone-boxes">
+                <div class="zone-price-row">
+                    <span class="zone-label">Desde:</span>
+                    <span class="zone-price">${formatPrice(displayZonaDesde)}</span>
+                    <button class="copy-btn" onclick="copyToClipboard('${displayZonaDesde}', this)">📋</button>
+                </div>
+                <div class="zone-price-row">
+                    <span class="zone-label">Hasta:</span>
+                    <span class="zone-price">${formatPrice(displayZonaHasta)}</span>
+                    <button class="copy-btn" onclick="copyToClipboard('${displayZonaHasta}', this)">📋</button>
+                </div>
+            </div>
+        `;
+    } else if (displayEstado === 'ESPERANDO_ACOMODO') {
+        zonaM15HTML = '<span class="zone-cell zona-esperando">Esperando...</span>';
+    }
+    
+    // Score styling
+    const score = displayScore;
+    let scoreClass = 'score-low';
+    if (score >= 8) scoreClass = 'score-high';
+    else if (score >= 5) scoreClass = 'score-medium';
+    
+    // OB, FVG, Barrida display
+    const ob = displayOB ? 'SÍ' : 'NO';
+    const fvg = displayFVG ? 'SÍ' : 'NO';
+    const barrida = displayBarrida ? 'SÍ' : 'NO';
+    
+    // Estado styling
+    let estadoText = displayEstado;
+    let estadoClass = 'status-badge ';
+    if (estadoText === 'ACTIVA') {
+        estadoClass += 'status-activa';
+        estadoText = 'ACTIVA';
+    } else if (estadoText === 'EN_ZONA' || estadoText.includes('DENTRO')) {
+        estadoClass += 'status-esperando';
+        estadoText = 'EN ZONA';
+    } else if (estadoText === 'PROFIT') {
+        estadoClass += 'status-profit';
+        estadoText = 'PROFIT';
+    } else if (estadoText === 'PAUSADA') {
+        estadoClass += 'status-pausada';
+        estadoText = 'PAUSADA';
+    } else if (estadoText === 'TP') {
+        estadoClass += 'status-tp';
+        estadoText = 'TP';
+    } else if (estadoText === 'SL') {
+        estadoClass += 'status-sl';
+        estadoText = 'SL';
+    } else if (estadoText === 'ESPERANDO_ACOMODO') {
+        estadoClass += 'status-esperando-acomodo';
+        estadoText = 'ESPERANDO ACOMODO';
+    } else if (estadoText === 'SIN_SETUP') {
+        estadoClass += 'status-sin-setup';
+        estadoText = 'SIN SETUP';
+    } else {
+        estadoClass += 'status-sin-setup';
+        estadoText = estadoText || '--';
+    }
+    
+    // Trend styling
+    const tendH1Class = getTrendClass(tendenciaH1);
+    const tendM15Class = getTrendClass(tendenciaM15);
+    
+    tr.innerHTML = `
+        <td class="index-name">${symbol}</td>
+        <td class="${tendH1Class}">${tendenciaH1}</td>
+        <td class="${tendM15Class}">${tendenciaM15}</td>
+        <td>${ultimoEventoM15}</td>
         <td>${zonaM15HTML}</td>
         <td class="score-cell ${scoreClass}">${score}</td>
         <td class="${ob === 'SÍ' ? 'indicator-yes' : 'indicator-no'}">${ob}</td>
