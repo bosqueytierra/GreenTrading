@@ -1084,13 +1084,11 @@ async function trackZoneHistory(symbol, analysis) {
             await updateSetup(matchingSetup.id, updateData, matchingSetupTable);
             console.log(`✓ Setup ${matchingSetup.id} actualizado (mantiene zona original) para ${symbol}`);
             
-            // Update state based on price movement (only if in an active state)
-            if (ACTIVE_SETUP_STATES.includes(matchingSetup.estado) || 
-                (updateData.estado && ACTIVE_SETUP_STATES.includes(updateData.estado))) {
-                // Refresh matchingSetup with updated estado if it was changed
-                if (updateData.estado) {
-                    matchingSetup.estado = updateData.estado;
-                }
+            // Update state based on price movement (only if in an active state after update)
+            const finalEstado = updateData.estado || matchingSetup.estado;
+            if (ACTIVE_SETUP_STATES.includes(finalEstado)) {
+                // Update matchingSetup with the final estado
+                matchingSetup.estado = finalEstado;
                 await updateSetupState(matchingSetup, currentPrice, analysis);
             }
         }
