@@ -10,7 +10,7 @@ const VALID_USERS = {
 
 // Variables globales
 let autoRefreshInterval = null;
-const AUTO_REFRESH_SECONDS = 30;
+const AUTO_REFRESH_SECONDS = 60;
 let currentUser = null;
 // Estrategia seleccionada en dashboard (SMC_M15_PRO o SMC_H1_M15_PRO)
 let currentStrategy = 'SMC_M15_PRO';
