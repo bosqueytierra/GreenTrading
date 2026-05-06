@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GreenTrading Desktop - Phase 1 Test</title>
+    <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🚀 GreenTrading Desktop</h1>
+            <p class="subtitle">Phase 1: Stack Validation - Electron ↔ Python ↔ MT5</p>
+        </header>
+
+        <main>
+            <!-- Status Section -->
+            <section class="status-section">
+                <h2>📊 System Status</h2>
+                <div class="status-grid">
+                    <div class="status-item">
+                        <span class="label">Electron:</span>
+                        <span class="value status-ok">✅ Running</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="label">Python Backend:</span>
+                        <span class="value" id="python-status">⏳ Checking...</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="label">MT5 Connection:</span>
+                        <span class="value" id="mt5-status">⏳ Checking...</span>
+                    </div>
+                </div>
+                <button id="refresh-status" class="btn btn-primary">🔄 Refresh Status</button>
+            </section>
+
+            <!-- Candle Test Section -->
+            <section class="test-section">
+                <h2>🕯️ MT5 Candle Test</h2>
+                <p>Read one real candle from MetaTrader 5</p>
+                
+                <div class="form-group">
+                    <label for="symbol-select">Symbol:</label>
+                    <select id="symbol-select">
+                        <option value="Boom 1000 Index">Boom 1000 Index</option>
+                        <option value="Boom 500 Index">Boom 500 Index</option>
+                        <option value="Crash 1000 Index">Crash 1000 Index</option>
+                        <option value="Crash 500 Index">Crash 500 Index</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="timeframe-select">Timeframe:</label>
+                    <select id="timeframe-select">
+                        <option value="M1">M1 (1 minute)</option>
+                        <option value="M15" selected>M15 (15 minutes)</option>
+                        <option value="H1">H1 (1 hour)</option>
+                    </select>
+                </div>
+
+                <button id="get-candle-btn" class="btn btn-success">📈 Get Candle from MT5</button>
+            </section>
+
+            <!-- Result Display -->
+            <section class="result-section" id="result-section" style="display: none;">
+                <h2>📋 Candle Data</h2>
+                <div id="candle-display" class="candle-card"></div>
+            </section>
+
+            <!-- Error Display -->
+            <div id="error-display" class="error-message" style="display: none;"></div>
+        </main>
+
+        <footer>
+            <p>Phase 1 - Proof of Concept • No database, no strategies, just stack validation</p>
+        </footer>
+    </div>
+
+    <script src="../assets/js/app.js"></script>
+</body>
+</html>
