@@ -16,7 +16,7 @@ let pythonProcess = null;
 
 // Python backend configuration
 const PYTHON_BACKEND = {
-  port: 8765,
+  port: 8000,  // Changed from 8765 to 8000 to match the working backend
   host: 'localhost',
   script: path.join(__dirname, 'backend', 'api_server.py')
 };

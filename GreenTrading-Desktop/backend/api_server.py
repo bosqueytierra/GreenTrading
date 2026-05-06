@@ -472,6 +472,6 @@ if __name__ == "__main__":
     uvicorn.run(
         app,
         host="127.0.0.1",
-        port=8765,
+        port=8000,  # Changed from 8765 to 8000 to match working backend
         log_level="info"
     )
