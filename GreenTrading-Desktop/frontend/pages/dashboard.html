@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GreenTrading Desktop - Dashboard</title>
+    <link rel="stylesheet" href="../assets/css/dashboard.css">
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <img src="../assets/images/Green.png" alt="GreenTrading" class="sidebar-logo">
+                <h2 class="sidebar-title">GreenTrading</h2>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="#" class="sidebar-link active" data-view="dashboard">
+                    <span class="sidebar-icon">📊</span>
+                    <span class="sidebar-text">Dashboard en vivo</span>
+                </a>
+                <a href="#" class="sidebar-link" data-view="settings">
+                    <span class="sidebar-icon">⚙️</span>
+                    <span class="sidebar-text">Configuración</span>
+                </a>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <header class="header">
+                <div class="header-left">
+                    <h1>Dashboard en vivo</h1>
+                </div>
+                <div class="header-right">
+                    <div class="connection-status">
+                        <span class="status-dot" id="statusDot"></span>
+                        <span id="connectionText">MT5: Conectando...</span>
+                    </div>
+                </div>
+            </header>
+
+            <div class="content">
+                <!-- Controls -->
+                <div class="controls-bar">
+                    <div class="control-group">
+                        <button id="refreshBtn" class="btn btn-primary">🔄 Actualizar</button>
+                    </div>
+                    <div class="status-info">
+                        <span id="lastUpdate" class="last-update-time">Última actualización: --</span>
+                        <span class="auto-refresh-indicator">Auto-refresh: 10s</span>
+                    </div>
+                </div>
+
+                <!-- Boom Indices -->
+                <section class="indices-section">
+                    <h2 class="section-title boom-title">📈 Índices Boom</h2>
+                    <div class="table-container">
+                        <table class="indices-table">
+                            <thead>
+                                <tr>
+                                    <th>Símbolo</th>
+                                    <th>Precio Actual</th>
+                                    <th>M1 (Close)</th>
+                                    <th>M15 (Close)</th>
+                                    <th>H1 (Close)</th>
+                                    <th>Estado MT5</th>
+                                    <th>Actualizado</th>
+                                </tr>
+                            </thead>
+                            <tbody id="boomTableBody">
+                                <!-- Rows will be inserted by JavaScript -->
+                                <tr>
+                                    <td colspan="7" class="loading-cell">
+                                        <div style="display: flex; align-items: center; gap: 10px; justify-content: center; padding: 20px;">
+                                            <div class="loading-spinner"></div>
+                                            <span>Cargando datos desde MT5...</span>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Crash Indices -->
+                <section class="indices-section">
+                    <h2 class="section-title crash-title">📉 Índices Crash</h2>
+                    <div class="table-container">
+                        <table class="indices-table">
+                            <thead>
+                                <tr>
+                                    <th>Símbolo</th>
+                                    <th>Precio Actual</th>
+                                    <th>M1 (Close)</th>
+                                    <th>M15 (Close)</th>
+                                    <th>H1 (Close)</th>
+                                    <th>Estado MT5</th>
+                                    <th>Actualizado</th>
+                                </tr>
+                            </thead>
+                            <tbody id="crashTableBody">
+                                <!-- Rows will be inserted by JavaScript -->
+                                <tr>
+                                    <td colspan="7" class="loading-cell">
+                                        <div style="display: flex; align-items: center; gap: 10px; justify-content: center; padding: 20px;">
+                                            <div class="loading-spinner"></div>
+                                            <span>Cargando datos desde MT5...</span>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </div>
+
+    <script src="../assets/js/dashboard.js"></script>
+</body>
+</html>

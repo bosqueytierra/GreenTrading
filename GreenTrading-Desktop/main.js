@@ -36,7 +36,8 @@ function createWindow() {
     icon: path.join(__dirname, 'frontend', 'assets', 'images', 'Green.png')
   });
 
-  mainWindow.loadFile(path.join(__dirname, 'frontend', 'pages', 'index.html'));
+  // Phase 2: Load dashboard instead of test page
+  mainWindow.loadFile(path.join(__dirname, 'frontend', 'pages', 'dashboard.html'));
   
   // Open DevTools in development
   if (process.env.NODE_ENV === 'development') {
@@ -146,6 +147,28 @@ ipcMain.handle('check-status', async () => {
     const data = await response.json();
     return { success: true, data };
   } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+/**
+ * IPC Handler: Get symbols snapshot (Phase 2)
+ */
+ipcMain.handle('get-symbols-snapshot', async () => {
+  try {
+    const url = `http://${PYTHON_BACKEND.host}:${PYTHON_BACKEND.port}/api/symbols/snapshot`;
+    console.log(`Fetching symbols snapshot from: ${url}`);
+    
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    return { success: true, data };
+  } catch (error) {
+    console.error('Error fetching symbols snapshot:', error);
     return { success: false, error: error.message };
   }
 });

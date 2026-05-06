@@ -27,6 +27,14 @@ contextBridge.exposeInMainWorld('api', {
    */
   checkStatus: () => {
     return ipcRenderer.invoke('check-status');
+  },
+
+  /**
+   * Get snapshot of all dashboard symbols (Phase 2)
+   * @returns {Promise<Object>} Array of symbol snapshots or error
+   */
+  getSymbolsSnapshot: () => {
+    return ipcRenderer.invoke('get-symbols-snapshot');
   }
 });
 

@@ -56,6 +56,20 @@ TIMEFRAME_MAP = {
     'H1': mt5.TIMEFRAME_H1,
 }
 
+# Phase 2: 10 symbols for dashboard
+DASHBOARD_SYMBOLS = [
+    "Boom 1000 Index",
+    "Boom 900 Index",
+    "Boom 600 Index",
+    "Boom 500 Index",
+    "Boom 300 Index",
+    "Crash 1000 Index",
+    "Crash 900 Index",
+    "Crash 600 Index",
+    "Crash 500 Index",
+    "Crash 300 Index",
+]
+
 
 def init_mt5():
     """Initialize MT5 connection"""
@@ -130,6 +144,103 @@ async def get_status():
         "mt5_terminal_info": mt5_terminal_info,
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
+
+
+def read_candle_data(symbol: str, timeframe: str) -> Optional[dict]:
+    """
+    Helper function to read one candle from MT5
+    
+    Args:
+        symbol: Symbol name
+        timeframe: Timeframe code (M1, M15, H1)
+    
+    Returns:
+        dict with candle data or None if error
+    """
+    if not mt5_initialized:
+        return None
+    
+    if timeframe not in TIMEFRAME_MAP:
+        return None
+    
+    mt5_timeframe = TIMEFRAME_MAP[timeframe]
+    
+    try:
+        rates = mt5.copy_rates_from_pos(symbol, mt5_timeframe, 1, 1)
+        
+        if rates is None or len(rates) == 0:
+            return None
+        
+        candle = rates[0]
+        
+        return {
+            "time": datetime.fromtimestamp(candle['time'], tz=timezone.utc).isoformat(),
+            "open": float(candle['open']),
+            "high": float(candle['high']),
+            "low": float(candle['low']),
+            "close": float(candle['close']),
+            "tick_volume": int(candle['tick_volume']),
+            "spread": int(candle['spread']),
+            "real_volume": int(candle['real_volume'])
+        }
+    except Exception as e:
+        print(f"Error reading candle {symbol} @ {timeframe}: {e}")
+        return None
+
+
+@app.get("/api/symbols/snapshot")
+async def get_symbols_snapshot():
+    """
+    Phase 2: Get snapshot of all dashboard symbols
+    
+    Returns array with 10 symbols and their latest data:
+    - symbol
+    - price (current price from last M1 candle close)
+    - m1_last_candle
+    - m15_last_candle
+    - h1_last_candle
+    - updated_at
+    - mt5_connected
+    
+    Returns:
+        list: Array of symbol snapshots
+    """
+    print("Reading snapshot for all dashboard symbols...")
+    
+    # Validate MT5 connection
+    if not mt5_initialized:
+        if not init_mt5():
+            raise HTTPException(
+                status_code=503,
+                detail="MT5 not connected. Please ensure MT5 is running."
+            )
+    
+    snapshots = []
+    timestamp = datetime.now(timezone.utc).isoformat()
+    
+    for symbol in DASHBOARD_SYMBOLS:
+        # Read candles for all timeframes
+        m1_candle = read_candle_data(symbol, 'M1')
+        m15_candle = read_candle_data(symbol, 'M15')
+        h1_candle = read_candle_data(symbol, 'H1')
+        
+        # Get current price from M1 close
+        price = m1_candle['close'] if m1_candle else None
+        
+        snapshot = {
+            "symbol": symbol,
+            "price": price,
+            "m1_last_candle": m1_candle,
+            "m15_last_candle": m15_candle,
+            "h1_last_candle": h1_candle,
+            "updated_at": timestamp,
+            "mt5_connected": mt5_initialized
+        }
+        
+        snapshots.append(snapshot)
+    
+    print(f"Snapshot complete: {len(snapshots)} symbols read")
+    return snapshots
 
 
 @app.get("/api/candle/{symbol}/{timeframe}")
