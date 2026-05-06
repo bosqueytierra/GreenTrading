@@ -201,10 +201,11 @@ ipcMain.handle('get-smc-m15-pro-snapshot', async () => {
  */
 app.whenReady().then(async () => {
   try {
-    // Start Python backend first
-    await startPythonBackend();
+    // CHANGED: Don't start our own Python backend - connect to existing one on port 8000
+    // await startPythonBackend();
+    console.log('⚠️ Skipping Python backend start - using external backend on port 8000');
     
-    // Then create window
+    // Create window
     createWindow();
     
     console.log('✅ Application ready');
@@ -218,7 +219,7 @@ app.whenReady().then(async () => {
  * App lifecycle: All windows closed
  */
 app.on('window-all-closed', () => {
-  stopPythonBackend();
+  // stopPythonBackend();  // Commented out - not starting our own backend
   
   if (process.platform !== 'darwin') {
     app.quit();
@@ -238,7 +239,7 @@ app.on('activate', () => {
  * App lifecycle: Before quit
  */
 app.on('before-quit', () => {
-  stopPythonBackend();
+  // stopPythonBackend();  // Commented out - not starting our own backend
 });
 
 console.log('🚀 GreenTrading Desktop starting...');
