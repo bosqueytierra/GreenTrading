@@ -61,6 +61,11 @@ function startPythonBackend() {
     // Determine Python command (python or python3)
     const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
     
+    // CRITICAL LOGS: Confirm Python backend path and executable
+    console.log('PYTHON BACKEND CWD:', path.dirname(PYTHON_BACKEND.script));
+    console.log('PYTHON BACKEND SCRIPT:', PYTHON_BACKEND.script);
+    console.log('PYTHON EXEC:', pythonCmd);
+    
     pythonProcess = spawn(pythonCmd, [PYTHON_BACKEND.script], {
       stdio: ['pipe', 'pipe', 'pipe']
     });
