@@ -608,9 +608,9 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
                 "hasta": float(zona.get('zona_hasta', 0))
             },
             "score": score,
-            "ob": "SI" if has_ob else "NO",
-            "fvg": "SI" if has_fvg else "NO",
-            "barrida": "SI" if has_barrida else "NO",
+            "ob": "SÍ" if has_ob else "NO",
+            "fvg": "SÍ" if has_fvg else "NO",
+            "barrida": "SÍ" if has_barrida else "NO",
             "estado": estado,
             "updated_at": datetime.now(timezone.utc).isoformat()
         }
