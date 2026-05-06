@@ -25,7 +25,7 @@ try:
     from fastapi.middleware.cors import CORSMiddleware
     import uvicorn
 except ImportError as e:
-    print(f"❌ ERROR: Missing dependency: {e}")
+    print(f"ERROR: Missing dependency: {e}")
     print("Please install: pip install fastapi uvicorn MetaTrader5")
     sys.exit(1)
 
@@ -64,20 +64,20 @@ def init_mt5():
     if mt5_initialized:
         return True
     
-    print("🔌 Initializing MT5 connection...")
+    print("Initializing MT5 connection...")
     
     if not mt5.initialize():
         error = mt5.last_error()
-        print(f"❌ MT5 initialization failed: {error}")
+        print(f"MT5 initialization failed: {error}")
         return False
     
     mt5_initialized = True
     terminal_info = mt5.terminal_info()
     if terminal_info:
         mt5_terminal_info = terminal_info.name
-        print(f"✅ MT5 connected: {mt5_terminal_info}")
+        print(f"MT5 connected: {mt5_terminal_info}")
     else:
-        print("✅ MT5 connected")
+        print("MT5 connected")
     
     return True
 
@@ -88,20 +88,20 @@ def shutdown_mt5():
     if mt5_initialized:
         mt5.shutdown()
         mt5_initialized = False
-        print("🛑 MT5 disconnected")
+        print("MT5 disconnected")
 
 
 @app.on_event("startup")
 async def startup_event():
     """Initialize MT5 on startup"""
-    print("🚀 Starting GreenTrading Desktop API...")
+    print("Starting GreenTrading Desktop API...")
     init_mt5()
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup on shutdown"""
-    print("🛑 Shutting down GreenTrading Desktop API...")
+    print("Shutting down GreenTrading Desktop API...")
     shutdown_mt5()
 
 
@@ -147,7 +147,7 @@ async def get_candle(symbol: str, timeframe: str):
     Returns:
         dict: Candle data
     """
-    print(f"📊 Reading candle: {symbol} @ {timeframe}")
+    print(f"Reading candle: {symbol} @ {timeframe}")
     
     # Validate MT5 connection
     if not mt5_initialized:
@@ -197,11 +197,11 @@ async def get_candle(symbol: str, timeframe: str):
             "read_at": datetime.now(timezone.utc).isoformat()
         }
         
-        print(f"✅ Candle read successfully: {symbol} @ {timeframe}")
+        print(f"Candle read successfully: {symbol} @ {timeframe}")
         return result
         
     except Exception as e:
-        print(f"❌ Error reading candle: {e}")
+        print(f"Error reading candle: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"Internal error: {str(e)}"
@@ -210,7 +210,7 @@ async def get_candle(symbol: str, timeframe: str):
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("🚀 GreenTrading Desktop - Python Backend")
+    print("GreenTrading Desktop - Python Backend")
     print("=" * 60)
     print("Phase 1: Minimal API Server")
     print("Architecture: Event-driven, in-memory processing")
