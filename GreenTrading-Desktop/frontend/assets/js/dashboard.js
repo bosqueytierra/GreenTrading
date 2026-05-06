@@ -1,3 +1,5 @@
+console.log("DASHBOARD_JS_VERSION: DEBUG_MAPPING_V2");
+
 /**
  * GreenTrading Desktop - Dashboard JavaScript
  * Phase 3: SMC M15 PRO dashboard with real-time SMC analysis
@@ -49,11 +51,18 @@ async function loadDashboardData() {
         // Call SMC API through exposed window.api
         const result = await window.api.getSmcM15ProSnapshot();
         
+        console.log("DEBUG RESULT FULL:", result);
+        console.log("DEBUG RESULT.DATA:", result.data);
+        console.log("DEBUG FIRST ITEM:", result.data?.[0]);
+        
         if (!result.success) {
             throw new Error(result.error || 'Failed to load SMC data');
         }
         
         const snapshots = result.data;
+        
+        console.log("DEBUG SNAPSHOTS IS ARRAY:", Array.isArray(snapshots));
+        console.log("DEBUG SNAPSHOTS FIRST:", snapshots?.[0]);
         console.log(`✅ Loaded ${snapshots.length} SMC snapshots`);
         
         // Update connection status
@@ -107,6 +116,14 @@ function renderTable(tableBodyId, data) {
  * Create table row for a symbol snapshot (SMC M15 PRO)
  */
 function createTableRow(snapshot) {
+    console.log("DEBUG ROW SNAPSHOT:", snapshot);
+    console.log("DEBUG ROW H1:", snapshot?.tendencia_h1);
+    console.log("DEBUG ROW M15:", snapshot?.tendencia_m15);
+    console.log("DEBUG ROW EVENT:", snapshot?.ultimo_evento_m15);
+    console.log("DEBUG ROW ZONE:", snapshot?.zona_madre_m15);
+    console.log("DEBUG ROW SCORE:", snapshot?.score);
+    console.log("DEBUG ROW ESTADO:", snapshot?.estado);
+    
     const {
         symbol,
         price,
