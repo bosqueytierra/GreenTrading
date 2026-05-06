@@ -49,11 +49,15 @@ async function loadDashboardData() {
         // Call SMC API through exposed window.api
         const result = await window.api.getSmcM15ProSnapshot();
         
+        console.log('🔍 DEBUG 1 - RESULT OBJECT:', result);
+        console.log('🔍 DEBUG 2 - RESULT.DATA:', result.data);
+        
         if (!result.success) {
             throw new Error(result.error || 'Failed to load SMC data');
         }
         
         const snapshots = result.data;
+        console.log('🔍 DEBUG 3 - SNAPSHOTS ARRAY:', snapshots);
         console.log(`✅ Loaded ${snapshots.length} SMC snapshots`);
         
         // Update connection status
@@ -62,6 +66,9 @@ async function loadDashboardData() {
         // Separate into Boom and Crash
         const boomData = snapshots.filter(s => s.symbol.includes('Boom'));
         const crashData = snapshots.filter(s => s.symbol.includes('Crash'));
+        
+        console.log('🔍 DEBUG 4 - BOOM DATA:', boomData);
+        console.log('🔍 DEBUG 5 - CRASH DATA:', crashData);
         
         // Render tables
         renderTable('boomTableBody', boomData);
@@ -107,20 +114,30 @@ function renderTable(tableBodyId, data) {
  * Create table row for a symbol snapshot (SMC M15 PRO)
  */
 function createTableRow(snapshot) {
+    // DEBUG: Log the actual snapshot object received
+    console.log('🔍 DEBUG 6 - SNAPSHOT OBJECT IN createTableRow:', snapshot);
+    console.log('🔍 DEBUG 7 - snapshot.tendencia_h1:', snapshot.tendencia_h1);
+    console.log('🔍 DEBUG 8 - snapshot.tendencia_m15:', snapshot.tendencia_m15);
+    console.log('🔍 DEBUG 9 - snapshot.ultimo_evento_m15:', snapshot.ultimo_evento_m15);
+    console.log('🔍 DEBUG 10 - snapshot.zona_madre_m15:', snapshot.zona_madre_m15);
+    console.log('🔍 DEBUG 11 - snapshot.score:', snapshot.score);
+    console.log('🔍 DEBUG 12 - snapshot.price:', snapshot.price);
+    
+    // Destructure with default values to handle missing properties
     const {
-        symbol,
-        price,
-        tendencia_h1,
-        tendencia_m15,
-        ultimo_evento_m15,
-        zona_madre_m15,
-        score,
-        ob,
-        fvg,
-        barrida,
-        estado,
-        updated_at
-    } = snapshot;
+        symbol = 'Unknown',
+        price = null,
+        tendencia_h1 = '--',
+        tendencia_m15 = '--',
+        ultimo_evento_m15 = '--',
+        zona_madre_m15 = { desde: 0, hasta: 0 },
+        score = 0,
+        ob = 'NO',
+        fvg = 'NO',
+        barrida = 'NO',
+        estado = 'SIN SETUP',
+        updated_at = new Date().toISOString()
+    } = snapshot || {};
     
     // Format symbol (shorter name)
     const symbolShort = symbol.replace(' Index', '');
@@ -165,10 +182,14 @@ function createTableRow(snapshot) {
  * Format zone range
  */
 function formatZone(zona) {
-    if (!zona || zona.desde === 0 || zona.hasta === 0) {
+    if (!zona || typeof zona !== 'object') {
         return '--';
     }
-    return `${zona.desde.toFixed(2)} - ${zona.hasta.toFixed(2)}`;
+    if (!zona.desde || !zona.hasta || zona.desde === 0 || zona.hasta === 0) {
+        return '--';
+    }
+    const result = `${zona.desde.toFixed(2)} - ${zona.hasta.toFixed(2)}`;
+    return result;
 }
 
 /**
