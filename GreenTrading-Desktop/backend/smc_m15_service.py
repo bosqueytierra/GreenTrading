@@ -529,8 +529,10 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
         # Calculate structure (eventos + tendencia)
         eventos_h1, tendencia_h1 = detectar_estructura(df_h1, swings_h1)
         eventos_m15, tendencia_m15 = detectar_estructura(df_m15, swings_m15)
-        print(f"    - H1 eventos: {len(eventos_h1)}, tendencia: {tendencia_h1}")
-        print(f"    - M15 eventos: {len(eventos_m15)}, tendencia: {tendencia_m15}")
+        print(f"    - H1 eventos: {len(eventos_h1)}, tendencia_h1 (raw): {tendencia_h1}")
+        print(f"    - M15 eventos: {len(eventos_m15)}, tendencia_m15 (raw): {tendencia_m15}")
+        print(f"    - tendencia_h1 (formatted): {format_trend(tendencia_h1)}")
+        print(f"    - tendencia_m15 (formatted): {format_trend(tendencia_m15)}")
         
         # Get last M15 event (always calculate)
         ultimo_evento_m15 = get_last_event(eventos_m15)

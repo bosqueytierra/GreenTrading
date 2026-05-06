@@ -33,6 +33,9 @@ except ImportError as e:
 # Import SMC service
 try:
     from smc_m15_service import analyze_symbol_smc, create_sin_setup_response
+    import smc_m15_service
+    # CRITICAL LOG: Confirm SMC service path
+    print("SMC_SERVICE_PATH:", smc_m15_service.__file__)
 except ImportError:
     print("WARNING: SMC service not available")
     analyze_symbol_smc = None
@@ -439,8 +442,21 @@ async def get_smc_m15_pro_snapshot():
             df_h1 = read_candles_dataframe(symbol, 'H1', count=100)
             df_m15 = read_candles_dataframe(symbol, 'M15', count=100)
             
+            # CRITICAL DEBUG: Log dataframe lengths BEFORE calling analyze_symbol_smc
+            print(f"\n[API_SERVER] Processing {symbol}:")
+            print(f"  - len(df_h1): {len(df_h1) if df_h1 is not None else 0}")
+            print(f"  - len(df_m15): {len(df_m15) if df_m15 is not None else 0}")
+            print(f"  - Calling analyze_symbol_smc()...")
+            
             # Analyze symbol with SMC engine
             smc_result = analyze_symbol_smc(symbol, df_h1, df_m15)
+            
+            # CRITICAL DEBUG: Log results AFTER calling analyze_symbol_smc
+            print(f"  - Results from analyze_symbol_smc():")
+            print(f"    * tendencia_h1: {smc_result.get('tendencia_h1', 'NOT_SET')}")
+            print(f"    * tendencia_m15: {smc_result.get('tendencia_m15', 'NOT_SET')}")
+            print(f"    * ultimo_evento_m15: {smc_result.get('ultimo_evento_m15', 'NOT_SET')}")
+            print(f"    * estado: {smc_result.get('estado', 'NOT_SET')}")
             
             # If no price yet, get it from M1
             if smc_result['price'] is None:
