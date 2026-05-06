@@ -467,6 +467,7 @@ if __name__ == "__main__":
     print("Phase 1: Minimal API Server")
     print("Architecture: Event-driven, in-memory processing")
     print("=" * 60)
+    print("API_SERVER_PATH:", __file__)
     
     # Run FastAPI server
     uvicorn.run(

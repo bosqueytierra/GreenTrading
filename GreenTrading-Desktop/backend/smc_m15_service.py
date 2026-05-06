@@ -22,6 +22,9 @@ import os
 from datetime import datetime, timezone
 import pandas as pd
 
+# CRITICAL LOG: Confirm which file is being executed
+print("SMC_SERVICE_PATH:", __file__)
+
 # Configuration
 SWING_LOOKBACK = 3
 CLOSE_BREAK = True
