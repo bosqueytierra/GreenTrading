@@ -367,7 +367,7 @@ def detectar_barrida_previa(df, evento, direccion, lookback=40):
 def crear_zona_m15(df_m15, eventos_m15, fvgs_m15, symbol, precio_actual):
     """
     Construye la zona M15 combinando:
-    - Último evento de estructura
+    - Ultimo evento de estructura
     - Order Block
     - Fair Value Gap
     - Barrida previa
@@ -505,12 +505,12 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
     
     # If no data, return minimal response
     if df_h1 is None or df_m15 is None or len(df_h1) == 0 or len(df_m15) == 0:
-        print(f"  ❌ No data available for {symbol}")
+        print(f"  ERROR No data available for {symbol}")
         print(f"     H1 candles: {len(df_h1) if df_h1 is not None else 0}")
         print(f"     M15 candles: {len(df_m15) if df_m15 is not None else 0}")
         return create_sin_setup_response(symbol)
     
-    print(f"  ✓ Data loaded:")
+    print(f"  OK Data loaded:")
     print(f"    - H1 candles: {len(df_h1)}")
     print(f"    - M15 candles: {len(df_m15)}")
     
@@ -518,7 +518,7 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
         # ===================================================================
         # NIVEL A: ESTRUCTURA BASE (SIEMPRE SE CALCULA)
         # ===================================================================
-        print(f"  → Calculating base structure...")
+        print(f"  Calculating base structure...")
         
         # Calculate swings
         swings_h1 = detectar_swings(df_h1, SWING_LOOKBACK)
@@ -534,7 +534,7 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
         
         # Get last M15 event (always calculate)
         ultimo_evento_m15 = get_last_event(eventos_m15)
-        print(f"    - Último evento M15: {ultimo_evento_m15}")
+        print(f"    - Ultimo evento M15: {ultimo_evento_m15}")
         
         # Get current price
         precio_actual = float(df_m15["close"].iloc[-1])
@@ -543,7 +543,7 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
         # ===================================================================
         # NIVEL B: SETUP/ZONA (OPCIONAL)
         # ===================================================================
-        print(f"  → Attempting zone creation...")
+        print(f"  Attempting zone creation...")
         
         # Detect FVGs
         fvgs_m15 = detectar_fvg(df_m15)
@@ -554,8 +554,8 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
         
         # If NO zone, return BASE STRUCTURE with SIN SETUP for zone part
         if not zona:
-            print(f"  ⚠ NO ZONE created (no OB/FVG or not operative)")
-            print(f"  → Returning BASE STRUCTURE with SIN SETUP")
+            print(f"  WARNING NO ZONE created (no OB/FVG or not operative)")
+            print(f"  Returning BASE STRUCTURE with SIN SETUP")
             result = {
                 "symbol": symbol,
                 "price": precio_actual,
@@ -574,19 +574,19 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
             return result
         
         # If zone exists, calculate full setup
-        print(f"  ✓ ZONE created:")
+        print(f"  OK ZONE created:")
         print(f"    - Desde: {zona['zona_desde']}")
         print(f"    - Hasta: {zona['zona_hasta']}")
-        print(f"    - Dirección: {zona['direccion']}")
+        print(f"    - Direccion: {zona['direccion']}")
         
         # Extract zone components
         has_ob = zona.get('ob') is not None
         has_fvg = zona.get('fvg') is not None
         has_barrida = zona.get('barrida') is not None
         
-        print(f"    - OB: {'SÍ' if has_ob else 'NO'}")
-        print(f"    - FVG: {'SÍ' if has_fvg else 'NO'}")
-        print(f"    - Barrida: {'SÍ' if has_barrida else 'NO'}")
+        print(f"    - OB: {'SI' if has_ob else 'NO'}")
+        print(f"    - FVG: {'SI' if has_fvg else 'NO'}")
+        print(f"    - Barrida: {'SI' if has_barrida else 'NO'}")
         
         # Get score from zone
         score = zona.get('score', 0)
@@ -594,7 +594,7 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
         
         # Determine state
         estado = "ACTIVA" if score > 0 else "SIN SETUP"
-        print(f"  → Estado: {estado}")
+        print(f"  Estado: {estado}")
         
         # Build full response with zone
         result = {
@@ -618,7 +618,7 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
         return result
         
     except Exception as e:
-        print(f"  ❌ Error analyzing {symbol}: {e}")
+        print(f"  ERROR analyzing {symbol}: {e}")
         import traceback
         traceback.print_exc()
         return create_sin_setup_response(symbol)
@@ -689,11 +689,11 @@ def get_last_event(eventos: list) -> str:
 
 def print_result_summary(result: dict):
     """Print formatted result summary for logging"""
-    print(f"\n  📊 RESULT SUMMARY:")
+    print(f"\n  RESULT SUMMARY:")
     print(f"     Symbol: {result['symbol']}")
     print(f"     Tendencia H1: {result['tendencia_h1']}")
     print(f"     Tendencia M15: {result['tendencia_m15']}")
-    print(f"     Último Evento M15: {result['ultimo_evento_m15']}")
+    print(f"     Ultimo Evento M15: {result['ultimo_evento_m15']}")
     print(f"     Zona: {result['zona_madre_m15']['desde']:.2f} - {result['zona_madre_m15']['hasta']:.2f}")
     print(f"     Score: {result['score']}")
     print(f"     OB: {result['ob']}, FVG: {result['fvg']}, Barrida: {result['barrida']}")
