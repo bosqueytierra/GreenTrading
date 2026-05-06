@@ -174,6 +174,28 @@ ipcMain.handle('get-symbols-snapshot', async () => {
 });
 
 /**
+ * IPC Handler: Get SMC M15 PRO snapshot (Phase 3)
+ */
+ipcMain.handle('get-smc-m15-pro-snapshot', async () => {
+  try {
+    const url = `http://${PYTHON_BACKEND.host}:${PYTHON_BACKEND.port}/api/smc/m15-pro/snapshot`;
+    console.log(`Fetching SMC M15 PRO snapshot from: ${url}`);
+    
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    return { success: true, data };
+  } catch (error) {
+    console.error('Error fetching SMC snapshot:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+/**
  * App lifecycle: Ready
  */
 app.whenReady().then(async () => {

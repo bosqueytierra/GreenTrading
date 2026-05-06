@@ -24,10 +24,19 @@ try:
     from fastapi import FastAPI, HTTPException
     from fastapi.middleware.cors import CORSMiddleware
     import uvicorn
+    import pandas as pd
 except ImportError as e:
     print(f"ERROR: Missing dependency: {e}")
-    print("Please install: pip install fastapi uvicorn MetaTrader5")
+    print("Please install: pip install fastapi uvicorn MetaTrader5 pandas")
     sys.exit(1)
+
+# Import SMC service
+try:
+    from smc_m15_service import analyze_symbol_smc, create_sin_setup_response
+except ImportError:
+    print("WARNING: SMC service not available")
+    analyze_symbol_smc = None
+    create_sin_setup_response = None
 
 # FastAPI app
 app = FastAPI(
@@ -188,6 +197,51 @@ def read_candle_data(symbol: str, timeframe: str) -> Optional[dict]:
         return None
 
 
+def read_candles_dataframe(symbol: str, timeframe: str, count: int = 100) -> Optional[pd.DataFrame]:
+    """
+    Helper function to read multiple candles from MT5 as DataFrame
+    
+    Args:
+        symbol: Symbol name
+        timeframe: Timeframe code (M1, M15, H1)
+        count: Number of candles to read (default: 100)
+    
+    Returns:
+        DataFrame with candle data or None if error
+    """
+    if not mt5_initialized:
+        return None
+    
+    if timeframe not in TIMEFRAME_MAP:
+        return None
+    
+    mt5_timeframe = TIMEFRAME_MAP[timeframe]
+    
+    try:
+        rates = mt5.copy_rates_from_pos(symbol, mt5_timeframe, 0, count)
+        
+        if rates is None or len(rates) == 0:
+            return None
+        
+        # Convert to DataFrame
+        df = pd.DataFrame(rates)
+        
+        # Convert time to datetime
+        df['time'] = pd.to_datetime(df['time'], unit='s', utc=True)
+        
+        # Ensure proper column types
+        df['open'] = df['open'].astype(float)
+        df['high'] = df['high'].astype(float)
+        df['low'] = df['low'].astype(float)
+        df['close'] = df['close'].astype(float)
+        
+        return df
+        
+    except Exception as e:
+        print(f"Error reading candles {symbol} @ {timeframe}: {e}")
+        return None
+
+
 @app.get("/api/symbols/snapshot")
 async def get_symbols_snapshot():
     """
@@ -317,6 +371,93 @@ async def get_candle(symbol: str, timeframe: str):
             status_code=500,
             detail=f"Internal error: {str(e)}"
         )
+
+
+@app.get("/api/smc/m15-pro/snapshot")
+async def get_smc_m15_pro_snapshot():
+    """
+    Phase 3: Get SMC M15 PRO snapshot for all dashboard symbols
+    
+    Returns array with SMC analysis for each symbol:
+    - symbol
+    - price
+    - tendencia_h1
+    - tendencia_m15
+    - ultimo_evento_m15
+    - zona_madre_m15 (desde, hasta)
+    - score
+    - ob (SÍ/NO)
+    - fvg (SÍ/NO)
+    - barrida (SÍ/NO)
+    - estado (ACTIVA/SIN SETUP)
+    - updated_at
+    
+    Returns:
+        list: Array of SMC snapshots
+    """
+    print("Reading SMC M15 PRO snapshot for all dashboard symbols...")
+    
+    # Validate MT5 connection
+    if not mt5_initialized:
+        if not init_mt5():
+            raise HTTPException(
+                status_code=503,
+                detail="MT5 not connected. Please ensure MT5 is running."
+            )
+    
+    # Check if SMC service is available
+    if analyze_symbol_smc is None or create_sin_setup_response is None:
+        print("WARNING: SMC service not available, returning placeholder data")
+        # Return placeholder data for all symbols
+        snapshots = []
+        for symbol in DASHBOARD_SYMBOLS:
+            m1_candle = read_candle_data(symbol, 'M1')
+            price = m1_candle.get('close') if m1_candle else None
+            
+            snapshots.append({
+                "symbol": symbol,
+                "price": price,
+                "tendencia_h1": "--",
+                "tendencia_m15": "--",
+                "ultimo_evento_m15": "SIN SETUP",
+                "zona_madre_m15": {"desde": 0, "hasta": 0},
+                "score": 0,
+                "ob": "NO",
+                "fvg": "NO",
+                "barrida": "NO",
+                "estado": "SIN SETUP",
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            })
+        
+        return snapshots
+    
+    snapshots = []
+    
+    for symbol in DASHBOARD_SYMBOLS:
+        try:
+            # Read candles for H1 and M15 (100 candles for analysis)
+            df_h1 = read_candles_dataframe(symbol, 'H1', count=100)
+            df_m15 = read_candles_dataframe(symbol, 'M15', count=100)
+            
+            # Analyze symbol with SMC engine
+            smc_result = analyze_symbol_smc(symbol, df_h1, df_m15)
+            
+            # If no price yet, get it from M1
+            if smc_result['price'] is None:
+                m1_candle = read_candle_data(symbol, 'M1')
+                smc_result['price'] = m1_candle.get('close') if m1_candle else None
+            
+            snapshots.append(smc_result)
+            
+        except Exception as e:
+            print(f"Error analyzing {symbol}: {e}")
+            # Add SIN SETUP response for failed symbol
+            m1_candle = read_candle_data(symbol, 'M1')
+            price = m1_candle.get('close') if m1_candle else None
+            snapshots.append(create_sin_setup_response(symbol, price))
+    
+    print(f"SMC snapshot complete: {len(snapshots)} symbols analyzed")
+    return snapshots
 
 
 if __name__ == "__main__":
