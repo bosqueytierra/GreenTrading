@@ -1,10 +1,10 @@
 /**
  * GreenTrading Desktop - Dashboard JavaScript
- * Phase 2: Real-time dashboard with MT5 data
+ * Phase 3: SMC M15 PRO dashboard with real-time SMC analysis
  */
 
-// Auto-refresh interval (10 seconds)
-const AUTO_REFRESH_INTERVAL = 10000;
+// Auto-refresh interval (5 seconds)
+const AUTO_REFRESH_INTERVAL = 5000;
 let refreshIntervalId = null;
 
 /**
@@ -43,18 +43,18 @@ function setupEventListeners() {
  * Load dashboard data from backend
  */
 async function loadDashboardData() {
-    console.log('📊 Loading dashboard data...');
+    console.log('📊 Loading SMC M15 PRO dashboard data...');
     
     try {
-        // Call API through exposed window.api
-        const result = await window.api.getSymbolsSnapshot();
+        // Call SMC API through exposed window.api
+        const result = await window.api.getSmcM15ProSnapshot();
         
         if (!result.success) {
-            throw new Error(result.error || 'Failed to load data');
+            throw new Error(result.error || 'Failed to load SMC data');
         }
         
         const snapshots = result.data;
-        console.log(`✅ Loaded ${snapshots.length} symbol snapshots`);
+        console.log(`✅ Loaded ${snapshots.length} SMC snapshots`);
         
         // Update connection status
         updateConnectionStatus(true);
@@ -71,7 +71,7 @@ async function loadDashboardData() {
         updateLastUpdateTime();
         
     } catch (error) {
-        console.error('❌ Error loading dashboard data:', error);
+        console.error('❌ Error loading SMC dashboard data:', error);
         updateConnectionStatus(false);
         showError(error.message);
     }
@@ -90,7 +90,7 @@ function renderTable(tableBodyId, data) {
     if (data.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="7" class="loading-cell" style="text-align: center; padding: 20px;">
+                <td colspan="12" class="loading-cell" style="text-align: center; padding: 20px;">
                     No hay datos disponibles
                 </td>
             </tr>
@@ -104,46 +104,96 @@ function renderTable(tableBodyId, data) {
 }
 
 /**
- * Create table row for a symbol snapshot
+ * Create table row for a symbol snapshot (SMC M15 PRO)
  */
 function createTableRow(snapshot) {
     const {
         symbol,
         price,
-        m1_last_candle,
-        m15_last_candle,
-        h1_last_candle,
-        mt5_connected,
+        tendencia_h1,
+        tendencia_m15,
+        ultimo_evento_m15,
+        zona_madre_m15,
+        score,
+        ob,
+        fvg,
+        barrida,
+        estado,
         updated_at
     } = snapshot;
+    
+    // Format symbol (shorter name)
+    const symbolShort = symbol.replace(' Index', '');
     
     // Format price
     const priceStr = price !== null ? formatPrice(price) : '--';
     
-    // Format candles
-    const m1Str = formatCandle(m1_last_candle);
-    const m15Str = formatCandle(m15_last_candle);
-    const h1Str = formatCandle(h1_last_candle);
+    // Format zone
+    const zoneStr = formatZone(zona_madre_m15);
     
-    // Format status
-    const statusBadge = mt5_connected
-        ? '<span class="status-badge status-connected">✓ Conectado</span>'
-        : '<span class="status-badge status-disconnected">✗ Desconectado</span>';
+    // Format estado badge
+    const estadoBadge = formatEstadoBadge(estado);
+    
+    // Format score badge
+    const scoreBadge = formatScoreBadge(score);
     
     // Format update time
     const timeStr = formatTime(updated_at);
     
+    // Apply row color based on estado
+    const rowClass = estado === 'ACTIVA' ? 'row-activa' : 'row-sin-setup';
+    
     return `
-        <tr>
-            <td><span class="symbol-name">${symbol}</span></td>
+        <tr class="${rowClass}">
+            <td><span class="symbol-name">${symbolShort}</span></td>
+            <td><span class="trend-badge">${tendencia_h1}</span></td>
+            <td><span class="trend-badge">${tendencia_m15}</span></td>
+            <td><span class="event-label">${ultimo_evento_m15}</span></td>
+            <td><span class="zone-range">${zoneStr}</span></td>
+            <td>${scoreBadge}</td>
+            <td><span class="indicator-badge">${ob}</span></td>
+            <td><span class="indicator-badge">${fvg}</span></td>
+            <td><span class="indicator-badge">${barrida}</span></td>
+            <td>${estadoBadge}</td>
             <td><span class="price-value">${priceStr}</span></td>
-            <td>${m1Str}</td>
-            <td>${m15Str}</td>
-            <td>${h1Str}</td>
-            <td>${statusBadge}</td>
-            <td>${timeStr}</td>
+            <td><span class="time-value">${timeStr}</span></td>
         </tr>
     `;
+}
+
+/**
+ * Format zone range
+ */
+function formatZone(zona) {
+    if (!zona || zona.desde === 0 || zona.hasta === 0) {
+        return '--';
+    }
+    return `${zona.desde.toFixed(2)} - ${zona.hasta.toFixed(2)}`;
+}
+
+/**
+ * Format estado badge
+ */
+function formatEstadoBadge(estado) {
+    if (estado === 'ACTIVA') {
+        return '<span class="status-badge status-activa">✓ ACTIVA</span>';
+    }
+    return '<span class="status-badge status-sin-setup">○ SIN SETUP</span>';
+}
+
+/**
+ * Format score badge
+ */
+function formatScoreBadge(score) {
+    let badgeClass = 'score-badge';
+    if (score >= 7) {
+        badgeClass += ' score-high';
+    } else if (score >= 4) {
+        badgeClass += ' score-medium';
+    } else {
+        badgeClass += ' score-low';
+    }
+    return `<span class="${badgeClass}">${score}</span>`;
 }
 
 /**
@@ -152,40 +202,6 @@ function createTableRow(snapshot) {
 function formatPrice(price) {
     if (price === null || price === undefined) return '--';
     return price.toFixed(2);
-}
-
-/**
- * Format candle data
- */
-function formatCandle(candle) {
-    if (!candle) {
-        return '<span class="candle-data">--</span>';
-    }
-    
-    const close = (candle.close !== null && candle.close !== undefined) ? candle.close.toFixed(2) : '--';
-    const time = candle.time ? formatCandleTime(candle.time) : '';
-    
-    return `
-        <div class="candle-data">
-            <span class="candle-price">${close}</span>
-            ${time ? `<span class="candle-time">${time}</span>` : ''}
-        </div>
-    `;
-}
-
-/**
- * Format candle time (just time, no date)
- */
-function formatCandleTime(isoString) {
-    try {
-        const date = new Date(isoString);
-        return date.toLocaleTimeString('es-ES', {
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-    } catch (e) {
-        return '';
-    }
 }
 
 /**

@@ -467,3 +467,94 @@ body {
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
 }
+
+/* ========================================
+   PHASE 3 - SMC M15 PRO STYLES
+   ======================================== */
+
+/* Row states */
+.row-activa {
+    background-color: rgba(34, 197, 94, 0.05);
+}
+
+.row-sin-setup {
+    opacity: 0.7;
+}
+
+.row-activa:hover,
+.row-sin-setup:hover {
+    background-color: var(--bg-tertiary);
+}
+
+/* Trend badges */
+.trend-badge {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+/* Event labels */
+.event-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+/* Zone range */
+.zone-range {
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+/* Score badges */
+.score-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.score-high {
+    background-color: var(--accent-green-light);
+    color: var(--accent-green);
+}
+
+.score-medium {
+    background-color: var(--accent-yellow);
+    color: #92400e;
+}
+
+.score-low {
+    background-color: var(--border-color);
+    color: var(--text-tertiary);
+}
+
+/* Indicator badges */
+.indicator-badge {
+    font-size: 11px;
+    font-weight: 600;
+}
+
+/* Estado badges */
+.status-activa {
+    background-color: var(--accent-green-light);
+    color: var(--accent-green);
+    font-weight: 700;
+}
+
+.status-sin-setup {
+    background-color: var(--bg-tertiary);
+    color: var(--text-tertiary);
+    font-weight: 600;
+}
+
+/* Time value */
+.time-value {
+    font-size: 11px;
+    color: var(--text-tertiary);
+}
