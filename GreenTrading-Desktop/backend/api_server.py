@@ -166,7 +166,7 @@ def read_candle_data(symbol: str, timeframe: str) -> Optional[dict]:
     mt5_timeframe = TIMEFRAME_MAP[timeframe]
     
     try:
-        rates = mt5.copy_rates_from_pos(symbol, mt5_timeframe, 1, 1)
+        rates = mt5.copy_rates_from_pos(symbol, mt5_timeframe, 0, 1)
         
         if rates is None or len(rates) == 0:
             return None
@@ -279,7 +279,7 @@ async def get_candle(symbol: str, timeframe: str):
     
     # Read ONE candle from MT5 (most recent completed candle)
     try:
-        rates = mt5.copy_rates_from_pos(symbol, mt5_timeframe, 1, 1)
+        rates = mt5.copy_rates_from_pos(symbol, mt5_timeframe, 0, 1)
         
         if rates is None or len(rates) == 0:
             error = mt5.last_error()

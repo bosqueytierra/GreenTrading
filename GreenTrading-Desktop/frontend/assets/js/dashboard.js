@@ -7,23 +7,6 @@
 const AUTO_REFRESH_INTERVAL = 10000;
 let refreshIntervalId = null;
 
-// Symbols configuration
-const BOOM_SYMBOLS = [
-    "Boom 1000 Index",
-    "Boom 900 Index",
-    "Boom 600 Index",
-    "Boom 500 Index",
-    "Boom 300 Index"
-];
-
-const CRASH_SYMBOLS = [
-    "Crash 1000 Index",
-    "Crash 900 Index",
-    "Crash 600 Index",
-    "Crash 500 Index",
-    "Crash 300 Index"
-];
-
 /**
  * Initialize dashboard
  */

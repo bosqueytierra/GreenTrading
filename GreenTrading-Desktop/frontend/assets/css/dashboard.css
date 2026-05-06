@@ -451,10 +451,6 @@ body {
     }
 }
 
-.indices-section {
-    animation: fadeIn 0.4s ease-out;
-}
-
 /* Loading spinner */
 @keyframes spin {
     to {
