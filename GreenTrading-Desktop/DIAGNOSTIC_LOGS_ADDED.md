@@ -83,6 +83,19 @@ Una vez confirmada la ruta exacta del backend que Electron ejecuta:
 2. `GreenTrading-Desktop/backend/api_server.py` - Log de ruta del servidor
 3. `GreenTrading-Desktop/backend/smc_m15_service.py` - Log de ruta del servicio SMC
 
+## Notas Importantes
+
+⚠️ **Logs Temporales para Diagnóstico**
+
+Estos logs son **temporales** y están diseñados exclusivamente para diagnóstico:
+- Se imprimen cada vez que se inicia el servidor (intencional para confirmar ruta en cada ejecución)
+- `SMC_SERVICE_PATH` se imprime al importar el módulo (intencional para confirmar cuál se importa)
+- Una vez identificado el problema, estos logs pueden ser removidos o condicionados a un modo debug
+
+⚠️ **Aclaración sobre "CWD"**
+
+El log `PYTHON BACKEND CWD` en `main.js` usa `path.dirname()` que devuelve el directorio del script, no el verdadero working directory del proceso. Esto es suficiente para el diagnóstico actual ya que muestra dónde está ubicado el script que Electron intenta ejecutar.
+
 ## NO Tocado
 
 ✅ Frontend (sin cambios)  
