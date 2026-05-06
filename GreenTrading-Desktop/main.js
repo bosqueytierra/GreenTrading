@@ -188,6 +188,7 @@ ipcMain.handle('get-smc-m15-pro-snapshot', async () => {
     }
     
     const data = await response.json();
+    console.log('DEBUG main.js - Raw backend response:', JSON.stringify(data, null, 2));
     return { success: true, data };
   } catch (error) {
     console.error('Error fetching SMC snapshot:', error);

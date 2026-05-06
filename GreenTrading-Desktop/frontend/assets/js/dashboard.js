@@ -55,6 +55,7 @@ async function loadDashboardData() {
         
         const snapshots = result.data;
         console.log(`✅ Loaded ${snapshots.length} SMC snapshots`);
+        console.log('DEBUG loadDashboardData - Raw API response:', JSON.stringify(snapshots, null, 2));
         
         // Update connection status
         updateConnectionStatus(true);
@@ -107,20 +108,24 @@ function renderTable(tableBodyId, data) {
  * Create table row for a symbol snapshot (SMC M15 PRO)
  */
 function createTableRow(snapshot) {
+    // DEBUG: Log the actual data received from backend
+    console.log('DEBUG createTableRow - Snapshot received:', JSON.stringify(snapshot, null, 2));
+    
+    // Destructure with default values to handle missing properties
     const {
-        symbol,
-        price,
-        tendencia_h1,
-        tendencia_m15,
-        ultimo_evento_m15,
-        zona_madre_m15,
-        score,
-        ob,
-        fvg,
-        barrida,
-        estado,
-        updated_at
-    } = snapshot;
+        symbol = 'Unknown',
+        price = null,
+        tendencia_h1 = '--',
+        tendencia_m15 = '--',
+        ultimo_evento_m15 = '--',
+        zona_madre_m15 = { desde: 0, hasta: 0 },
+        score = 0,
+        ob = 'NO',
+        fvg = 'NO',
+        barrida = 'NO',
+        estado = 'SIN SETUP',
+        updated_at = new Date().toISOString()
+    } = snapshot || {};
     
     // Format symbol (shorter name)
     const symbolShort = symbol.replace(' Index', '');
@@ -165,16 +170,25 @@ function createTableRow(snapshot) {
  * Format zone range
  */
 function formatZone(zona) {
-    if (!zona || zona.desde === 0 || zona.hasta === 0) {
+    console.log('DEBUG formatZone - Input:', JSON.stringify(zona));
+    if (!zona || typeof zona !== 'object') {
+        console.log('DEBUG formatZone - No zona or not an object, returning --');
         return '--';
     }
-    return `${zona.desde.toFixed(2)} - ${zona.hasta.toFixed(2)}`;
+    if (!zona.desde || !zona.hasta || zona.desde === 0 || zona.hasta === 0) {
+        console.log('DEBUG formatZone - Zone values are 0 or missing, returning --');
+        return '--';
+    }
+    const result = `${zona.desde.toFixed(2)} - ${zona.hasta.toFixed(2)}`;
+    console.log('DEBUG formatZone - Result:', result);
+    return result;
 }
 
 /**
  * Format estado badge
  */
 function formatEstadoBadge(estado) {
+    console.log('DEBUG formatEstadoBadge - Input:', estado);
     if (estado === 'ACTIVA') {
         return '<span class="status-badge status-activa">✓ ACTIVA</span>';
     }
@@ -185,6 +199,7 @@ function formatEstadoBadge(estado) {
  * Format score badge
  */
 function formatScoreBadge(score) {
+    console.log('DEBUG formatScoreBadge - Input:', score);
     let badgeClass = 'score-badge';
     if (score >= 7) {
         badgeClass += ' score-high';
