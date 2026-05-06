@@ -224,8 +224,8 @@ async def get_symbols_snapshot():
         m15_candle = read_candle_data(symbol, 'M15')
         h1_candle = read_candle_data(symbol, 'H1')
         
-        # Get current price from M1 close
-        price = m1_candle['close'] if m1_candle else None
+        # Get current price from M1 close (defensive coding)
+        price = m1_candle.get('close') if m1_candle else None
         
         snapshot = {
             "symbol": symbol,

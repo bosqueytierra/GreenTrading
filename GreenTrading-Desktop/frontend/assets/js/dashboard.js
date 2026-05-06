@@ -162,7 +162,7 @@ function formatCandle(candle) {
         return '<span class="candle-data">--</span>';
     }
     
-    const close = candle.close ? candle.close.toFixed(2) : '--';
+    const close = (candle.close !== null && candle.close !== undefined) ? candle.close.toFixed(2) : '--';
     const time = candle.time ? formatCandleTime(candle.time) : '';
     
     return `
@@ -259,10 +259,15 @@ function startAutoRefresh() {
         clearInterval(refreshIntervalId);
     }
     
-    // Set new interval
+    // Set new interval with error handling
     refreshIntervalId = setInterval(async () => {
-        console.log('⏰ Auto-refresh triggered');
-        await loadDashboardData();
+        try {
+            console.log('⏰ Auto-refresh triggered');
+            await loadDashboardData();
+        } catch (error) {
+            console.error('❌ Auto-refresh error:', error);
+            // Continue interval even on error
+        }
     }, AUTO_REFRESH_INTERVAL);
     
     console.log(`✅ Auto-refresh started (every ${AUTO_REFRESH_INTERVAL / 1000}s)`);
