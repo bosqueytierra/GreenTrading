@@ -1,27 +1,39 @@
 # GreenTrading Desktop
 
-**Phase 1: Minimal Stack Validation - Proof of Concept**
+**Current Phase: Phase 2 - Basic Dashboard**
 
 Desktop application for trading analysis using MetaTrader 5, built with Electron + Python.
 
 ---
 
-## 🎯 Phase 1 Objectives
+## 🎯 Phase 2 Objectives (✅ COMPLETED)
 
-✅ **ONLY Phase 1 implementation - Stack validation:**
+**Minimal dashboard with real MT5 data:**
 
-1. Electron opens a window
-2. Python backend starts correctly
-3. MT5 connects correctly
-4. Read ONE real candle from MT5
-5. Display it on screen
+1. ✅ Dashboard with sidebar (GreenTrading web style)
+2. ✅ Show 10 indices in tables (5 Boom + 5 Crash)
+3. ✅ Real-time data from MT5: price, M1, M15, H1 candles
+4. ✅ Connection status indicator
+5. ✅ Manual refresh button
+6. ✅ Auto-refresh every 10 seconds
+7. ✅ NO Supabase, NO SQLite, NO SMC strategies yet
+8. ✅ In-memory only (no data storage)
 
-**NOT included in Phase 1:**
-- ❌ No full dashboard
-- ❌ No historical data
-- ❌ No strategies (SMC)
-- ❌ No complex SQLite
-- ❌ No large migrations
+**📖 See [PHASE2_IMPLEMENTATION.md](./PHASE2_IMPLEMENTATION.md) for complete details**
+
+---
+
+## 🎯 Phase 1 Objectives (✅ COMPLETED)
+
+**Stack validation:**
+
+1. ✅ Electron opens a window
+2. ✅ Python backend starts correctly
+3. ✅ MT5 connects correctly
+4. ✅ Read ONE real candle from MT5
+5. ✅ Display it on screen
+
+**Phase 1 test page still available at:** `frontend/pages/index.html`
 
 ---
 
