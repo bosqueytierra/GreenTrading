@@ -6,7 +6,7 @@ fastapi==0.109.1
 uvicorn[standard]==0.27.0
 
 # MetaTrader5 for MT5 connection
-MetaTrader5==5.0.45
+MetaTrader5==5.0.5735
 
 # Additional utilities
 python-dotenv==1.0.0
