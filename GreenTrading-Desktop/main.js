@@ -16,7 +16,7 @@ let pythonProcess = null;
 
 // Python backend configuration
 const PYTHON_BACKEND = {
-  port: 8000,  // Changed from 8765 to 8000 to match the working backend
+  port: 8765,
   host: 'localhost',
   script: path.join(__dirname, 'backend', 'api_server.py')
 };
@@ -188,7 +188,8 @@ ipcMain.handle('get-smc-m15-pro-snapshot', async () => {
     }
     
     const data = await response.json();
-    console.log('DEBUG main.js - Raw backend response:', JSON.stringify(data, null, 2));
+    console.log('🔍 BACKEND RESPONSE - Number of items:', data.length);
+    console.log('🔍 BACKEND RESPONSE - First item:', data[0]);
     return { success: true, data };
   } catch (error) {
     console.error('Error fetching SMC snapshot:', error);
@@ -201,11 +202,10 @@ ipcMain.handle('get-smc-m15-pro-snapshot', async () => {
  */
 app.whenReady().then(async () => {
   try {
-    // CHANGED: Don't start our own Python backend - connect to existing one on port 8000
-    // await startPythonBackend();
-    console.log('⚠️ Skipping Python backend start - using external backend on port 8000');
+    // Start Python backend first
+    await startPythonBackend();
     
-    // Create window
+    // Then create window
     createWindow();
     
     console.log('✅ Application ready');
@@ -219,7 +219,7 @@ app.whenReady().then(async () => {
  * App lifecycle: All windows closed
  */
 app.on('window-all-closed', () => {
-  // stopPythonBackend();  // Commented out - not starting our own backend
+  stopPythonBackend();
   
   if (process.platform !== 'darwin') {
     app.quit();
@@ -239,7 +239,7 @@ app.on('activate', () => {
  * App lifecycle: Before quit
  */
 app.on('before-quit', () => {
-  // stopPythonBackend();  // Commented out - not starting our own backend
+  stopPythonBackend();
 });
 
 console.log('🚀 GreenTrading Desktop starting...');

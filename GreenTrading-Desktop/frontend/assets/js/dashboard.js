@@ -49,13 +49,16 @@ async function loadDashboardData() {
         // Call SMC API through exposed window.api
         const result = await window.api.getSmcM15ProSnapshot();
         
+        console.log('🔍 DEBUG 1 - RESULT OBJECT:', result);
+        console.log('🔍 DEBUG 2 - RESULT.DATA:', result.data);
+        
         if (!result.success) {
             throw new Error(result.error || 'Failed to load SMC data');
         }
         
         const snapshots = result.data;
+        console.log('🔍 DEBUG 3 - SNAPSHOTS ARRAY:', snapshots);
         console.log(`✅ Loaded ${snapshots.length} SMC snapshots`);
-        console.log('DEBUG loadDashboardData - Raw API response:', JSON.stringify(snapshots, null, 2));
         
         // Update connection status
         updateConnectionStatus(true);
@@ -63,6 +66,9 @@ async function loadDashboardData() {
         // Separate into Boom and Crash
         const boomData = snapshots.filter(s => s.symbol.includes('Boom'));
         const crashData = snapshots.filter(s => s.symbol.includes('Crash'));
+        
+        console.log('🔍 DEBUG 4 - BOOM DATA:', boomData);
+        console.log('🔍 DEBUG 5 - CRASH DATA:', crashData);
         
         // Render tables
         renderTable('boomTableBody', boomData);
@@ -108,8 +114,14 @@ function renderTable(tableBodyId, data) {
  * Create table row for a symbol snapshot (SMC M15 PRO)
  */
 function createTableRow(snapshot) {
-    // DEBUG: Log the actual data received from backend
-    console.log('DEBUG createTableRow - Snapshot received:', JSON.stringify(snapshot, null, 2));
+    // DEBUG: Log the actual snapshot object received
+    console.log('🔍 DEBUG 6 - SNAPSHOT OBJECT IN createTableRow:', snapshot);
+    console.log('🔍 DEBUG 7 - snapshot.tendencia_h1:', snapshot.tendencia_h1);
+    console.log('🔍 DEBUG 8 - snapshot.tendencia_m15:', snapshot.tendencia_m15);
+    console.log('🔍 DEBUG 9 - snapshot.ultimo_evento_m15:', snapshot.ultimo_evento_m15);
+    console.log('🔍 DEBUG 10 - snapshot.zona_madre_m15:', snapshot.zona_madre_m15);
+    console.log('🔍 DEBUG 11 - snapshot.score:', snapshot.score);
+    console.log('🔍 DEBUG 12 - snapshot.price:', snapshot.price);
     
     // Destructure with default values to handle missing properties
     const {
@@ -170,17 +182,13 @@ function createTableRow(snapshot) {
  * Format zone range
  */
 function formatZone(zona) {
-    console.log('DEBUG formatZone - Input:', JSON.stringify(zona));
     if (!zona || typeof zona !== 'object') {
-        console.log('DEBUG formatZone - No zona or not an object, returning --');
         return '--';
     }
     if (!zona.desde || !zona.hasta || zona.desde === 0 || zona.hasta === 0) {
-        console.log('DEBUG formatZone - Zone values are 0 or missing, returning --');
         return '--';
     }
     const result = `${zona.desde.toFixed(2)} - ${zona.hasta.toFixed(2)}`;
-    console.log('DEBUG formatZone - Result:', result);
     return result;
 }
 
@@ -188,7 +196,6 @@ function formatZone(zona) {
  * Format estado badge
  */
 function formatEstadoBadge(estado) {
-    console.log('DEBUG formatEstadoBadge - Input:', estado);
     if (estado === 'ACTIVA') {
         return '<span class="status-badge status-activa">✓ ACTIVA</span>';
     }
@@ -199,7 +206,6 @@ function formatEstadoBadge(estado) {
  * Format score badge
  */
 function formatScoreBadge(score) {
-    console.log('DEBUG formatScoreBadge - Input:', score);
     let badgeClass = 'score-badge';
     if (score >= 7) {
         badgeClass += ' score-high';
