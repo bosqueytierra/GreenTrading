@@ -42,29 +42,51 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
     Returns:
         dict with SMC analysis results
     """
-    # If engine not available or no data, return SIN SETUP
+    # If engine not available or no data, return minimal response
     if analyze_smc is None or df_h1 is None or df_m15 is None or len(df_h1) == 0 or len(df_m15) == 0:
         return create_sin_setup_response(symbol)
     
     try:
-        # Run SMC analysis
+        # ===================================================================
+        # NIVEL A: ESTRUCTURA BASE (SIEMPRE SE CALCULA)
+        # ===================================================================
+        # Run SMC analysis - this ALWAYS calculates trends and events
         result = analyze_smc(df_h1, df_m15, df_m1=None)
         
-        # Extract results
+        # Extract BASE STRUCTURE (always available)
         tendencia_h1 = result.get('tendencia_h1', None)
         tendencia_m15 = result.get('tendencia_m15', None)
         eventos_m15 = result.get('eventos_m15', [])
-        fvgs_m15 = result.get('fvgs_m15', [])
-        zona = result.get('zona', None)
         precio_actual = result.get('precio_actual', None)
         
-        # Determine if we have a valid setup
-        if not zona or tendencia_h1 is None:
-            return create_sin_setup_response(symbol, precio_actual)
-        
-        # Get last M15 event
+        # Get last M15 event (always calculate)
         ultimo_evento_m15 = get_last_event(eventos_m15)
         
+        # ===================================================================
+        # NIVEL B: SETUP/ZONA (OPCIONAL)
+        # ===================================================================
+        # Extract zone-related results
+        fvgs_m15 = result.get('fvgs_m15', [])
+        zona = result.get('zona', None)
+        
+        # If NO zone, return BASE STRUCTURE with SIN SETUP for zone part
+        if not zona:
+            return {
+                "symbol": symbol,
+                "price": precio_actual,
+                "tendencia_h1": format_trend(tendencia_h1),
+                "tendencia_m15": format_trend(tendencia_m15),
+                "ultimo_evento_m15": ultimo_evento_m15,
+                "zona_madre_m15": {"desde": 0, "hasta": 0},
+                "score": 0,
+                "ob": "NO",
+                "fvg": "NO",
+                "barrida": "NO",
+                "estado": "SIN SETUP",
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }
+        
+        # If zone exists, calculate full setup
         # Check for OB in zone
         has_ob = check_order_block(zona)
         
@@ -84,10 +106,10 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
             has_barrida=has_barrida
         )
         
-        # Determine state
+        # Determine state (ACTIVA only if we have a zone and score > 0)
         estado = "ACTIVA" if score > 0 else "SIN SETUP"
         
-        # Build response
+        # Build full response with zone
         return {
             "symbol": symbol,
             "price": precio_actual,
@@ -97,7 +119,7 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
             "zona_madre_m15": {
                 "desde": float(zona.get('desde', 0)),
                 "hasta": float(zona.get('hasta', 0))
-            } if zona else {"desde": 0, "hasta": 0},
+            },
             "score": score,
             "ob": "SÍ" if has_ob else "NO",
             "fvg": "SÍ" if has_fvg else "NO",
@@ -113,21 +135,25 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
 
 def create_sin_setup_response(symbol: str, price: float = None) -> dict:
     """
-    Create a SIN SETUP response when no valid setup is found
+    Create a minimal response when analysis cannot be performed at all
+    (engine not available, no data, etc.)
+    
+    This is different from having no zone - when there's no zone but
+    analysis runs, we still return trends and events.
     
     Args:
         symbol: Symbol name
         price: Current price (optional)
     
     Returns:
-        dict with SIN SETUP structure
+        dict with minimal structure
     """
     return {
         "symbol": symbol,
         "price": price,
         "tendencia_h1": "--",
         "tendencia_m15": "--",
-        "ultimo_evento_m15": "SIN SETUP",
+        "ultimo_evento_m15": "--",
         "zona_madre_m15": {"desde": 0, "hasta": 0},
         "score": 0,
         "ob": "NO",
@@ -153,20 +179,29 @@ def get_last_event(eventos: list) -> str:
         eventos: List of structure events
     
     Returns:
-        Event string (BOS ALCISTA, CHOCH BAJISTA, etc.)
+        Event string (BOS_ALCISTA, CHOCH_BAJISTA, etc.)
     """
     if not eventos or len(eventos) == 0:
-        return "SIN EVENTO"
+        return "--"
     
     # Get last event
     last = eventos[-1]
+    
+    # SMC engine returns events with 'evento' field: BOS_ALCISTA, CHOCH_BAJISTA, etc.
+    evento = last.get('evento', '')
+    
+    if evento:
+        return evento.upper()
+    
+    # Fallback: try old format with tipo/sentido (normalize to underscore format)
+    # Old code may have used space separator, but we standardize to underscore
     tipo = last.get('tipo', '')
     sentido = last.get('sentido', '')
     
     if tipo and sentido:
-        return f"{tipo} {sentido}".upper()
+        return f"{tipo}_{sentido}".upper()
     
-    return "SIN EVENTO"
+    return "--"
 
 
 def check_order_block(zona: dict) -> bool:
@@ -268,9 +303,10 @@ def calculate_score(tendencia_h1: str, tendencia_m15: str, ultimo_evento_m15: st
             if tendencia_h1 == tendencia_m15:
                 score += 3
     
-    # Check M15 event
-    if ultimo_evento_m15 and ultimo_evento_m15 not in ["SIN EVENTO", "SIN SETUP", "--"]:
-        score += 2
+    # Check M15 event - valid if it contains BOS or CHOCH
+    if ultimo_evento_m15 and ultimo_evento_m15 not in ["--"]:
+        if "BOS" in ultimo_evento_m15 or "CHOCH" in ultimo_evento_m15:
+            score += 2
     
     # Add confluence indicators
     if has_ob:
