@@ -1,5 +1,7 @@
 # GreenTrading Desktop - Architecture Documentation
 
+> **📖 Important**: Read [ARCHITECTURE_CLARIFICATION.md](./ARCHITECTURE_CLARIFICATION.md) for detailed explanation of candle processing and storage strategy.
+
 ## Event-Driven Architecture (Future Phases)
 
 ### Current Implementation (Phase 1)
@@ -167,13 +169,54 @@ events.on('setup_updated', (setup) => {
 
 ## In-Memory Candle Processing
 
-### Limited Buffer Strategy
+### Key Principle: Engine Reads from MT5
+
+**IMPORTANT CLARIFICATION**: The engine reads candles DIRECTLY from MT5, not from SQLite.
+
+```python
+def analyze_smc(symbol: str) -> dict:
+    """
+    Engine reads from MT5 whatever it needs
+    Process in memory, return results
+    """
+    # 1. Read candles directly from MT5 (as many as needed)
+    m15_candles = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M15, 0, 1000)
+    h1_candles = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_H1, 0, 500)
+    
+    # 2. Convert to DataFrames (in memory)
+    df_m15 = pd.DataFrame(m15_candles)
+    df_h1 = pd.DataFrame(h1_candles)
+    
+    # 3. Run SMC analysis (all in memory)
+    swings = detect_swings(df_m15)
+    bos = detect_bos(swings)
+    zones = detect_zones(df_m15, bos)
+    
+    # 4. Return results (candles discarded after this)
+    return {
+        'zones': zones,
+        'h1_trend': get_trend(df_h1),
+        'm15_event': get_last_event(df_m15)
+    }
+
+# Then save RESULTS (not candles) to SQLite
+def save_analysis_results(results: dict):
+    """
+    Persist analysis results to SQLite
+    Separate from engine logic
+    """
+    for zone in results['zones']:
+        db.insert_setup(zone)  # Save setup, not candles
+```
+
+### Optional: Limited Buffer (For Optimization Only)
 
 ```python
 class CandleBuffer:
     """
-    Limited in-memory buffer for candles
-    NO full database storage
+    OPTIONAL: Limited buffer for recent candles
+    Purpose: Avoid repeated MT5 queries for recent data
+    NOT required for engine to work
     """
     
     def __init__(self, max_candles=500):
@@ -189,65 +232,17 @@ class CandleBuffer:
         
         self.buffers[key].append(candle)
     
-    def get_candles(self, symbol, timeframe, count=None):
-        """Get recent candles from buffer"""
-        key = (symbol, timeframe)
+    def get_or_fetch_from_mt5(self, symbol, timeframe, count):
+        """
+        Try buffer first, fetch from MT5 if needed
+        """
+        buffer = self.get_recent(symbol, timeframe, count)
         
-        if key not in self.buffers:
-            return []
+        if len(buffer) < count:
+            # Buffer miss - read from MT5
+            return mt5.copy_rates_from_pos(symbol, timeframe, 0, count)
         
-        buffer = self.buffers[key]
-        
-        if count is None:
-            return list(buffer)
-        
-        return list(buffer)[-count:]
-    
-    def clear_old(self):
-        """Buffer automatically limits size (deque maxlen)"""
-        pass  # No action needed, deque handles it
-```
-
-### Engine Independence
-
-```python
-# CORRECT: Engine doesn't depend on SQLite
-
-def analyze_smc(candles: List[dict]) -> dict:
-    """
-    Pure SMC analysis - NO database dependency
-    
-    Input: List of candle dictionaries
-    Output: Analysis results dictionary
-    """
-    # 1. Convert to DataFrame
-    df = pd.DataFrame(candles)
-    
-    # 2. Run SMC logic (pure calculation)
-    swings = detect_swings(df)
-    bos = detect_bos(swings)
-    choch = detect_choch(swings)
-    fvg = detect_fvg(df)
-    zones = detect_zones(df, bos, choch, fvg)
-    
-    # 3. Return results (NO database write here)
-    return {
-        'swings': swings,
-        'bos': bos,
-        'choch': choch,
-        'fvg': fvg,
-        'zones': zones
-    }
-
-# Then, separately, save results to SQLite
-def save_analysis_results(results: dict):
-    """
-    Persist analysis results to SQLite
-    Separate from engine logic
-    """
-    for zone in results['zones']:
-        # Save setup to smc_m15_setups table
-        db.insert_setup(zone)
+        return buffer
 ```
 
 ## SQLite Usage (Minimal)
@@ -255,32 +250,69 @@ def save_analysis_results(results: dict):
 ### What to Store
 
 ✅ **Store in SQLite:**
-- Setups (zonas SMC detectadas)
-- Setup history (estado, TP/SL)
-- Metrics and statistics
-- User preferences
+- **Setups** (zonas SMC detectadas) with ALL context at creation
+- **Setup history** (estado changes, TP/SL hits, results)
+- **Metrics and statistics** (TP/SL counts, profit/loss)
+- **User preferences**
+- **OPTIONAL**: Limited buffer of recent candles (300-500 max per symbol/timeframe)
 
 ❌ **DON'T Store in SQLite:**
-- Raw market candles (too much data)
-- Intermediate calculations
-- Temporary analysis data
+- ❌ ALL historical candles (engine reads from MT5)
+- ❌ Intermediate calculations
+- ❌ Temporary analysis data
+
+### Critical Point: History is Pre-Calculated
+
+**History does NOT depend on recalculating old candles.**
+
+When a setup is created, we store:
+- Zone boundaries
+- Context indicators (H1 trend, M15 event, etc.)
+- Timestamps
+- State transitions
+- Final results (TP/SL)
+
+When viewing history, we display stored results directly - NO recalculation needed.
+
+**Example**: A setup from 2 weeks ago shows "TP: +8 points" because we stored that result when it happened. We don't need to re-read old candles to know this.
 
 ### Tables (Future)
 
 ```sql
--- Setups only (no market_candles table)
+-- Setups with complete pre-calculated context
 CREATE TABLE smc_m15_setups (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     symbol TEXT NOT NULL,
     timeframe TEXT NOT NULL,
+    strategy TEXT DEFAULT 'SMC_M15_PRO',
+    
+    -- Timestamps
     setup_time TIMESTAMP NOT NULL,
-    estado TEXT NOT NULL,  -- ACTIVA, EN_ZONA, PROFIT, TP, SL
-    zona_high REAL,
-    zona_low REAL,
+    entry_time TIMESTAMP,
+    closed_at TIMESTAMP,
+    
+    -- Zone definition
+    zona_high REAL NOT NULL,
+    zona_low REAL NOT NULL,
+    zona_size_puntos REAL,
+    
+    -- Trade parameters
     entry_price REAL,
     tp_price REAL,
     sl_price REAL,
+    
+    -- State
+    estado TEXT NOT NULL,  -- ACTIVA, EN_ZONA, PROFIT, PAUSADA, TP, SL
+    motivo_cierre TEXT,
     resultado_puntos REAL,
+    
+    -- Context at creation (pre-calculated, stored once)
+    h1_trend TEXT,           -- ALCISTA/BAJISTA
+    m15_event TEXT,          -- BOS/CHOCH
+    m15_trend TEXT,          -- ALCISTA/BAJISTA
+    fvg_present BOOLEAN,
+    
+    -- Metadata
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -288,6 +320,21 @@ CREATE TABLE smc_m15_setups (
 -- Similar tables for other strategies
 -- smc_h1_m15_setups
 -- smc_tendency_h1_m15_setups
+
+-- OPTIONAL: Recent candles buffer (max 300-500 per symbol/timeframe)
+CREATE TABLE candle_buffer (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol TEXT NOT NULL,
+    timeframe TEXT NOT NULL,
+    timestamp TIMESTAMP NOT NULL,
+    open REAL,
+    high REAL,
+    low REAL,
+    close REAL,
+    tick_volume INTEGER,
+    UNIQUE(symbol, timeframe, timestamp)
+);
+-- Note: Application enforces limit (keeps only last 500 per symbol/timeframe)
 
 -- Metrics
 CREATE TABLE metrics (
@@ -311,9 +358,10 @@ CREATE TABLE metrics (
 
 ### 🔄 Phase 2 (Next)
 - Implement WebSocket events
-- Add limited candle buffer (300-500 candles)
+- Engine reads candles directly from MT5 (as many as needed)
 - Integrate SMC engines (in-memory processing)
-- Add minimal SQLite (setups only)
+- Add minimal SQLite (setups with pre-calculated context)
+- OPTIONAL: Add limited candle buffer for optimization (300-500)
 - Real-time updates without polling
 
 ### 📋 Phase 3 (Future)

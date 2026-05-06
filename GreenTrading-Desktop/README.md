@@ -27,19 +27,23 @@ Desktop application for trading analysis using MetaTrader 5, built with Electron
 
 ## 🏗️ Architecture
 
+> **📖 IMPORTANT**: Read [ARCHITECTURE_CLARIFICATION.md](./ARCHITECTURE_CLARIFICATION.md) for detailed explanation of data flow and storage strategy.
+
 ### Corrected Architecture (based on feedback):
 
 1. **NO almacenar todas las velas en SQLite**
-   - Las velas se leen desde MT5
+   - Las velas se leen desde MT5 **directamente por el engine**
+   - Engine puede leer las velas que necesite (ej: 500-1000+)
    - Se procesan en memoria
-   - Se descartan
-   - SQLite solo guarda: setups, historial, estados, TP/SL, métricas
-   - Buffer limitado: máximo 300-500 velas por símbolo/timeframe
+   - Se descartan después del procesamiento
+   - SQLite guarda: setups con contexto pre-calculado, historial, estados, TP/SL, métricas
+   - OPCIONAL: Buffer limitado de 300-500 velas recientes para optimización
 
 2. **Engine NO depende de SQLite**
-   - Flujo correcto: `MT5 → engine → resultado → SQLite`
-   - NO: `MT5 → SQLite → engine`
-   - SQLite es persistencia, NO motor operativo
+   - Flujo correcto: `MT5 → engine (lee desde MT5) → resultado → SQLite`
+   - Engine lee directamente de MT5 las velas que necesita
+   - SQLite solo recibe resultados procesados (setups, estados)
+   - Historial NO requiere recalcular velas antiguas (se guarda pre-calculado)
 
 3. **Arquitectura event-driven** (no polling)
    - Python detecta cambios
