@@ -193,7 +193,8 @@ def get_last_event(eventos: list) -> str:
     if evento:
         return evento.upper()
     
-    # Fallback: try old format with tipo/sentido
+    # Fallback: try old format with tipo/sentido (normalize to underscore format)
+    # Old code may have used space separator, but we standardize to underscore
     tipo = last.get('tipo', '')
     sentido = last.get('sentido', '')
     
