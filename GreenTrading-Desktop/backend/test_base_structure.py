@@ -3,37 +3,24 @@
 Test script to verify FASE 3 correction:
 - BASE STRUCTURE is always calculated (H1 trend, M15 trend, last M15 event)
 - ZONE is optional (shows SIN SETUP when not present)
+
+Updated for direct SMC implementation (no external engine dependency)
 """
 
 import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../'))
 
 import pandas as pd
 from datetime import datetime
 
-# Import SMC service
+# Import SMC service directly
 try:
-    from GreenTrading.GreenTrading.Desktop.backend.smc_m15_service import analyze_symbol_smc
-    print("✅ SMC service imported")
-except ImportError:
-    try:
-        # Try relative import
-        sys.path.insert(0, os.path.dirname(__file__))
-        from smc_m15_service import analyze_symbol_smc
-        print("✅ SMC service imported (relative)")
-    except ImportError as e:
-        print(f"❌ SMC service import failed: {e}")
-        sys.exit(1)
-
-# Import SMC engine
-try:
-    from src.smc_engine import analyze_smc
-    print("✅ SMC engine imported")
+    sys.path.insert(0, os.path.dirname(__file__))
+    from smc_m15_service import analyze_symbol_smc
+    print("✅ SMC service imported (direct implementation)")
 except ImportError as e:
-    print(f"⚠️  SMC engine not available: {e}")
-    print("   Will test with mock data")
-    analyze_smc = None
+    print(f"❌ SMC service import failed: {e}")
+    sys.exit(1)
 
 
 def create_mock_candles(n=100):
@@ -52,14 +39,10 @@ def create_mock_candles(n=100):
     return pd.DataFrame(data)
 
 
-def test_with_real_engine():
-    """Test with real SMC engine (if available)"""
-    if analyze_smc is None:
-        print("⏭️  Skipping real engine test (engine not available)")
-        return
-    
+def test_with_direct_implementation():
+    """Test with direct SMC implementation (always available now)"""
     print("\n" + "="*60)
-    print("TEST 1: With Real SMC Engine")
+    print("TEST 1: With Direct SMC Implementation")
     print("="*60)
     
     # Create mock candles
@@ -162,10 +145,11 @@ def main():
     print("="*60)
     print("FASE 3 CORRECCIÓN TEST")
     print("Verifying BASE STRUCTURE always calculated")
+    print("Direct SMC Implementation (no external dependencies)")
     print("="*60)
     
     try:
-        test_with_real_engine()
+        test_with_direct_implementation()
         test_no_data()
         test_response_structure()
         
@@ -176,6 +160,7 @@ def main():
         print("✅ BASE STRUCTURE (H1/M15 trends, last M15 event) ALWAYS calculated")
         print("✅ ZONE/SETUP is optional (SIN SETUP when not present)")
         print("✅ Response structure is complete and correct")
+        print("✅ Direct implementation works without external SMC engine")
         
     except AssertionError as e:
         print(f"\n❌ TEST FAILED: {e}")
