@@ -76,6 +76,9 @@ async function loadDashboardData() {
         renderTable('boomTableBody', boomData);
         renderTable('crashTableBody', crashData);
         
+        // Sync to Supabase (background, no blocking)
+        syncSetupsWithSupabase(snapshots);
+        
         // Update timestamp
         updateLastUpdateTime();
         
@@ -83,6 +86,72 @@ async function loadDashboardData() {
         console.error('❌ Error loading SMC dashboard data:', error);
         updateConnectionStatus(false);
         showError(error.message);
+    }
+}
+
+/**
+ * Sync setups with Supabase (background task)
+ * 
+ * Para cada snapshot con zona válida:
+ * - Envía a backend /api/setups
+ * - Backend decide si crear o actualizar
+ */
+async function syncSetupsWithSupabase(snapshots) {
+    try {
+        for (const snapshot of snapshots) {
+            // Only sync setups with valid zones (not SIN SETUP)
+            if (snapshot.estado === 'SIN SETUP' || snapshot.estado_dashboard === 'SIN_SETUP') {
+                continue;
+            }
+            
+            // Skip if missing required fields
+            if (!snapshot.entrada || !snapshot.stoploss) {
+                continue;
+            }
+            
+            // Build setup data
+            const setupData = {
+                strategy_id: 'SMC_M15_PRO',
+                strategy_name: 'SMC M15 PRO',
+                symbol: snapshot.symbol,
+                tendencia_h1: snapshot.tendencia_h1 || '--',
+                tendencia_m15: snapshot.tendencia_m15 || '--',
+                ultimo_evento_m15: snapshot.ultimo_evento_m15 || '--',
+                entrada: snapshot.entrada,
+                stoploss: snapshot.stoploss,
+                tp_1_1: snapshot.tp_1_1,
+                score: snapshot.score || 0,
+                ob: snapshot.ob === 'SÍ' || snapshot.ob === 'SI',
+                fvg: snapshot.fvg === 'SÍ' || snapshot.fvg === 'SI',
+                barrida: snapshot.barrida === 'SÍ' || snapshot.barrida === 'SI',
+                estado: snapshot.estado_historial || snapshot.estado_dashboard || 'ESPERANDO_ENTRADA',
+                estado_dashboard: snapshot.estado_dashboard || 'ESPERANDO_ENTRADA',
+                precio_detectado: snapshot.price,
+                precio_actual: snapshot.price
+            };
+            
+            // Send to backend (non-blocking)
+            fetch('http://127.0.0.1:8765/api/setups', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(setupData)
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    console.log(`✅ Setup synced: ${snapshot.symbol} - ${result.action}`);
+                } else {
+                    console.warn(`⚠️ Setup sync failed: ${snapshot.symbol}`, result);
+                }
+            })
+            .catch(error => {
+                console.error(`❌ Error syncing setup: ${snapshot.symbol}`, error);
+            });
+        }
+    } catch (error) {
+        console.error('❌ Error in syncSetupsWithSupabase:', error);
     }
 }
 
