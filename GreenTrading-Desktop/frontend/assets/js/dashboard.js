@@ -5,8 +5,8 @@ console.log("DASHBOARD_JS_VERSION: DEBUG_MAPPING_V2");
  * Phase 3: SMC M15 PRO dashboard with real-time SMC analysis
  */
 
-// Auto-refresh interval (5 seconds)
-const AUTO_REFRESH_INTERVAL = 5000;
+// Auto-refresh interval (1 second)
+const AUTO_REFRESH_INTERVAL = 1000;
 let refreshIntervalId = null;
 
 /**
