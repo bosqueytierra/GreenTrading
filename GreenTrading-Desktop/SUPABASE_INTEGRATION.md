@@ -4,13 +4,21 @@
 
 Esta integración permite persistir los setups detectados por SMC M15 PRO en Supabase, con una pantalla de historial que se actualiza en tiempo real tipo terminal de trading profesional.
 
+**ARQUITECTURA ACTUALIZADA:**
+- ✅ Sincronización en **backend** (NO en frontend)
+- ✅ Smart sync con debounce (evita spam updates)
+- ✅ Frontend solo renderiza (sin lógica de sync)
+- ✅ Sin emojis en Python (compatible con Windows CP1252)
+
 ## 🎯 Características Principales
 
 ### Dashboard
 - Detección de zonas SMC M15 PRO cada 1 segundo
 - Cálculo automático de entrada, stoploss y TP 1:1
-- Sincronización automática con Supabase en background
+- **Sincronización automática con Supabase en BACKEND**
+- **Smart sync: solo actualiza cuando hay cambios relevantes**
 - Zero impacto visual en el dashboard actual
+- Frontend solo renderiza datos
 
 ### Historial
 - **Auto-refresh cada 5 segundos** con actualización incremental silenciosa
@@ -20,6 +28,19 @@ Esta integración permite persistir los setups detectados por SMC M15 PRO en Sup
 - **NO reconstruye DOM completo**: Zero flickering
 - **Transiciones CSS suaves**: Cambios visuales profesionales
 - **Indicador live discreto**: Punto pulsante sin loaders grandes
+
+### Smart Sync / Debounce
+- **Cache global** por símbolo con último estado
+- **Solo UPDATE cuando cambian campos críticos**:
+  - estado
+  - entrada
+  - stoploss
+  - tp_1_1
+  - score
+  - zona_desde/zona_hasta
+  - precio (cambio >1%)
+- **Evita spam updates innecesarios**
+- **Logs informativos** de triggers de sync
 
 ### Estados
 
@@ -134,26 +155,62 @@ npm start
 ### Navegación
 
 1. **Dashboard**: Pantalla principal que se actualiza cada 1 segundo
-2. **Historial**: Click en "📜 Historial" en el sidebar
+2. **Historial**: Click en "Historial" en el sidebar
    - Auto-refresh cada 5 segundos (silencioso)
    - Filtros por símbolo, estado, fechas
    - Estadísticas TP/SL por símbolo
 
-## 📊 Flujo de Datos
+## 📊 Flujo de Datos (ARQUITECTURA ACTUALIZADA)
 
 ```
-MT5 → Backend API → SMC Service → Dashboard
-                         ↓
-                    Supabase
-                         ↓
-                    Historial
+MT5 → api_server.py → smc_m15_service.py
+                            ↓
+                      analyze_symbol_smc()
+                            ↓
+                      sync_setup_to_supabase()  ← Smart sync con debounce
+                            ↓
+                      supabase_service.py
+                            ↓
+                        Supabase DB
+                            ↓
+                      Historial (refresh 5s)
+                            ↓
+                      Frontend (solo renderiza)
 ```
 
-1. **Dashboard detecta zona válida** (cada 1s)
-2. **SMC service calcula** entrada, stoploss, TP, estados
-3. **Dashboard sincroniza con Supabase** (background, no bloquea UI)
-4. **Historial lee desde Supabase** (cada 5s)
-5. **Historial actualiza solo celdas cambiadas** (diff-based)
+**Flujo Detallado:**
+
+1. **Backend analiza símbolo** (cada 1s por cada símbolo)
+   - `api_server.py` llama `smc_m15_service.analyze_symbol_smc()`
+   
+2. **SMC service calcula setup**
+   - Entrada, stoploss, TP 1:1
+   - Estados dashboard e historial
+   - Score, zona, estructuras
+
+3. **Smart sync evalúa cambios**
+   - Compara con cache de estado previo
+   - Solo sincroniza si hay cambios relevantes:
+     - estado
+     - entrada/stoploss/tp
+     - score
+     - zona
+     - precio (>1% cambio)
+
+4. **Backend sincroniza con Supabase** (si hay cambios)
+   - `sync_setup_to_supabase()` en smc_m15_service
+   - Busca setup activo existente
+   - CREATE nuevo o UPDATE existente
+
+5. **Historial lee desde Supabase** (cada 5s)
+   - Diff-based update: solo actualiza celdas cambiadas
+   - Preserva scroll y filtros
+   - Zero flickering
+
+6. **Frontend solo renderiza**
+   - NO sincroniza con Supabase
+   - NO lógica de negocio
+   - Solo presentación
 
 ## 🔧 API Endpoints
 
@@ -245,11 +302,54 @@ La pantalla de historial está diseñada para sentirse como un terminal de tradi
 
 ## 📝 Notas Importantes
 
-1. **NO se guardan velas en Supabase**: Solo setups con contexto pre-calculado
-2. **NO se agrega SQLite**: Supabase es la única base de datos
-3. **MT5 sigue siendo la fuente de datos**: Las velas se leen desde MT5
-4. **Lógica SMC base NO se toca**: Solo se agregan cálculos de estados
-5. **Dashboard NO cambia visualmente**: La sincronización es background
+1. **Sincronización en BACKEND**: La sincronización ocurre en `smc_m15_service.py`, NO en frontend
+2. **Smart sync implementado**: Solo actualiza cuando hay cambios relevantes (ver sección Smart Sync)
+3. **NO se guardan velas en Supabase**: Solo setups con contexto pre-calculado
+4. **NO se agrega SQLite**: Supabase es la única base de datos
+5. **MT5 sigue siendo la fuente de datos**: Las velas se leen desde MT5
+6. **Frontend es read-only**: Solo renderiza, no sincroniza ni modifica datos
+7. **Sin emojis en Python**: Compatible con Windows CP1252 (evita problemas de encoding)
+
+## 🎯 Smart Sync / Debounce
+
+La sincronización inteligente evita spam updates innecesarios:
+
+### Algoritmo:
+
+1. **Cache global por símbolo** (`_setup_cache` en smc_m15_service.py)
+2. **Comparación de campos críticos**:
+   - estado
+   - entrada
+   - stoploss
+   - tp_1_1
+   - score
+   - zona_desde / zona_hasta
+   - precio_actual (solo si cambio >1%)
+
+3. **Solo UPDATE si hay cambios**:
+   - Primera vez: siempre sincroniza
+   - Actualizaciones: solo si algún campo crítico cambió
+   - Log informativo: "SYNC TRIGGER: {symbol} - {field} changed"
+
+### Beneficios:
+
+- ✅ Reduce carga en Supabase
+- ✅ Evita updates innecesarios cada segundo
+- ✅ Solo actualiza cuando hay cambios reales
+- ✅ Logs claros de qué triggerea el sync
+- ✅ Performance optimizado
+
+### Ejemplo de logs:
+
+```
+SYNC TRIGGER: Boom 1000 Index - estado changed from ESPERANDO_ENTRADA to EN_ZONA
+SUPABASE SYNC: Updated Boom 1000 Index
+
+SYNC TRIGGER: Crash 500 Index - price changed 1.5%
+SUPABASE SYNC: Updated Crash 500 Index
+
+(No sync si no hay cambios relevantes)
+```
 
 ## 🐛 Troubleshooting
 
@@ -268,9 +368,15 @@ La pantalla de historial está diseñada para sentirse como un terminal de tradi
 - Verificar que no hay errores de CORS
 
 ### Los setups no se sincronizan
-- Verificar logs del backend Python
-- Verificar que el dashboard detecta zonas válidas
+- Verificar logs del backend Python: buscar "SYNC TRIGGER" y "SUPABASE SYNC"
+- Verificar que el análisis SMC detecta zonas válidas (estado != SIN SETUP)
 - Verificar que los setups tienen `entrada` y `stoploss` calculados
+- Verificar que hay cambios relevantes (smart sync solo actualiza si cambia algo)
+
+### "UnicodeEncodeError" en Windows
+- Este problema fue RESUELTO: ya no hay emojis en prints Python
+- Todos los archivos ahora usan ASCII puro (compatible con CP1252)
+- Si ves este error, verifica que estás usando la última versión del código
 
 ## 📚 Archivos Modificados
 
@@ -283,10 +389,11 @@ La pantalla de historial está diseñada para sentirse como un terminal de tradi
 
 ### Archivos Modificados:
 - `backend/requirements.txt` - Agregado supabase==2.3.0
-- `backend/api_server.py` - Agregados endpoints REST
-- `backend/smc_m15_service.py` - Agregados cálculos de niveles y estados
+- `backend/api_server.py` - Agregados endpoints REST, inicialización Supabase, sin emojis
+- `backend/smc_m15_service.py` - Agregados cálculos de niveles, estados, smart sync
+- `backend/supabase_service.py` - Sin emojis en prints
 - `frontend/pages/dashboard.html` - Agregado link a historial
-- `frontend/assets/js/dashboard.js` - Agregada sincronización Supabase
+- `frontend/assets/js/dashboard.js` - **REMOVIDA** sincronización (ahora en backend)
 
 ## 🔐 Seguridad
 
