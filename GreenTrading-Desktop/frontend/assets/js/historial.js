@@ -1,0 +1,549 @@
+console.log("HISTORIAL_JS_VERSION: SILENT_INCREMENTAL_UPDATE_V1");
+
+/**
+ * GreenTrading Desktop - Historial JavaScript
+ * Actualización incremental silenciosa tipo terminal trading profesional
+ * 
+ * Características:
+ * - Auto-refresh cada 5 segundos
+ * - Diff-based updates (solo celdas que cambiaron)
+ * - NO reconstrucción completa del DOM
+ * - Preserva scroll position
+ * - Preserva filtros activos
+ * - Transiciones CSS suaves
+ * - Sin loaders grandes
+ * - Indicador discreto de conexión live
+ */
+
+// Auto-refresh interval (5 seconds)
+const AUTO_REFRESH_INTERVAL = 5000;
+let refreshIntervalId = null;
+
+// Current data cache (para diff detection)
+let currentData = [];
+
+// Current filters
+let currentFilters = {
+    symbol: 'all',
+    estado: 'all',
+    fromDate: null,
+    toDate: null
+};
+
+/**
+ * Initialize historial page
+ */
+async function initHistorial() {
+    console.log('🚀 Initializing GreenTrading Desktop Historial...');
+    
+    // Setup event listeners
+    setupEventListeners();
+    
+    // Initial data load (primera vez sí construye tabla completa)
+    await loadHistorialData(true);
+    
+    // Start auto-refresh
+    startAutoRefresh();
+    
+    console.log('✅ Historial initialized with silent incremental updates');
+}
+
+/**
+ * Setup event listeners
+ */
+function setupEventListeners() {
+    // Manual refresh button
+    const refreshBtn = document.getElementById('refreshBtn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', async () => {
+            console.log('Manual refresh triggered');
+            await loadHistorialData(false); // Incremental update
+        });
+    }
+    
+    // Filter: Symbol
+    const symbolFilter = document.getElementById('symbolFilter');
+    if (symbolFilter) {
+        symbolFilter.addEventListener('change', async (e) => {
+            currentFilters.symbol = e.target.value;
+            console.log('Symbol filter changed:', currentFilters.symbol);
+            await loadHistorialData(true); // Full reload on filter change
+        });
+    }
+    
+    // Filter: Estado
+    const estadoFilter = document.getElementById('estadoFilter');
+    if (estadoFilter) {
+        estadoFilter.addEventListener('change', async (e) => {
+            currentFilters.estado = e.target.value;
+            console.log('Estado filter changed:', currentFilters.estado);
+            await loadHistorialData(true); // Full reload on filter change
+        });
+    }
+    
+    // Date filters
+    const fromDateFilter = document.getElementById('fromDate');
+    const toDateFilter = document.getElementById('toDate');
+    
+    if (fromDateFilter) {
+        fromDateFilter.addEventListener('change', async (e) => {
+            currentFilters.fromDate = e.target.value;
+            console.log('From date changed:', currentFilters.fromDate);
+            await loadHistorialData(true); // Full reload on filter change
+        });
+    }
+    
+    if (toDateFilter) {
+        toDateFilter.addEventListener('change', async (e) => {
+            currentFilters.toDate = e.target.value;
+            console.log('To date changed:', currentFilters.toDate);
+            await loadHistorialData(true); // Full reload on filter change
+        });
+    }
+}
+
+/**
+ * Load historial data from backend
+ * 
+ * @param {boolean} fullRebuild - Si true, reconstruye tabla completa. Si false, hace update incremental.
+ */
+async function loadHistorialData(fullRebuild = false) {
+    try {
+        // Build query parameters
+        const params = new URLSearchParams();
+        if (currentFilters.symbol !== 'all') {
+            params.append('symbol', currentFilters.symbol);
+        }
+        if (currentFilters.estado !== 'all') {
+            params.append('estado', currentFilters.estado);
+        }
+        if (currentFilters.fromDate) {
+            params.append('from_date', currentFilters.fromDate);
+        }
+        if (currentFilters.toDate) {
+            params.append('to_date', currentFilters.toDate);
+        }
+        params.append('limit', '200');
+        
+        // Call API through exposed window.api
+        const url = `http://127.0.0.1:8765/api/setups/history?${params.toString()}`;
+        console.log(`📊 Loading historial data: ${url}`);
+        
+        const response = await fetch(url);
+        const result = await response.json();
+        
+        if (!result.success) {
+            throw new Error(result.error || 'Failed to load historial data');
+        }
+        
+        const newData = result.data || [];
+        console.log(`✅ Loaded ${newData.length} setups from historial`);
+        
+        if (fullRebuild) {
+            // First load or filter change: rebuild table
+            console.log('📝 Full table rebuild');
+            buildTable(newData);
+            currentData = newData;
+        } else {
+            // Incremental update: only update changed cells
+            console.log('🔄 Incremental silent update');
+            updateTableIncremental(newData);
+            currentData = newData;
+        }
+        
+        // Update statistics
+        updateStatistics(newData);
+        
+        // Update timestamp
+        updateLastUpdateTime();
+        
+        // Update live indicator
+        updateLiveIndicator(true);
+        
+    } catch (error) {
+        console.error('❌ Error loading historial data:', error);
+        updateLiveIndicator(false);
+        showError(error.message);
+    }
+}
+
+/**
+ * Build complete table (used on first load or filter change)
+ */
+function buildTable(data) {
+    const tbody = document.getElementById('historialTableBody');
+    if (!tbody) {
+        console.error('Table body not found');
+        return;
+    }
+    
+    // Save current scroll position
+    const container = tbody.closest('.table-container');
+    const scrollTop = container ? container.scrollTop : 0;
+    
+    // Clear table
+    tbody.innerHTML = '';
+    
+    if (data.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="12" style="text-align: center; padding: 20px; color: #6b7280;">
+                    No hay setups en el historial
+                </td>
+            </tr>
+        `;
+        return;
+    }
+    
+    // Build rows
+    data.forEach(setup => {
+        const row = createTableRow(setup);
+        tbody.appendChild(row);
+    });
+    
+    // Restore scroll position
+    if (container) {
+        container.scrollTop = scrollTop;
+    }
+}
+
+/**
+ * Update table incrementally (silent update - NO full rebuild)
+ * 
+ * Estrategia:
+ * 1. Comparar newData con currentData
+ * 2. Identificar cambios (por ID)
+ * 3. Actualizar solo las celdas que cambiaron
+ * 4. NO tocar el DOM innecesariamente
+ * 5. Aplicar transiciones CSS suaves
+ */
+function updateTableIncremental(newData) {
+    const tbody = document.getElementById('historialTableBody');
+    if (!tbody) return;
+    
+    // Save scroll position
+    const container = tbody.closest('.table-container');
+    const scrollTop = container ? container.scrollTop : 0;
+    
+    // Create maps for fast lookup
+    const currentMap = new Map(currentData.map(s => [s.id, s]));
+    const newMap = new Map(newData.map(s => [s.id, s]));
+    
+    // Update existing rows
+    newData.forEach(newSetup => {
+        const setupId = newSetup.id;
+        const oldSetup = currentMap.get(setupId);
+        
+        // Find existing row
+        const row = tbody.querySelector(`tr[data-setup-id="${setupId}"]`);
+        
+        if (!row) {
+            // New setup: add row at top (silent insert)
+            const newRow = createTableRow(newSetup);
+            tbody.insertBefore(newRow, tbody.firstChild);
+            // Fade in animation
+            setTimeout(() => newRow.classList.add('row-fade-in'), 10);
+            return;
+        }
+        
+        if (!oldSetup) {
+            // Should not happen, but update full row
+            updateRowCells(row, newSetup);
+            return;
+        }
+        
+        // Compare fields and update only changed cells
+        updateCellIfChanged(row, 'precio-actual', oldSetup.precio_actual, newSetup.precio_actual);
+        updateCellIfChanged(row, 'estado-dashboard', oldSetup.estado_dashboard, newSetup.estado_dashboard, (cell, value) => {
+            cell.textContent = value || '--';
+            cell.className = 'estado-badge ' + getEstadoBadgeClass(value);
+        });
+        updateCellIfChanged(row, 'estado', oldSetup.estado, newSetup.estado, (cell, value) => {
+            cell.textContent = value || '--';
+            cell.className = 'estado-badge ' + getEstadoBadgeClass(value);
+        });
+        updateCellIfChanged(row, 'resultado-puntos', oldSetup.resultado_puntos, newSetup.resultado_puntos, (cell, value) => {
+            const formatted = value != null ? (value > 0 ? `+${value}` : value) : '--';
+            cell.textContent = formatted;
+            cell.className = value > 0 ? 'resultado-positive' : value < 0 ? 'resultado-negative' : '';
+        });
+        updateCellIfChanged(row, 'updated-at', oldSetup.updated_at, newSetup.updated_at, (cell, value) => {
+            cell.textContent = formatTimestamp(value);
+        });
+    });
+    
+    // Remove deleted rows (setups that no longer match filter)
+    currentData.forEach(oldSetup => {
+        if (!newMap.has(oldSetup.id)) {
+            const row = tbody.querySelector(`tr[data-setup-id="${oldSetup.id}"]`);
+            if (row) {
+                row.classList.add('row-fade-out');
+                setTimeout(() => row.remove(), 300);
+            }
+        }
+    });
+    
+    // Restore scroll position (mantener posición visual)
+    if (container) {
+        container.scrollTop = scrollTop;
+    }
+}
+
+/**
+ * Update a cell if value changed
+ * 
+ * @param {HTMLElement} row - Table row
+ * @param {string} cellClass - Cell class name
+ * @param {any} oldValue - Old value
+ * @param {any} newValue - New value
+ * @param {Function} updateFn - Optional custom update function
+ */
+function updateCellIfChanged(row, cellClass, oldValue, newValue, updateFn = null) {
+    if (oldValue === newValue) return;
+    
+    const cell = row.querySelector(`.${cellClass}`);
+    if (!cell) return;
+    
+    // Add highlight animation
+    cell.classList.add('cell-update-highlight');
+    setTimeout(() => cell.classList.remove('cell-update-highlight'), 600);
+    
+    // Update value
+    if (updateFn) {
+        updateFn(cell, newValue);
+    } else {
+        cell.textContent = newValue != null ? newValue : '--';
+    }
+}
+
+/**
+ * Update all cells in a row (fallback)
+ */
+function updateRowCells(row, setup) {
+    row.innerHTML = createTableRow(setup).innerHTML;
+}
+
+/**
+ * Create a table row for a setup
+ */
+function createTableRow(setup) {
+    const tr = document.createElement('tr');
+    tr.setAttribute('data-setup-id', setup.id);
+    
+    const estadoDashboardClass = getEstadoBadgeClass(setup.estado_dashboard);
+    const estadoClass = getEstadoBadgeClass(setup.estado);
+    
+    const resultadoPuntos = setup.resultado_puntos != null 
+        ? (setup.resultado_puntos > 0 ? `+${setup.resultado_puntos}` : setup.resultado_puntos)
+        : '--';
+    const resultadoClass = setup.resultado_puntos > 0 ? 'resultado-positive' : 
+                          setup.resultado_puntos < 0 ? 'resultado-negative' : '';
+    
+    tr.innerHTML = `
+        <td>${formatDate(setup.created_at)}</td>
+        <td>${setup.symbol || '--'}</td>
+        <td>${setup.strategy_name || '--'}</td>
+        <td>${setup.entrada != null ? setup.entrada.toFixed(2) : '--'}</td>
+        <td>${setup.stoploss != null ? setup.stoploss.toFixed(2) : '--'}</td>
+        <td>${setup.tp_1_1 != null ? setup.tp_1_1.toFixed(2) : '--'}</td>
+        <td class="precio-actual">${setup.precio_actual != null ? setup.precio_actual.toFixed(2) : '--'}</td>
+        <td><span class="estado-badge ${estadoDashboardClass} estado-dashboard">${setup.estado_dashboard || '--'}</span></td>
+        <td><span class="estado-badge ${estadoClass} estado">${setup.estado || '--'}</span></td>
+        <td class="resultado-puntos ${resultadoClass}">${resultadoPuntos}</td>
+        <td>
+            ${setup.tendencia_h1 || '--'} / ${setup.tendencia_m15 || '--'}<br>
+            <small>${setup.ultimo_evento_m15 || '--'}</small>
+        </td>
+        <td class="updated-at">${formatTimestamp(setup.updated_at)}</td>
+    `;
+    
+    return tr;
+}
+
+/**
+ * Get badge class for estado
+ */
+function getEstadoBadgeClass(estado) {
+    if (!estado) return '';
+    
+    const estadoMap = {
+        'SIN_SETUP': 'badge-gray',
+        'ESPERANDO_ENTRADA': 'badge-blue',
+        'LLEGANDO_A_ZONA': 'badge-yellow',
+        'EN_ZONA': 'badge-purple',
+        'PROFIT': 'badge-green',
+        'TP': 'badge-green-solid',
+        'SL': 'badge-red',
+        'DESCARTADA': 'badge-gray'
+    };
+    
+    return estadoMap[estado] || 'badge-gray';
+}
+
+/**
+ * Format date (DD/MM/YYYY HH:MM)
+ */
+function formatDate(isoString) {
+    if (!isoString) return '--';
+    const date = new Date(isoString);
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${day}/${month}/${year} ${hours}:${minutes}`;
+}
+
+/**
+ * Format timestamp (HH:MM:SS)
+ */
+function formatTimestamp(isoString) {
+    if (!isoString) return '--';
+    const date = new Date(isoString);
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    return `${hours}:${minutes}:${seconds}`;
+}
+
+/**
+ * Update statistics panel
+ */
+function updateStatistics(data) {
+    // Total setups
+    const totalElement = document.getElementById('totalSetups');
+    if (totalElement) {
+        totalElement.textContent = data.length;
+    }
+    
+    // Count by estado
+    const estadoCounts = data.reduce((acc, setup) => {
+        const estado = setup.estado || 'UNKNOWN';
+        acc[estado] = (acc[estado] || 0) + 1;
+        return acc;
+    }, {});
+    
+    // Update badges
+    ['TP', 'SL', 'PROFIT', 'EN_ZONA'].forEach(estado => {
+        const element = document.getElementById(`count${estado.replace('_', '')}`);
+        if (element) {
+            element.textContent = estadoCounts[estado] || 0;
+        }
+    });
+    
+    // TP/SL summary by symbol
+    updateTPSLSummary(data);
+}
+
+/**
+ * Update TP/SL summary by symbol
+ */
+function updateTPSLSummary(data) {
+    // Group by symbol
+    const symbolStats = data.reduce((acc, setup) => {
+        const symbol = setup.symbol || 'Unknown';
+        if (!acc[symbol]) {
+            acc[symbol] = { tp: 0, sl: 0 };
+        }
+        if (setup.estado === 'TP') {
+            acc[symbol].tp++;
+        } else if (setup.estado === 'SL') {
+            acc[symbol].sl++;
+        }
+        return acc;
+    }, {});
+    
+    // Update summary container
+    const summaryContainer = document.getElementById('tpslSummary');
+    if (summaryContainer) {
+        let html = '<div class="summary-grid">';
+        
+        Object.keys(symbolStats).sort().forEach(symbol => {
+            const stats = symbolStats[symbol];
+            if (stats.tp > 0 || stats.sl > 0) {
+                html += `
+                    <div class="summary-item">
+                        <div class="summary-symbol">${symbol}</div>
+                        <div class="summary-stats">
+                            <span class="tp-count">TP: ${stats.tp}</span>
+                            <span class="sl-count">SL: ${stats.sl}</span>
+                        </div>
+                    </div>
+                `;
+            }
+        });
+        
+        html += '</div>';
+        summaryContainer.innerHTML = html;
+    }
+}
+
+/**
+ * Update last update time
+ */
+function updateLastUpdateTime() {
+    const element = document.getElementById('lastUpdate');
+    if (element) {
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString('es-ES');
+        element.textContent = `Última actualización: ${timeStr}`;
+    }
+}
+
+/**
+ * Update live indicator (discrete pulsating dot)
+ */
+function updateLiveIndicator(isConnected) {
+    const indicator = document.getElementById('liveIndicator');
+    if (indicator) {
+        if (isConnected) {
+            indicator.className = 'live-indicator live-indicator-active';
+            indicator.title = 'Conectado - Actualizando cada 5s';
+        } else {
+            indicator.className = 'live-indicator live-indicator-error';
+            indicator.title = 'Error de conexión';
+        }
+    }
+}
+
+/**
+ * Show error message
+ */
+function showError(message) {
+    console.error('Error:', message);
+    // TODO: Implement toast notification
+}
+
+/**
+ * Start auto-refresh
+ */
+function startAutoRefresh() {
+    if (refreshIntervalId) {
+        clearInterval(refreshIntervalId);
+    }
+    
+    refreshIntervalId = setInterval(async () => {
+        console.log('🔄 Auto-refresh triggered (incremental)');
+        await loadHistorialData(false); // Incremental update
+    }, AUTO_REFRESH_INTERVAL);
+    
+    console.log(`✅ Auto-refresh started: every ${AUTO_REFRESH_INTERVAL / 1000}s (silent incremental)`);
+}
+
+/**
+ * Stop auto-refresh
+ */
+function stopAutoRefresh() {
+    if (refreshIntervalId) {
+        clearInterval(refreshIntervalId);
+        refreshIntervalId = null;
+        console.log('⏹️ Auto-refresh stopped');
+    }
+}
+
+// Initialize on DOM ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initHistorial);
+} else {
+    initHistorial();
+}

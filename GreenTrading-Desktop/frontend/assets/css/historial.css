@@ -1,0 +1,489 @@
+/* ==========================================================================
+   GreenTrading Desktop - Historial CSS
+   Estilos para pantalla de historial con UX tipo terminal trading profesional
+   ========================================================================== */
+
+/* =========================
+   ANIMATIONS & TRANSITIONS
+   ========================= */
+
+/* Fade in for new rows */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-5px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Fade out for removed rows */
+@keyframes fadeOut {
+    from {
+        opacity: 1;
+        transform: translateX(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateX(-10px);
+    }
+}
+
+/* Cell update highlight */
+@keyframes cellHighlight {
+    0% {
+        background-color: rgba(59, 130, 246, 0.2);
+    }
+    100% {
+        background-color: transparent;
+    }
+}
+
+/* Live indicator pulse */
+@keyframes livePulse {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.6;
+        transform: scale(1.1);
+    }
+}
+
+/* =========================
+   LAYOUT & CONTAINERS
+   ========================= */
+
+.historial-container {
+    width: 100%;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background-color: #0f172a;
+    color: #e2e8f0;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overflow: hidden;
+}
+
+.historial-header {
+    padding: 20px 30px;
+    border-bottom: 1px solid #1e293b;
+    background-color: #0f172a;
+    flex-shrink: 0;
+}
+
+.header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.historial-title {
+    font-size: 24px;
+    font-weight: 600;
+    color: #f1f5f9;
+    margin: 0;
+}
+
+.header-actions {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+}
+
+/* =========================
+   LIVE INDICATOR (Discrete)
+   ========================= */
+
+.live-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: #6b7280;
+    transition: all 0.3s ease;
+}
+
+.live-indicator-active {
+    background-color: #10b981;
+    animation: livePulse 2s ease-in-out infinite;
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+}
+
+.live-indicator-error {
+    background-color: #ef4444;
+    animation: none;
+}
+
+.status-text {
+    font-size: 13px;
+    color: #94a3b8;
+    margin-left: 8px;
+}
+
+/* =========================
+   FILTERS BAR
+   ========================= */
+
+.filters-bar {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.filter-label {
+    font-size: 12px;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.filter-select,
+.filter-input {
+    padding: 8px 12px;
+    background-color: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    color: #e2e8f0;
+    font-size: 14px;
+    outline: none;
+    transition: all 0.2s ease;
+}
+
+.filter-select:hover,
+.filter-input:hover {
+    border-color: #475569;
+}
+
+.filter-select:focus,
+.filter-input:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.btn-refresh {
+    padding: 8px 16px;
+    background-color: #3b82f6;
+    border: none;
+    border-radius: 6px;
+    color: white;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-refresh:hover {
+    background-color: #2563eb;
+    transform: translateY(-1px);
+}
+
+.btn-refresh:active {
+    transform: translateY(0);
+}
+
+/* =========================
+   STATISTICS PANEL
+   ========================= */
+
+.stats-panel {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+}
+
+.stat-card {
+    background-color: #1e293b;
+    border-radius: 8px;
+    padding: 12px 18px;
+    min-width: 120px;
+    border: 1px solid #334155;
+}
+
+.stat-label {
+    font-size: 12px;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 5px;
+}
+
+.stat-value {
+    font-size: 24px;
+    font-weight: 600;
+    color: #f1f5f9;
+}
+
+.stat-tp {
+    color: #10b981;
+}
+
+.stat-sl {
+    color: #ef4444;
+}
+
+.stat-profit {
+    color: #3b82f6;
+}
+
+/* =========================
+   TABLE CONTAINER
+   ========================= */
+
+.content-wrapper {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 20px 30px;
+}
+
+.table-container {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: auto;
+    background-color: #1e293b;
+    border-radius: 8px;
+    border: 1px solid #334155;
+}
+
+/* Custom scrollbar (professional look) */
+.table-container::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+}
+
+.table-container::-webkit-scrollbar-track {
+    background: #1e293b;
+}
+
+.table-container::-webkit-scrollbar-thumb {
+    background: #475569;
+    border-radius: 6px;
+    border: 2px solid #1e293b;
+}
+
+.table-container::-webkit-scrollbar-thumb:hover {
+    background: #64748b;
+}
+
+/* =========================
+   TABLE
+   ========================= */
+
+.historial-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 13px;
+}
+
+.historial-table thead {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background-color: #0f172a;
+}
+
+.historial-table thead th {
+    padding: 12px 16px;
+    text-align: left;
+    font-weight: 600;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-size: 11px;
+    border-bottom: 2px solid #334155;
+    background-color: #0f172a;
+}
+
+.historial-table tbody tr {
+    background-color: #1e293b;
+    border-bottom: 1px solid #334155;
+    transition: background-color 0.15s ease;
+}
+
+.historial-table tbody tr:hover {
+    background-color: #334155;
+}
+
+.historial-table tbody td {
+    padding: 12px 16px;
+    color: #e2e8f0;
+}
+
+/* Row animations */
+.row-fade-in {
+    animation: fadeIn 0.3s ease-out;
+}
+
+.row-fade-out {
+    animation: fadeOut 0.3s ease-out;
+}
+
+/* Cell update highlight */
+.cell-update-highlight {
+    animation: cellHighlight 0.6s ease-out;
+}
+
+/* =========================
+   ESTADO BADGES
+   ========================= */
+
+.estado-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    transition: all 0.2s ease;
+}
+
+.badge-gray {
+    background-color: #374151;
+    color: #9ca3af;
+}
+
+.badge-blue {
+    background-color: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+}
+
+.badge-yellow {
+    background-color: rgba(251, 191, 36, 0.15);
+    color: #fbbf24;
+}
+
+.badge-purple {
+    background-color: rgba(168, 85, 247, 0.15);
+    color: #c084fc;
+}
+
+.badge-green {
+    background-color: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+}
+
+.badge-green-solid {
+    background-color: #10b981;
+    color: white;
+}
+
+.badge-red {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+}
+
+/* =========================
+   RESULTADO PUNTOS
+   ========================= */
+
+.resultado-positive {
+    color: #10b981;
+    font-weight: 600;
+}
+
+.resultado-negative {
+    color: #ef4444;
+    font-weight: 600;
+}
+
+/* =========================
+   TP/SL SUMMARY
+   ========================= */
+
+.summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.summary-item {
+    background-color: #1e293b;
+    border-radius: 6px;
+    padding: 10px 14px;
+    border: 1px solid #334155;
+}
+
+.summary-symbol {
+    font-size: 12px;
+    color: #94a3b8;
+    margin-bottom: 5px;
+}
+
+.summary-stats {
+    display: flex;
+    gap: 15px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.tp-count {
+    color: #10b981;
+}
+
+.sl-count {
+    color: #ef4444;
+}
+
+/* =========================
+   UTILITY CLASSES
+   ========================= */
+
+.text-center {
+    text-align: center;
+}
+
+.text-right {
+    text-align: right;
+}
+
+.font-mono {
+    font-family: 'Fira Code', 'Courier New', monospace;
+}
+
+/* =========================
+   RESPONSIVE
+   ========================= */
+
+@media (max-width: 1400px) {
+    .filters-bar {
+        flex-wrap: wrap;
+    }
+}
+
+@media (max-width: 1024px) {
+    .historial-header {
+        padding: 15px 20px;
+    }
+    
+    .content-wrapper {
+        padding: 15px 20px;
+    }
+    
+    .historial-table {
+        font-size: 12px;
+    }
+    
+    .historial-table thead th,
+    .historial-table tbody td {
+        padding: 10px 12px;
+    }
+}
