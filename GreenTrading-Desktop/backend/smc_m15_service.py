@@ -475,6 +475,131 @@ def crear_zona_m15(df_m15, eventos_m15, fvgs_m15, symbol, precio_actual):
 
 
 # =========================
+# NIVELES OPERATIVOS Y ESTADOS
+# =========================
+
+def calcular_niveles_operativos(zona: dict, direccion_operativa: str) -> dict:
+    """
+    Calcula entrada, stoploss y tp_1_1 según la zona y dirección.
+    
+    Args:
+        zona: Zona con zona_desde y zona_hasta
+        direccion_operativa: "ALCISTA" o "BAJISTA"
+    
+    Returns:
+        dict con entrada, stoploss, tp_1_1
+    """
+    zona_desde = zona.get("zona_desde", 0)
+    zona_hasta = zona.get("zona_hasta", 0)
+    zona_size = abs(zona_hasta - zona_desde)
+    
+    if direccion_operativa == "ALCISTA":
+        # Para ALCISTA (Boom): entrada arriba, SL abajo
+        entrada = zona_hasta
+        stoploss = zona_desde
+        tp_1_1 = entrada + zona_size  # Proyección 1:1 hacia arriba
+    else:
+        # Para BAJISTA (Crash): entrada abajo, SL arriba
+        entrada = zona_desde
+        stoploss = zona_hasta
+        tp_1_1 = entrada - zona_size  # Proyección 1:1 hacia abajo
+    
+    return {
+        "entrada": round(entrada, 2),
+        "stoploss": round(stoploss, 2),
+        "tp_1_1": round(tp_1_1, 2)
+    }
+
+
+def calcular_estado_dashboard(precio_actual: float, entrada: float, zona_desde: float, zona_hasta: float, direccion: str) -> str:
+    """
+    Calcula el estado del dashboard según la posición del precio.
+    
+    Estados:
+    - SIN_SETUP: No hay zona válida
+    - ESPERANDO_ENTRADA: Precio lejos de zona (>50 puntos)
+    - LLEGANDO_A_ZONA: Precio acercándose (10-50 puntos)
+    - EN_ZONA: Precio dentro de la zona
+    - PROFIT: Precio superó entrada en dirección esperada
+    
+    Args:
+        precio_actual: Precio actual
+        entrada: Precio de entrada
+        zona_desde: Límite inferior de zona
+        zona_hasta: Límite superior de zona
+        direccion: "ALCISTA" o "BAJISTA"
+    
+    Returns:
+        Estado dashboard
+    """
+    # Check if price is in zone
+    if zona_desde <= precio_actual <= zona_hasta:
+        return "EN_ZONA"
+    
+    # Check if price reached profit
+    if direccion == "ALCISTA":
+        if precio_actual > entrada:
+            return "PROFIT"
+        # Price below zone
+        distancia = zona_desde - precio_actual
+    else:
+        # BAJISTA
+        if precio_actual < entrada:
+            return "PROFIT"
+        # Price above zone
+        distancia = precio_actual - zona_hasta
+    
+    # Calculate distance to zone
+    if distancia > 50:
+        return "ESPERANDO_ENTRADA"
+    elif distancia >= 10:
+        return "LLEGANDO_A_ZONA"
+    else:
+        return "ESPERANDO_ENTRADA"
+
+
+def calcular_estado_historial(estado_dashboard: str, precio_actual: float, entrada: float, stoploss: float, tp: float) -> str:
+    """
+    Mapea estado dashboard a estado historial y evalúa TP/SL.
+    
+    Estados historial:
+    - ESPERANDO_ENTRADA: Esperando entrada
+    - LLEGANDO_A_ZONA: Acercándose a zona
+    - EN_ZONA: En zona
+    - PROFIT: En ganancia flotante
+    - TP: Take profit alcanzado
+    - SL: Stop loss alcanzado
+    - DESCARTADA: Zona invalidada (no usado en SMC_M15_PRO)
+    
+    Args:
+        estado_dashboard: Estado actual del dashboard
+        precio_actual: Precio actual
+        entrada: Precio de entrada
+        stoploss: Stop loss
+        tp: Take profit 1:1
+    
+    Returns:
+        Estado historial
+    """
+    # Check TP/SL first
+    if entrada < stoploss:
+        # ALCISTA
+        if precio_actual <= stoploss:
+            return "SL"
+        if precio_actual >= tp:
+            return "TP"
+    else:
+        # BAJISTA
+        if precio_actual >= stoploss:
+            return "SL"
+        if precio_actual <= tp:
+            return "TP"
+    
+    # Map dashboard states to historial states
+    return estado_dashboard
+
+
+# =========================
 # MAIN ANALYSIS FUNCTION
 # =========================
 
@@ -593,9 +718,38 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
         score = zona.get('score', 0)
         print(f"    - Score: {score}")
         
-        # Determine state
-        estado = "ACTIVA" if score > 0 else "SIN SETUP"
-        print(f"  Estado: {estado}")
+        # Get direccion_operativa
+        direccion_operativa = zona.get('direccion_operativa', zona.get('direccion', 'ALCISTA'))
+        
+        # Calculate operational levels (entrada, stoploss, tp_1_1)
+        niveles = calcular_niveles_operativos(zona, direccion_operativa)
+        entrada = niveles["entrada"]
+        stoploss = niveles["stoploss"]
+        tp_1_1 = niveles["tp_1_1"]
+        
+        print(f"    - Entrada: {entrada}")
+        print(f"    - StopLoss: {stoploss}")
+        print(f"    - TP 1:1: {tp_1_1}")
+        
+        # Calculate dashboard state
+        estado_dashboard = calcular_estado_dashboard(
+            precio_actual,
+            entrada,
+            zona['zona_desde'],
+            zona['zona_hasta'],
+            direccion_operativa
+        )
+        print(f"  Estado Dashboard: {estado_dashboard}")
+        
+        # Calculate historial state (provisional)
+        estado_historial = calcular_estado_historial(
+            estado_dashboard,
+            precio_actual,
+            entrada,
+            stoploss,
+            tp_1_1
+        )
+        print(f"  Estado Historial: {estado_historial}")
         
         # Build full response with zone
         result = {
@@ -608,11 +762,16 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
                 "desde": float(zona.get('zona_desde', 0)),
                 "hasta": float(zona.get('zona_hasta', 0))
             },
+            "entrada": entrada,
+            "stoploss": stoploss,
+            "tp_1_1": tp_1_1,
+            "estado_dashboard": estado_dashboard,
+            "estado_historial": estado_historial,
             "score": score,
             "ob": "SÍ" if has_ob else "NO",
             "fvg": "SÍ" if has_fvg else "NO",
             "barrida": "SÍ" if has_barrida else "NO",
-            "estado": estado,
+            "estado": estado_dashboard,  # Keep for compatibility
             "updated_at": datetime.now(timezone.utc).isoformat()
         }
         print_result_summary(result)
