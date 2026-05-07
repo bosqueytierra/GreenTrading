@@ -13,3 +13,6 @@ pandas>=2.0.0
 
 # Additional utilities
 python-dotenv==1.0.0
+
+# Supabase integration
+supabase==2.3.0
