@@ -28,6 +28,7 @@ print("SMC_SERVICE_PATH:", __file__)
 # Configuration
 SWING_LOOKBACK = 3
 CLOSE_BREAK = True
+M1_VELAS_ZONA = 15
 
 
 # =========================

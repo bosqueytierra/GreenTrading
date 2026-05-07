@@ -396,6 +396,10 @@ async def get_smc_m15_pro_snapshot():
         list: Array of SMC snapshots
     """
     print("Reading SMC M15 PRO snapshot for all dashboard symbols...")
+    print("Candle configuration (matching master_bot.py):")
+    print("  - H1 candles requested: 500")
+    print("  - M15 candles requested: 800")
+    print("  - M1 candles requested: 600 (for future use)")
     
     # Validate MT5 connection
     if not mt5_initialized:
@@ -435,9 +439,10 @@ async def get_smc_m15_pro_snapshot():
     
     for symbol in DASHBOARD_SYMBOLS:
         try:
-            # Read candles for H1 and M15 (100 candles for analysis)
-            df_h1 = read_candles_dataframe(symbol, 'H1', count=100)
-            df_m15 = read_candles_dataframe(symbol, 'M15', count=100)
+            # Read candles for H1 and M15 (matching master_bot.py)
+            # master_bot.py uses: H1=500, M15=800, M1=600
+            df_h1 = read_candles_dataframe(symbol, 'H1', count=500)
+            df_m15 = read_candles_dataframe(symbol, 'M15', count=800)
             
             # Analyze symbol with SMC engine
             smc_result = analyze_symbol_smc(symbol, df_h1, df_m15)
