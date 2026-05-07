@@ -5,7 +5,9 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dev": "electron . --no-sandbox"
+    "dev": "electron . --no-sandbox",
+    "portable": "electron-builder --dir",
+    "dist:portable": "electron-builder --dir"
   },
   "keywords": [
     "trading",
@@ -20,5 +22,35 @@
   },
   "devDependencies": {
     "electron-builder": "^24.0.0"
+  },
+  "build": {
+    "appId": "com.greentrading.desktop",
+    "productName": "GreenTrading Desktop",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!**/*.md",
+      "!.git",
+      "!.gitignore"
+    ],
+    "extraResources": [
+      {
+        "from": "backend",
+        "to": "backend"
+      }
+    ],
+    "win": {
+      "target": "portable"
+    },
+    "linux": {
+      "target": "dir",
+      "category": "Finance"
+    },
+    "mac": {
+      "target": "dir",
+      "category": "public.app-category.finance"
+    }
   }
 }
