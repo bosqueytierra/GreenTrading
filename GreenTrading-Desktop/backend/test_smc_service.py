@@ -69,9 +69,9 @@ def test_swings():
     if len(swings) > 0:
         print(f"  - First swing: {swings[0]['tipo']} at price {swings[0]['precio']:.2f}")
         print(f"  - Last swing: {swings[-1]['tipo']} at price {swings[-1]['precio']:.2f}")
-        print("✅ PASSED")
+        print("OK: PASSED")
     else:
-        print("⚠️  No swings detected (might be normal for small/flat data)")
+        print("WARNING:  No swings detected (might be normal for small/flat data)")
     
     return swings
 
@@ -90,9 +90,9 @@ def test_estructura(swings):
     if len(eventos) > 0:
         print(f"  - First event: {eventos[0]['evento']} at {eventos[0]['precio_cierre']:.2f}")
         print(f"  - Last event: {eventos[-1]['evento']} at {eventos[-1]['precio_cierre']:.2f}")
-        print("✅ PASSED")
+        print("OK: PASSED")
     else:
-        print("⚠️  No events detected")
+        print("WARNING:  No events detected")
     
     return eventos, tendencia
 
@@ -109,9 +109,9 @@ def test_fvg():
     
     if len(fvgs) > 0:
         print(f"  - First FVG: {fvgs[0]['tipo']} from {fvgs[0]['desde']:.2f} to {fvgs[0]['hasta']:.2f}")
-        print("✅ PASSED")
+        print("OK: PASSED")
     else:
-        print("⚠️  No FVGs detected (normal for smooth trends)")
+        print("WARNING:  No FVGs detected (normal for smooth trends)")
     
     return fvgs
 
@@ -138,9 +138,9 @@ def test_full_analysis():
     
     # Verify we're NOT getting "--" for trends
     if result['tendencia_h1'] != "--" and result['tendencia_m15'] != "--":
-        print("\n✅ PASSED: Real trends calculated (not '--')")
+        print("\nOK: PASSED: Real trends calculated (not '--')")
     else:
-        print("\n❌ FAILED: Got '--' for trends")
+        print("\nERROR: FAILED: Got '--' for trends")
         return False
     
     # Test with Crash symbol
@@ -159,9 +159,9 @@ def test_full_analysis():
     print(f"  - Estado: {result['estado']}")
     
     if result['tendencia_h1'] != "--" and result['tendencia_m15'] != "--":
-        print("\n✅ PASSED: Real trends calculated for CRASH")
+        print("\nOK: PASSED: Real trends calculated for CRASH")
     else:
-        print("\n❌ FAILED: Got '--' for CRASH trends")
+        print("\nERROR: FAILED: Got '--' for CRASH trends")
         return False
     
     return True
@@ -181,10 +181,10 @@ def test_direccion_operativa():
     print(f"✓ EURUSD: {other_dir}")
     
     if boom_dir == "ALCISTA" and crash_dir == "BAJISTA" and other_dir is None:
-        print("✅ PASSED")
+        print("OK: PASSED")
         return True
     else:
-        print("❌ FAILED")
+        print("ERROR: FAILED")
         return False
 
 if __name__ == "__main__":
@@ -206,7 +206,7 @@ if __name__ == "__main__":
         print("="*60 + "\n")
         
     except Exception as e:
-        print(f"\n❌ ERROR: {e}")
+        print(f"\nERROR: ERROR: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

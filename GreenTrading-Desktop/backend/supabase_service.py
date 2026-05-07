@@ -46,10 +46,10 @@ def init_supabase() -> Optional[Client]:
     
     try:
         _supabase_client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
-        print(f"✅ Supabase client initialized: {SUPABASE_URL}")
+        print(f"Supabase client initialized: {SUPABASE_URL}")
         return _supabase_client
     except Exception as e:
-        print(f"❌ Error initializing Supabase client: {e}")
+        print(f"ERROR: Error initializing Supabase client: {e}")
         return None
 
 
@@ -88,11 +88,11 @@ def create_setup(setup_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         result = client.table("green_trading_setups").insert(setup_data).execute()
         
         if result.data:
-            print(f"✅ Setup created: {setup_data.get('symbol')} - {setup_data.get('strategy_id')}")
+            print(f"Setup created: {setup_data.get('symbol')} - {setup_data.get('strategy_id')}")
             return result.data[0]
         return None
     except Exception as e:
-        print(f"❌ Error creating setup: {e}")
+        print(f"ERROR: Error creating setup: {e}")
         return None
 
 
@@ -118,11 +118,11 @@ def update_setup(setup_id: int, updates: Dict[str, Any]) -> Optional[Dict[str, A
         result = client.table("green_trading_setups").update(updates).eq("id", setup_id).execute()
         
         if result.data:
-            print(f"✅ Setup updated: ID {setup_id}")
+            print(f"Setup updated: ID {setup_id}")
             return result.data[0]
         return None
     except Exception as e:
-        print(f"❌ Error updating setup: {e}")
+        print(f"ERROR: Error updating setup: {e}")
         return None
 
 
@@ -163,7 +163,7 @@ def get_active_setup(strategy_id: str, symbol: str, entrada: float, stoploss: fl
             return result.data[0]
         return None
     except Exception as e:
-        print(f"❌ Error getting active setup: {e}")
+        print(f"ERROR: Error getting active setup: {e}")
         return None
 
 
@@ -210,7 +210,7 @@ def get_setup_history(
         
         return result.data if result.data else []
     except Exception as e:
-        print(f"❌ Error getting setup history: {e}")
+        print(f"ERROR: Error getting setup history: {e}")
         return []
 
 
@@ -253,5 +253,5 @@ def get_tp_sl_summary() -> Dict[str, Dict[str, int]]:
         
         return summary
     except Exception as e:
-        print(f"❌ Error getting TP/SL summary: {e}")
+        print(f"ERROR: Error getting TP/SL summary: {e}")
         return {}

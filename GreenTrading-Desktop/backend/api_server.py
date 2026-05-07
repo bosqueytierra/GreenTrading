@@ -130,9 +130,9 @@ async def startup_event():
     # Initialize Supabase
     if supabase_service:
         supabase_service.init_supabase()
-        print("✅ Supabase initialized")
+        print("Supabase initialized")
     else:
-        print("⚠️ Supabase service not available")
+        print("WARNING: Supabase service not available")
 
 
 @app.on_event("shutdown")
