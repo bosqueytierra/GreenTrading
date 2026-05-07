@@ -399,7 +399,7 @@ async def get_smc_m15_pro_snapshot():
     print("Candle configuration (matching master_bot.py):")
     print("  - H1 candles requested: 500")
     print("  - M15 candles requested: 800")
-    print("  - M1 candles requested: 600 (for future use)")
+    print("  - M1 candles: 600 (configured for future use, not actively fetched yet)")
     
     # Validate MT5 connection
     if not mt5_initialized:
