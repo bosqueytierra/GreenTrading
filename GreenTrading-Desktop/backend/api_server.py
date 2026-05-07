@@ -38,6 +38,13 @@ except ImportError:
     analyze_symbol_smc = None
     create_sin_setup_response = None
 
+# Import Supabase service
+try:
+    import supabase_service
+except ImportError:
+    print("WARNING: Supabase service not available")
+    supabase_service = None
+
 # FastAPI app
 app = FastAPI(
     title="GreenTrading Desktop API",
@@ -116,9 +123,16 @@ def shutdown_mt5():
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize MT5 on startup"""
+    """Initialize MT5 and Supabase on startup"""
     print("Starting GreenTrading Desktop API...")
     init_mt5()
+    
+    # Initialize Supabase
+    if supabase_service:
+        supabase_service.init_supabase()
+        print("✅ Supabase initialized")
+    else:
+        print("⚠️ Supabase service not available")
 
 
 @app.on_event("shutdown")
@@ -463,6 +477,165 @@ async def get_smc_m15_pro_snapshot():
     
     print(f"SMC snapshot complete: {len(snapshots)} symbols analyzed")
     return snapshots
+
+
+# =========================
+# SUPABASE ENDPOINTS
+# =========================
+
+@app.post("/api/setups")
+async def create_or_update_setup(setup_data: dict):
+    """
+    Create or update a setup in Supabase.
+    
+    If an active setup exists with same strategy_id + symbol + entrada + stoploss,
+    it will be updated. Otherwise, a new setup will be created.
+    
+    Request body:
+        {
+            "strategy_id": "SMC_M15_PRO",
+            "strategy_name": "SMC M15 PRO",
+            "symbol": "Boom 1000 Index",
+            "tendencia_h1": "ALCISTA",
+            "tendencia_m15": "ALCISTA",
+            "ultimo_evento_m15": "CHOCH ALCISTA",
+            "entrada": 1234.56,
+            "stoploss": 1230.00,
+            "tp_1_1": 1239.12,
+            "score": 3,
+            "ob": true,
+            "fvg": true,
+            "barrida": true,
+            "estado": "ESPERANDO_ENTRADA",
+            "estado_dashboard": "ESPERANDO_ENTRADA",
+            "precio_detectado": 1250.00,
+            "precio_actual": 1250.00
+        }
+    
+    Returns:
+        Created or updated setup
+    """
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Supabase service not available")
+    
+    try:
+        # Extract key fields
+        strategy_id = setup_data.get("strategy_id")
+        symbol = setup_data.get("symbol")
+        entrada = setup_data.get("entrada")
+        stoploss = setup_data.get("stoploss")
+        
+        if not all([strategy_id, symbol, entrada is not None, stoploss is not None]):
+            raise HTTPException(status_code=400, detail="Missing required fields")
+        
+        # Check if active setup exists
+        existing = supabase_service.get_active_setup(strategy_id, symbol, entrada, stoploss)
+        
+        if existing:
+            # Update existing setup
+            setup_id = existing["id"]
+            updates = {
+                "estado": setup_data.get("estado"),
+                "estado_dashboard": setup_data.get("estado_dashboard"),
+                "precio_actual": setup_data.get("precio_actual")
+            }
+            result = supabase_service.update_setup(setup_id, updates)
+            return {"success": True, "action": "updated", "data": result}
+        else:
+            # Create new setup
+            result = supabase_service.create_setup(setup_data)
+            return {"success": True, "action": "created", "data": result}
+            
+    except Exception as e:
+        print(f"Error in create_or_update_setup: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/setups/active")
+async def get_active_setup_endpoint(
+    strategy_id: str,
+    symbol: str,
+    entrada: float,
+    stoploss: float
+):
+    """
+    Get an active setup by strategy, symbol, entrada and stoploss.
+    
+    Query parameters:
+        - strategy_id: Strategy ID (e.g., "SMC_M15_PRO")
+        - symbol: Symbol name
+        - entrada: Entry price
+        - stoploss: Stop loss price
+    
+    Returns:
+        Setup dict or null if not found
+    """
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Supabase service not available")
+    
+    try:
+        result = supabase_service.get_active_setup(strategy_id, symbol, entrada, stoploss)
+        return {"success": True, "data": result}
+    except Exception as e:
+        print(f"Error in get_active_setup: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/setups/history")
+async def get_setup_history_endpoint(
+    symbol: Optional[str] = None,
+    estado: Optional[str] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    limit: int = 100
+):
+    """
+    Get setup history with optional filters.
+    
+    Query parameters:
+        - symbol: Filter by symbol (optional)
+        - estado: Filter by estado (optional)
+        - from_date: Filter from date ISO format (optional)
+        - to_date: Filter to date ISO format (optional)
+        - limit: Max results (default 100)
+    
+    Returns:
+        List of setups
+    """
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Supabase service not available")
+    
+    try:
+        result = supabase_service.get_setup_history(
+            symbol=symbol,
+            estado=estado,
+            from_date=from_date,
+            to_date=to_date,
+            limit=limit
+        )
+        return {"success": True, "data": result}
+    except Exception as e:
+        print(f"Error in get_setup_history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/setups/summary")
+async def get_tp_sl_summary_endpoint():
+    """
+    Get TP/SL summary grouped by symbol.
+    
+    Returns:
+        Dict with structure: {symbol: {tp: count, sl: count}}
+    """
+    if not supabase_service:
+        raise HTTPException(status_code=503, detail="Supabase service not available")
+    
+    try:
+        result = supabase_service.get_tp_sl_summary()
+        return {"success": True, "data": result}
+    except Exception as e:
+        print(f"Error in get_tp_sl_summary: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":
