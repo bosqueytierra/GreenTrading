@@ -25,10 +25,172 @@ import pandas as pd
 # CRITICAL LOG: Confirm which file is being executed
 print("SMC_SERVICE_PATH:", __file__)
 
+# Import Supabase service
+try:
+    import supabase_service
+except ImportError:
+    print("WARNING: Supabase service not available")
+    supabase_service = None
+
 # Configuration
 SWING_LOOKBACK = 3
 CLOSE_BREAK = True
 M1_VELAS_ZONA = 15
+
+# =========================
+# SMART SYNC / DEBOUNCE
+# =========================
+
+# Global cache para último estado de cada símbolo
+# Key: symbol, Value: dict con campos críticos
+_setup_cache = {}
+
+def _has_relevant_changes(symbol: str, new_data: dict) -> bool:
+    """
+    Determina si hay cambios relevantes que justifiquen un UPDATE en Supabase.
+    
+    Solo actualiza si cambian campos críticos:
+    - estado
+    - entrada
+    - stoploss
+    - tp_1_1
+    - score
+    - zona_desde/zona_hasta
+    - precio (cambio significativo >1%)
+    
+    Args:
+        symbol: Symbol name
+        new_data: Nuevo setup data con campos críticos
+    
+    Returns:
+        True si hay cambios relevantes, False si no
+    """
+    if symbol not in _setup_cache:
+        # Primera vez: siempre sincronizar
+        _setup_cache[symbol] = new_data
+        return True
+    
+    old_data = _setup_cache[symbol]
+    
+    # Campos críticos para comparar
+    critical_fields = [
+        'estado',
+        'entrada',
+        'stoploss',
+        'tp_1_1',
+        'score',
+        'zona_desde',
+        'zona_hasta'
+    ]
+    
+    # Verificar cambios en campos críticos
+    for field in critical_fields:
+        if old_data.get(field) != new_data.get(field):
+            print(f"SYNC TRIGGER: {symbol} - {field} changed from {old_data.get(field)} to {new_data.get(field)}")
+            _setup_cache[symbol] = new_data
+            return True
+    
+    # Verificar cambio significativo en precio (>1%)
+    old_price = old_data.get('precio_actual', 0)
+    new_price = new_data.get('precio_actual', 0)
+    if old_price > 0:
+        price_change_pct = abs(new_price - old_price) / old_price * 100
+        if price_change_pct > 1.0:
+            print(f"SYNC TRIGGER: {symbol} - price changed {price_change_pct:.2f}%")
+            _setup_cache[symbol] = new_data
+            return True
+    
+    # No hay cambios relevantes
+    return False
+
+
+def sync_setup_to_supabase(analysis_result: dict) -> None:
+    """
+    Sincroniza setup con Supabase solo si hay cambios relevantes.
+    
+    Implementa smart sync / debounce:
+    - Solo actualiza cuando cambian campos críticos
+    - Evita spam updates innecesarios
+    - Cache de estado previo por símbolo
+    
+    Args:
+        analysis_result: Resultado de analyze_symbol_smc()
+    """
+    if not supabase_service:
+        return
+    
+    # Skip SIN SETUP
+    if analysis_result.get('estado') == 'SIN SETUP':
+        return
+    
+    # Skip si faltan campos requeridos
+    if not analysis_result.get('entrada') or not analysis_result.get('stoploss'):
+        return
+    
+    symbol = analysis_result['symbol']
+    
+    # Preparar datos críticos para comparación
+    critical_data = {
+        'estado': analysis_result.get('estado_historial', analysis_result.get('estado_dashboard', 'ESPERANDO_ENTRADA')),
+        'entrada': analysis_result.get('entrada'),
+        'stoploss': analysis_result.get('stoploss'),
+        'tp_1_1': analysis_result.get('tp_1_1'),
+        'score': analysis_result.get('score', 0),
+        'zona_desde': analysis_result.get('zona_madre_m15', {}).get('desde', 0),
+        'zona_hasta': analysis_result.get('zona_madre_m15', {}).get('hasta', 0),
+        'precio_actual': analysis_result.get('price')
+    }
+    
+    # Verificar si hay cambios relevantes
+    if not _has_relevant_changes(symbol, critical_data):
+        # No hay cambios, skip sync
+        return
+    
+    # Hay cambios: preparar setup data completo
+    setup_data = {
+        'strategy_id': 'SMC_M15_PRO',
+        'strategy_name': 'SMC M15 PRO',
+        'symbol': symbol,
+        'tendencia_h1': analysis_result.get('tendencia_h1', '--'),
+        'tendencia_m15': analysis_result.get('tendencia_m15', '--'),
+        'ultimo_evento_m15': analysis_result.get('ultimo_evento_m15', '--'),
+        'entrada': critical_data['entrada'],
+        'stoploss': critical_data['stoploss'],
+        'tp_1_1': critical_data['tp_1_1'],
+        'score': critical_data['score'],
+        'ob': analysis_result.get('ob') in ['SÍ', 'SI', 'YES'],
+        'fvg': analysis_result.get('fvg') in ['SÍ', 'SI', 'YES'],
+        'barrida': analysis_result.get('barrida') in ['SÍ', 'SI', 'YES'],
+        'estado': critical_data['estado'],
+        'estado_dashboard': analysis_result.get('estado_dashboard', 'ESPERANDO_ENTRADA'),
+        'precio_detectado': critical_data['precio_actual'],
+        'precio_actual': critical_data['precio_actual']
+    }
+    
+    # Buscar setup activo existente
+    existing = supabase_service.get_active_setup(
+        setup_data['strategy_id'],
+        setup_data['symbol'],
+        setup_data['entrada'],
+        setup_data['stoploss']
+    )
+    
+    if existing:
+        # Update existente
+        setup_id = existing['id']
+        updates = {
+            'estado': setup_data['estado'],
+            'estado_dashboard': setup_data['estado_dashboard'],
+            'precio_actual': setup_data['precio_actual']
+        }
+        result = supabase_service.update_setup(setup_id, updates)
+        if result:
+            print(f"SUPABASE SYNC: Updated {symbol}")
+    else:
+        # Create nuevo
+        result = supabase_service.create_setup(setup_data)
+        if result:
+            print(f"SUPABASE SYNC: Created {symbol}")
 
 
 # =========================
@@ -775,6 +937,10 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
             "updated_at": datetime.now(timezone.utc).isoformat()
         }
         print_result_summary(result)
+        
+        # Sync to Supabase (smart sync with debounce)
+        sync_setup_to_supabase(result)
+        
         return result
         
     except Exception as e:
