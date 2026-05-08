@@ -143,7 +143,7 @@ function createTableRow(snapshot) {
         updated_at
     } = snapshot;
     
-    // FIXED BUG 3: Use estado_final (validated) or estado_historial (validated) or fallback to estado
+    // FIXED: BUG 3 - Use estado_final (validated) or estado_historial (validated) or fallback to estado
     const estadoToDisplay = estado_final || estado_historial || estado;
     console.log("DEBUG ESTADO TO DISPLAY:", estadoToDisplay);
     
@@ -198,7 +198,7 @@ function formatZone(zona) {
 
 /**
  * Format estado badge
- * FIXED BUG 3: Support all estado types, not just ACTIVA
+ * FIXED: BUG 3 - Support all estado types, not just ACTIVA
  */
 function formatEstadoBadge(estado) {
     // Normalize estado - handle both 'SIN SETUP' and 'SIN_SETUP'

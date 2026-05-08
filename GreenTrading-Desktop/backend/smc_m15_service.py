@@ -1153,7 +1153,7 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
         print(f"===============================\n")
         
         # Build full response with zone
-        # CRITICAL FIX BUG 2: Use estado_historial (validated) instead of estado_dashboard (raw)
+        # CRITICAL FIX: BUG 2 - Use estado_historial (validated) instead of estado_dashboard (raw)
         result = {
             "symbol": symbol,
             "price": precio_actual,
