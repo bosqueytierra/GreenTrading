@@ -1,5 +1,6 @@
 # GreenTrading Desktop - Python Dependencies
-# Phase 1: Minimal requirements
+# IMPORTANT: Requires Python 3.11 (NOT Python 3.14)
+# Python 3.14 has compatibility issues with Supabase 2.3.0
 
 # FastAPI for REST API
 fastapi==0.109.1
@@ -14,5 +15,5 @@ pandas>=2.0.0
 # Additional utilities
 python-dotenv==1.0.0
 
-# Supabase integration
+# Supabase integration (requires Python 3.11, NOT compatible with Python 3.14)
 supabase==2.3.0

@@ -52,55 +52,210 @@ function createWindow() {
 }
 
 /**
- * Start Python backend process
+ * Check Python version
  */
-function startPythonBackend() {
-  return new Promise((resolve, reject) => {
-    console.log('🐍 Starting Python backend...');
-    
-    // Determine Python command (python or python3)
-    const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
-    
-    // CRITICAL LOGS: Confirm Python backend path and executable
-    console.log('PYTHON BACKEND CWD:', path.dirname(PYTHON_BACKEND.script));
-    console.log('PYTHON BACKEND SCRIPT:', PYTHON_BACKEND.script);
-    console.log('PYTHON EXEC:', pythonCmd);
-    
-    pythonProcess = spawn(pythonCmd, [PYTHON_BACKEND.script], {
+function checkPythonVersion(pythonCmd) {
+  return new Promise((resolve) => {
+    const versionProcess = spawn(pythonCmd, ['--version'], {
       stdio: ['pipe', 'pipe', 'pipe']
     });
+    
+    let versionOutput = '';
+    
+    versionProcess.stdout.on('data', (data) => {
+      versionOutput += data.toString();
+    });
+    
+    versionProcess.stderr.on('data', (data) => {
+      versionOutput += data.toString();
+    });
+    
+    versionProcess.on('close', (code) => {
+      if (code === 0 && versionOutput) {
+        // Parse version (e.g., "Python 3.11.0" or "Python 3.14.0")
+        const match = versionOutput.match(/Python (\d+)\.(\d+)\.(\d+)/);
+        if (match) {
+          const major = parseInt(match[1]);
+          const minor = parseInt(match[2]);
+          resolve({ success: true, major, minor, full: versionOutput.trim() });
+        } else {
+          resolve({ success: false, error: 'Could not parse version' });
+        }
+      } else {
+        resolve({ success: false, error: 'Python not found' });
+      }
+    });
+    
+    versionProcess.on('error', () => {
+      resolve({ success: false, error: 'Python not found' });
+    });
+  });
+}
 
-    pythonProcess.stdout.on('data', (data) => {
-      const message = data.toString();
-      console.log(`[Python] ${message}`);
+/**
+ * Select best Python executable
+ */
+async function selectPythonExecutable() {
+  const isWindows = process.platform === 'win32';
+  
+  // List of Python commands to try, in order of preference
+  const pythonCommands = isWindows 
+    ? ['py', 'python'] // On Windows, try py launcher first
+    : ['python3.11', 'python3', 'python'];
+  
+  let selectedPython = null;
+  let selectedVersion = null;
+  
+  // Try py -3.11 on Windows
+  if (isWindows) {
+    console.log('Checking: py -3.11');
+    const py311Process = spawn('py', ['-3.11', '--version'], {
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+    
+    const py311Available = await new Promise((resolve) => {
+      let versionOutput = '';
       
-      // Check if backend is ready
-      if (message.includes('Uvicorn running on')) {
-        console.log('✅ Python backend ready');
-        resolve();
+      py311Process.stdout.on('data', (data) => {
+        versionOutput += data.toString();
+      });
+      
+      py311Process.stderr.on('data', (data) => {
+        versionOutput += data.toString();
+      });
+      
+      py311Process.on('close', (code) => {
+        if (code === 0 && versionOutput.includes('3.11')) {
+          const match = versionOutput.match(/Python (\d+)\.(\d+)\.(\d+)/);
+          if (match) {
+            resolve({
+              success: true,
+              cmd: 'py',
+              args: ['-3.11'],
+              major: parseInt(match[1]),
+              minor: parseInt(match[2]),
+              full: versionOutput.trim()
+            });
+          } else {
+            resolve({ success: false });
+          }
+        } else {
+          resolve({ success: false });
+        }
+      });
+      
+      py311Process.on('error', () => {
+        resolve({ success: false });
+      });
+    });
+    
+    if (py311Available.success) {
+      console.log('PYTHON EXEC SELECTED: py -3.11');
+      console.log('PYTHON VERSION:', py311Available.full);
+      return { cmd: 'py', args: ['-3.11'], version: py311Available };
+    }
+  }
+  
+  // Try other Python commands
+  for (const cmd of pythonCommands) {
+    console.log(`Checking: ${cmd}`);
+    const version = await checkPythonVersion(cmd);
+    
+    if (version.success) {
+      console.log(`Found ${cmd}: Python ${version.major}.${version.minor}`);
+      
+      // Check if Python 3.14
+      if (version.major === 3 && version.minor === 14) {
+        console.error('❌ Python 3.14 no compatible. Instala Python 3.11.');
+        console.error('   Supabase 2.3.0 no funciona con Python 3.14.');
+        console.error('   Descarga Python 3.11 desde: https://www.python.org/downloads/');
+        throw new Error('Python 3.14 no compatible. Instala Python 3.11.');
       }
-    });
+      
+      // Prefer Python 3.11
+      if (version.major === 3 && version.minor === 11) {
+        console.log('PYTHON EXEC SELECTED:', cmd);
+        console.log('PYTHON VERSION:', version.full);
+        return { cmd, args: [], version };
+      }
+      
+      // Store as fallback if no 3.11 found yet
+      if (!selectedPython) {
+        selectedPython = cmd;
+        selectedVersion = version;
+      }
+    }
+  }
+  
+  // Use fallback if no 3.11 found
+  if (selectedPython) {
+    console.log('PYTHON EXEC SELECTED:', selectedPython);
+    console.log('PYTHON VERSION:', selectedVersion.full);
+    console.warn('⚠️ Python 3.11 recomendado. Versión actual puede tener problemas con Supabase.');
+    return { cmd: selectedPython, args: [], version: selectedVersion };
+  }
+  
+  // No Python found
+  throw new Error('No se encontró Python. Instala Python 3.11.');
+}
 
-    pythonProcess.stderr.on('data', (data) => {
-      console.error(`[Python Error] ${data.toString()}`);
-    });
+/**
+ * Start Python backend process
+ */
+async function startPythonBackend() {
+  return new Promise(async (resolve, reject) => {
+    console.log('🐍 Starting Python backend...');
+    
+    try {
+      // Select best Python executable
+      const pythonExec = await selectPythonExecutable();
+      
+      // CRITICAL LOGS: Confirm Python backend path and executable
+      console.log('PYTHON BACKEND CWD:', path.dirname(PYTHON_BACKEND.script));
+      console.log('PYTHON BACKEND SCRIPT:', PYTHON_BACKEND.script);
+      
+      // Build command arguments
+      const spawnArgs = [...pythonExec.args, PYTHON_BACKEND.script];
+      
+      pythonProcess = spawn(pythonExec.cmd, spawnArgs, {
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
 
-    pythonProcess.on('error', (error) => {
-      console.error('❌ Failed to start Python backend:', error);
+      pythonProcess.stdout.on('data', (data) => {
+        const message = data.toString();
+        console.log(`[Python] ${message}`);
+        
+        // Check if backend is ready
+        if (message.includes('Uvicorn running on')) {
+          console.log('✅ Python backend ready');
+          resolve();
+        }
+      });
+
+      pythonProcess.stderr.on('data', (data) => {
+        console.error(`[Python Error] ${data.toString()}`);
+      });
+
+      pythonProcess.on('error', (error) => {
+        console.error('❌ Failed to start Python backend:', error);
+        reject(error);
+      });
+
+      pythonProcess.on('close', (code) => {
+        console.log(`Python backend exited with code ${code}`);
+        pythonProcess = null;
+      });
+
+      // Timeout if backend doesn't start in 10 seconds
+      setTimeout(() => {
+        if (pythonProcess && !pythonProcess.killed) {
+          resolve(); // Continue anyway
+        }
+      }, 10000);
+    } catch (error) {
+      console.error('❌ Error selecting Python executable:', error.message);
       reject(error);
-    });
-
-    pythonProcess.on('close', (code) => {
-      console.log(`Python backend exited with code ${code}`);
-      pythonProcess = null;
-    });
-
-    // Timeout if backend doesn't start in 10 seconds
-    setTimeout(() => {
-      if (pythonProcess && !pythonProcess.killed) {
-        resolve(); // Continue anyway
-      }
-    }, 10000);
+    }
   });
 }
 
