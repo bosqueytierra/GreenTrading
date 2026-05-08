@@ -45,7 +45,7 @@ function formatEstadoBadge(estado) {
 ```
 
 ### 2. **Bug en backend/smc_m15_service.py - Campo result["estado"]**
-**Ubicación**: `backend/smc_m15_service.py:1169`
+**Ubicación**: Función `analyze_symbol_smc()`, línea ~1169
 
 **Problema**: El backend calculaba correctamente `estado_historial` (con validación de máquina de estados) pero luego devolvía `estado_dashboard` (sin validación) en el campo `estado`.
 
