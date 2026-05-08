@@ -126,7 +126,10 @@ GreenTrading-Desktop/
 ### Prerequisites
 
 1. **Node.js** (v18 or higher)
-2. **Python** (3.8 or higher)
+2. **Python 3.11** (REQUIRED - Python 3.14 is NOT compatible)
+   - ⚠️ **DO NOT USE Python 3.14** - it has compatibility issues with Supabase 2.3.0
+   - ✅ **Python 3.11 is recommended and tested**
+   - Download Python 3.11: https://www.python.org/downloads/
 3. **MetaTrader 5** installed and running on Windows
 
 ### Step 1: Install Node.js dependencies
@@ -139,7 +142,20 @@ npm install
 ### Step 2: Install Python dependencies
 
 ```bash
-pip install -r requirements.txt
+# On Windows, use py -3.11 to ensure Python 3.11 is used
+py -3.11 -m pip install -r requirements.txt
+
+# Or on Linux/Mac
+python3.11 -m pip install -r requirements.txt
+```
+
+**Important:** Verify you're using Python 3.11:
+```bash
+# On Windows
+py -3.11 --version
+
+# On Linux/Mac
+python3.11 --version
 ```
 
 ### Step 3: Copy logo (optional)
@@ -212,6 +228,27 @@ This will:
 ---
 
 ## 🔧 Troubleshooting
+
+### Python 3.14 compatibility error
+
+If you see the error:
+```
+❌ Python 3.14 no compatible. Instala Python 3.11.
+```
+
+**Solution:**
+1. Install Python 3.11 from https://www.python.org/downloads/
+2. On Windows, use the `py` launcher to select Python 3.11:
+   ```bash
+   py -3.11 --version  # Verify Python 3.11 is installed
+   py -3.11 -m pip install -r requirements.txt
+   ```
+3. The application will automatically detect and use Python 3.11
+
+**Why Python 3.14 doesn't work:**
+- Supabase 2.3.0 has compatibility issues with Python 3.14
+- AttributeError: 'typing.Union' object has no attribute '__module__'
+- This error occurs in the httpcore → httpx → postgrest → supabase dependency chain
 
 ### Python backend not starting
 
