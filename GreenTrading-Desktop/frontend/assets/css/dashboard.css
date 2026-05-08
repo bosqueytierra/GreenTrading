@@ -481,8 +481,28 @@ body {
     opacity: 0.7;
 }
 
+.row-en-zona {
+    background-color: rgba(59, 130, 246, 0.08);
+}
+
+.row-profit {
+    background-color: rgba(251, 191, 36, 0.1);
+}
+
+.row-tp {
+    background-color: rgba(34, 197, 94, 0.1);
+}
+
+.row-sl {
+    background-color: rgba(239, 68, 68, 0.08);
+}
+
 .row-activa:hover,
-.row-sin-setup:hover {
+.row-sin-setup:hover,
+.row-en-zona:hover,
+.row-profit:hover,
+.row-tp:hover,
+.row-sl:hover {
     background-color: var(--bg-tertiary);
 }
 
@@ -551,6 +571,42 @@ body {
     background-color: var(--bg-tertiary);
     color: var(--text-tertiary);
     font-weight: 600;
+}
+
+.status-esperando {
+    background-color: rgba(168, 85, 247, 0.1);
+    color: #7c3aed;
+    font-weight: 700;
+}
+
+.status-llegando {
+    background-color: rgba(59, 130, 246, 0.1);
+    color: var(--accent-blue);
+    font-weight: 700;
+}
+
+.status-en-zona {
+    background-color: rgba(59, 130, 246, 0.15);
+    color: #1d4ed8;
+    font-weight: 700;
+}
+
+.status-profit {
+    background-color: rgba(251, 191, 36, 0.15);
+    color: #d97706;
+    font-weight: 700;
+}
+
+.status-tp {
+    background-color: var(--accent-green-light);
+    color: var(--accent-green);
+    font-weight: 700;
+}
+
+.status-sl {
+    background-color: var(--accent-red-light);
+    color: var(--accent-red);
+    font-weight: 700;
 }
 
 /* Time value */
