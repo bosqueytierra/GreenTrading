@@ -771,51 +771,61 @@ def calcular_transicion_estado(
     Returns:
         tuple (estado_final, motivo_transicion)
     """
-    # Determinar dirección
-    direccion = "ALCISTA" if entrada < stoploss else "BAJISTA"
+    # Determinar dirección (Boom = ALCISTA, Crash = BAJISTA)
+    # Para Boom (ALCISTA): entrada > stoploss (SL abajo, entrada arriba)
+    # Para Crash (BAJISTA): entrada < stoploss (SL arriba, entrada abajo)
+    direccion = "ALCISTA" if entrada > stoploss else "BAJISTA"
     
-    # CHECK 1: TP/SL - estos siempre tienen prioridad
+    # CHECK 1: Si NO hay estado previo, solo permitir ACTIVA/ESPERANDO_ENTRADA
+    if not estado_previo:
+        # Nueva zona: verificar si ya tocó TP/SL (situación anómala)
+        en_tp = False
+        en_sl = False
+        
+        if direccion == "ALCISTA":
+            en_sl = precio_actual <= stoploss
+            en_tp = precio_actual >= tp
+        else:
+            en_sl = precio_actual >= stoploss
+            en_tp = precio_actual <= tp
+        
+        if en_tp:
+            return "ACTIVA", "Nueva zona detectada (precio en TP, requiere monitoreo)"
+        elif en_sl:
+            return "ACTIVA", "Nueva zona detectada (precio en SL, requiere monitoreo)"
+        elif estado_calculado in ['ACTIVA', 'ESPERANDO_ENTRADA', 'LLEGANDO_A_ZONA']:
+            return estado_calculado, "Nueva zona detectada"
+        elif estado_calculado == 'EN_ZONA':
+            return "ACTIVA", "Nueva zona detectada (precio en zona, sin historial previo)"
+        elif estado_calculado == 'PROFIT':
+            return "ACTIVA", "Nueva zona detectada (precio en profit, sin historial previo)"
+        else:
+            return "ACTIVA", f"Nueva zona detectada"
+    
+    # CHECK 2: Verificar TP/SL con validación de estado previo
     if direccion == "ALCISTA":
         if precio_actual <= stoploss:
             # Solo permitir SL si estado previo era válido
-            if estado_previo and estado_previo in ['ACTIVA', 'ESPERANDO_ENTRADA', 'EN_ZONA']:
+            if estado_previo in ['ACTIVA', 'ESPERANDO_ENTRADA', 'LLEGANDO_A_ZONA', 'EN_ZONA']:
                 return "SL", "Stop Loss alcanzado"
-            elif not estado_previo:
-                # Nueva zona que ya está en SL - no debería pasar, iniciar como ACTIVA
-                return "ACTIVA", "Nueva zona detectada (precio en SL, requiere monitoreo)"
         if precio_actual >= tp:
             # Solo permitir TP si estado previo pasó por EN_ZONA
-            if estado_previo and estado_previo in ['EN_ZONA', 'PROFIT']:
+            if estado_previo in ['EN_ZONA', 'PROFIT']:
                 return "TP", "Take Profit alcanzado"
-            elif not estado_previo:
-                # Nueva zona que ya está en TP - iniciar como ACTIVA
-                return "ACTIVA", "Nueva zona detectada (precio en TP, requiere monitoreo)"
     else:
         # BAJISTA
         if precio_actual >= stoploss:
-            if estado_previo and estado_previo in ['ACTIVA', 'ESPERANDO_ENTRADA', 'EN_ZONA']:
+            if estado_previo in ['ACTIVA', 'ESPERANDO_ENTRADA', 'LLEGANDO_A_ZONA', 'EN_ZONA']:
                 return "SL", "Stop Loss alcanzado"
-            elif not estado_previo:
-                return "ACTIVA", "Nueva zona detectada (precio en SL, requiere monitoreo)"
         if precio_actual <= tp:
-            if estado_previo and estado_previo in ['EN_ZONA', 'PROFIT']:
+            if estado_previo in ['EN_ZONA', 'PROFIT']:
                 return "TP", "Take Profit alcanzado"
-            elif not estado_previo:
-                return "ACTIVA", "Nueva zona detectada (precio en TP, requiere monitoreo)"
     
-    # CHECK 2: Si NO hay estado previo, solo permitir ACTIVA/ESPERANDO_ENTRADA
-    if not estado_previo:
-        # Nueva zona: solo permitir estados iniciales
-        if estado_calculado in ['ACTIVA', 'ESPERANDO_ENTRADA', 'LLEGANDO_A_ZONA']:
-            return estado_calculado, "Nueva zona detectada"
-        elif estado_calculado == 'EN_ZONA':
-            return "ACTIVA", "Nueva zona detectada (precio en zona, pero sin historial previo)"
-        elif estado_calculado == 'PROFIT':
-            return "ACTIVA", "Nueva zona detectada (precio en profit, pero sin historial previo)"
-        else:
-            return "ACTIVA", f"Nueva zona detectada (estado calculado={estado_calculado} no permitido)"
+    # CHECK 3: Estados terminales no cambian
+    if estado_previo in ['TP', 'SL']:
+        return estado_previo, f"Estado terminal {estado_previo} (no cambia)"
     
-    # CHECK 3: Validar transiciones permitidas según estado previo
+    # CHECK 4: Validar transiciones permitidas según estado previo
     if estado_previo in ['ACTIVA', 'ESPERANDO_ENTRADA', 'LLEGANDO_A_ZONA']:
         # Desde estados iniciales, solo puede pasar a EN_ZONA
         if estado_calculado == 'EN_ZONA':
@@ -844,10 +854,6 @@ def calcular_transicion_estado(
             return "PROFIT", "Mantiene profit"
         else:
             return estado_calculado, f"Transición desde PROFIT"
-    
-    elif estado_previo in ['TP', 'SL']:
-        # Estados terminales - no cambian
-        return estado_previo, f"Estado terminal {estado_previo} (no cambia)"
     
     # Default: mantener estado calculado
     return estado_calculado, f"Transición estándar desde {estado_previo}"
