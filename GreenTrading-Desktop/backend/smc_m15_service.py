@@ -736,45 +736,198 @@ def calcular_estado_dashboard(precio_actual: float, entrada: float, zona_desde: 
         return "ESPERANDO_ENTRADA"
 
 
-def calcular_estado_historial(estado_dashboard: str, precio_actual: float, entrada: float, stoploss: float, tp: float) -> str:
+def calcular_transicion_estado(
+    symbol: str,
+    estado_previo: str,
+    estado_calculado: str,
+    precio_actual: float,
+    entrada: float,
+    stoploss: float,
+    tp: float,
+    zona_desde: float,
+    zona_hasta: float
+) -> tuple:
     """
-    Mapea estado dashboard a estado historial y evalúa TP/SL.
+    Calcula la transición de estado válida basada en el estado previo.
     
-    Estados historial:
-    - ESPERANDO_ENTRADA: Esperando entrada
-    - LLEGANDO_A_ZONA: Acercándose a zona
-    - EN_ZONA: En zona
-    - PROFIT: En ganancia flotante
-    - TP: Take profit alcanzado
-    - SL: Stop loss alcanzado
-    - DESCARTADA: Zona invalidada (no usado en SMC_M15_PRO)
+    Reglas de transición:
+    1. Nueva zona sin historial: solo ACTIVA o ESPERANDO_ENTRADA
+    2. ACTIVA/ESPERANDO_ENTRADA → EN_ZONA (si precio toca zona)
+    3. EN_ZONA → PROFIT (si precio sale en dirección favorable)
+    4. PROFIT/EN_ZONA → TP (si alcanza TP)
+    5. ACTIVA/EN_ZONA → SL (si alcanza SL)
     
     Args:
-        estado_dashboard: Estado actual del dashboard
+        symbol: Symbol name
+        estado_previo: Estado guardado previamente (None si es nueva zona)
+        estado_calculado: Estado calculado por lógica actual
         precio_actual: Precio actual
         entrada: Precio de entrada
         stoploss: Stop loss
         tp: Take profit 1:1
+        zona_desde: Límite inferior de zona
+        zona_hasta: Límite superior de zona
     
     Returns:
-        Estado historial
+        tuple (estado_final, motivo_transicion)
     """
-    # Check TP/SL first
-    if entrada < stoploss:
-        # ALCISTA
+    # Determinar dirección (Boom = ALCISTA, Crash = BAJISTA)
+    # Para Boom (ALCISTA): entrada > stoploss (SL abajo, entrada arriba)
+    # Para Crash (BAJISTA): entrada < stoploss (SL arriba, entrada abajo)
+    direccion = "ALCISTA" if entrada > stoploss else "BAJISTA"
+    
+    # CHECK 1: Si NO hay estado previo, solo permitir ACTIVA/ESPERANDO_ENTRADA
+    if not estado_previo:
+        # ORDEN DE VALIDACION:
+        # 1. Primero verificar si precio está en zona (permitir EN_ZONA si es el caso)
+        # 2. Luego verificar TP/SL (situaciones anómalas)
+        # 3. Finalmente, otros estados iniciales válidos
+        
+        # Verificar si precio está realmente dentro de la zona
+        en_zona_real = zona_desde <= precio_actual <= zona_hasta
+        
+        # Si calculado es EN_ZONA Y precio está realmente en zona, permitirlo
+        if estado_calculado == 'EN_ZONA' and en_zona_real:
+            return "EN_ZONA", "Nueva zona detectada (precio dentro de zona)"
+        
+        # Si no está en zona, verificar si ya tocó TP/SL (situación anómala)
+        en_tp = False
+        en_sl = False
+        
+        if direccion == "ALCISTA":
+            en_sl = precio_actual <= stoploss
+            en_tp = precio_actual >= tp
+        else:
+            en_sl = precio_actual >= stoploss
+            en_tp = precio_actual <= tp
+        
+        if en_tp:
+            return "ACTIVA", "Nueva zona detectada (precio en TP, requiere monitoreo)"
+        elif en_sl:
+            return "ACTIVA", "Nueva zona detectada (precio en SL, requiere monitoreo)"
+        elif estado_calculado in ['ACTIVA', 'ESPERANDO_ENTRADA', 'LLEGANDO_A_ZONA']:
+            return estado_calculado, "Nueva zona detectada"
+        elif estado_calculado == 'EN_ZONA':
+            # Precio NO está realmente en zona pero calculado dice EN_ZONA
+            return "ACTIVA", "Nueva zona detectada (calculado EN_ZONA, sin historial previo)"
+        elif estado_calculado == 'PROFIT':
+            return "ACTIVA", "Nueva zona detectada (precio en profit, sin historial previo)"
+        else:
+            return "ACTIVA", f"Nueva zona detectada"
+    
+    # CHECK 2: Verificar TP/SL con validación de estado previo
+    if direccion == "ALCISTA":
         if precio_actual <= stoploss:
-            return "SL"
+            # Solo permitir SL si estado previo era válido
+            if estado_previo in ['ACTIVA', 'ESPERANDO_ENTRADA', 'LLEGANDO_A_ZONA', 'EN_ZONA']:
+                return "SL", "Stop Loss alcanzado"
         if precio_actual >= tp:
-            return "TP"
+            # Solo permitir TP si estado previo pasó por EN_ZONA
+            if estado_previo in ['EN_ZONA', 'PROFIT']:
+                return "TP", "Take Profit alcanzado"
     else:
         # BAJISTA
         if precio_actual >= stoploss:
-            return "SL"
+            if estado_previo in ['ACTIVA', 'ESPERANDO_ENTRADA', 'LLEGANDO_A_ZONA', 'EN_ZONA']:
+                return "SL", "Stop Loss alcanzado"
         if precio_actual <= tp:
-            return "TP"
+            if estado_previo in ['EN_ZONA', 'PROFIT']:
+                return "TP", "Take Profit alcanzado"
     
-    # Map dashboard states to historial states
-    return estado_dashboard
+    # CHECK 3: Estados terminales no cambian
+    if estado_previo in ['TP', 'SL']:
+        return estado_previo, f"Estado terminal {estado_previo} (no cambia)"
+    
+    # CHECK 4: Validar transiciones permitidas según estado previo
+    if estado_previo in ['ACTIVA', 'ESPERANDO_ENTRADA', 'LLEGANDO_A_ZONA']:
+        # Desde estados iniciales, solo puede pasar a EN_ZONA
+        if estado_calculado == 'EN_ZONA':
+            return "EN_ZONA", "Precio tocó la zona"
+        elif estado_calculado == 'PROFIT':
+            # No puede saltar a PROFIT sin pasar por EN_ZONA
+            return estado_previo, f"Mantiene {estado_previo} (no puede saltar a PROFIT sin pasar por EN_ZONA)"
+        else:
+            return estado_calculado, f"Transición desde {estado_previo}"
+    
+    elif estado_previo == 'EN_ZONA':
+        # Desde EN_ZONA, puede pasar a PROFIT
+        if estado_calculado == 'PROFIT':
+            return "PROFIT", "Precio salió en dirección favorable"
+        elif estado_calculado in ['ESPERANDO_ENTRADA', 'LLEGANDO_A_ZONA', 'ACTIVA']:
+            # Puede volver a esperar si el precio salió de la zona sin profit
+            return estado_calculado, "Precio salió de la zona"
+        else:
+            return estado_calculado, f"Transición desde EN_ZONA"
+    
+    elif estado_previo == 'PROFIT':
+        # Desde PROFIT, puede seguir en PROFIT o pasar a EN_ZONA si retrocede
+        if estado_calculado == 'EN_ZONA':
+            return "EN_ZONA", "Precio retrocedió a zona"
+        elif estado_calculado == 'PROFIT':
+            return "PROFIT", "Mantiene profit"
+        else:
+            return estado_calculado, f"Transición desde PROFIT"
+    
+    # Default: mantener estado calculado
+    return estado_calculado, f"Transición estándar desde {estado_previo}"
+
+
+def calcular_estado_historial(
+    symbol: str,
+    estado_dashboard: str,
+    precio_actual: float,
+    entrada: float,
+    stoploss: float,
+    tp: float,
+    zona_desde: float,
+    zona_hasta: float,
+    estado_previo: str = None
+) -> tuple:
+    """
+    Calcula estado historial validando transiciones correctas.
+    
+    CORRECCIÓN CRÍTICA: Ahora usa estado previo guardado para validar
+    que las transiciones sean correctas según la máquina de estados.
+    
+    Estados historial:
+    - ACTIVA/ESPERANDO_ENTRADA: Estados iniciales para nuevas zonas
+    - LLEGANDO_A_ZONA: Acercándose a zona
+    - EN_ZONA: En zona (solo si antes estuvo ACTIVA)
+    - PROFIT: En ganancia flotante (solo si antes estuvo EN_ZONA)
+    - TP: Take profit alcanzado (solo si antes estuvo EN_ZONA o PROFIT)
+    - SL: Stop loss alcanzado (solo si antes estuvo ACTIVA o EN_ZONA)
+    
+    Args:
+        symbol: Symbol name
+        estado_dashboard: Estado calculado por lógica de distancia
+        precio_actual: Precio actual
+        entrada: Precio de entrada
+        stoploss: Stop loss
+        tp: Take profit 1:1
+        zona_desde: Límite inferior de zona
+        zona_hasta: Límite superior de zona
+        estado_previo: Estado guardado previamente en Supabase (None si nueva zona)
+    
+    Returns:
+        tuple (estado_final, motivo_transicion)
+    """
+    # Calcular estado según lógica de precios
+    estado_calculado = estado_dashboard
+    
+    # Calcular transición válida
+    estado_final, motivo = calcular_transicion_estado(
+        symbol,
+        estado_previo,
+        estado_calculado,
+        precio_actual,
+        entrada,
+        stoploss,
+        tp,
+        zona_desde,
+        zona_hasta
+    )
+    
+    return estado_final, motivo
 
 
 # =========================
@@ -924,7 +1077,7 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
         print(f"    - StopLoss: {stoploss}")
         print(f"    - TP 1:1: {tp_1_1}")
         
-        # Calculate dashboard state
+        # Calculate dashboard state (distancia/posición)
         estado_dashboard = calcular_estado_dashboard(
             precio_actual,
             entrada,
@@ -932,17 +1085,53 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
             zona['zona_hasta'],
             direccion_operativa
         )
-        print(f"  Estado Dashboard: {estado_dashboard}")
+        print(f"  Estado Dashboard (calculado): {estado_dashboard}")
         
-        # Calculate historial state (provisional)
-        estado_historial = calcular_estado_historial(
+        # Obtener estado previo guardado en Supabase (si existe)
+        estado_previo = None
+        existing_setup = None
+        if supabase_service:
+            existing_setup = supabase_service.get_active_setup(
+                'SMC_M15_PRO',
+                symbol,
+                entrada,
+                stoploss
+            )
+            if existing_setup:
+                estado_previo = existing_setup.get('estado')
+                print(f"  Estado Previo (guardado): {estado_previo}")
+            else:
+                print(f"  Estado Previo: NINGUNO (nueva zona)")
+        
+        # Calculate historial state with state machine validation
+        estado_historial, motivo_transicion = calcular_estado_historial(
+            symbol,
             estado_dashboard,
             precio_actual,
             entrada,
             stoploss,
-            tp_1_1
+            tp_1_1,
+            zona['zona_desde'],
+            zona['zona_hasta'],
+            estado_previo
         )
-        print(f"  Estado Historial: {estado_historial}")
+        print(f"  Estado Historial (validado): {estado_historial}")
+        print(f"  Motivo transición: {motivo_transicion}")
+        
+        # LOG COMPLETO según requerimientos
+        print(f"\n=== LOG TRANSICION ESTADO {symbol} ===")
+        print(f"  symbol: {symbol}")
+        print(f"  estado_previo: {estado_previo if estado_previo else 'NINGUNO (nueva zona)'}")
+        print(f"  estado_calculado: {estado_dashboard}")
+        print(f"  estado_final: {estado_historial}")
+        print(f"  precio_actual: {precio_actual}")
+        print(f"  zona_desde: {zona['zona_desde']}")
+        print(f"  zona_hasta: {zona['zona_hasta']}")
+        print(f"  entrada: {entrada}")
+        print(f"  stoploss: {stoploss}")
+        print(f"  tp_1_1: {tp_1_1}")
+        print(f"  motivo_transicion: {motivo_transicion}")
+        print(f"======================================\n")
         
         # COMPREHENSIVE LOG as requested in problem statement
         print(f"\n=== RESUMEN SETUP {symbol} ===")
