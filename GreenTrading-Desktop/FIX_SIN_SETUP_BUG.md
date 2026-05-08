@@ -9,21 +9,13 @@ The dashboard was correctly detecting M15 zones, score, OB, FVG, and barrida, BU
 
 ## Root Cause
 
-The bug was in `smc_m15_service.py`, function `crear_zona_m15()` at lines 633-636:
+The bug was in `smc_m15_service.py`, function `crear_zona_m15()` at lines 633-636.
 
-```python
-# OLD CODE (BUGGY):
-if es_util:
-    return zona
-
-return None  # This caused valid zones to be discarded!
-```
-
-The logic was:
-1. `validar_zona_operativa()` calculated `es_util` based on whether price had reached the zone
+The logic flow was:
+1. `validar_zona_operativa()` (lines 219-243) calculated `es_util` based on whether price had reached the zone:
    - For Boom (ALCISTA): `es_util = zona_hasta <= precio_actual` (zone must be BELOW price)
    - For Crash (BAJISTA): `es_util = zona_desde >= precio_actual` (zone must be ABOVE price)
-2. If `es_util=False` (price hasn't reached zone yet), the entire zone was DISCARDED
+2. If `es_util=False` (price hasn't reached zone yet), the entire zone was DISCARDED (returned `None`)
 3. This caused `analyze_symbol_smc()` to return "SIN SETUP"
 4. "SIN SETUP" setups don't get saved to Supabase (by design, line 122-124)
 
