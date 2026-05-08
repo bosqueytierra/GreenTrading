@@ -125,7 +125,7 @@ def test_response_structure():
     # Expected keys
     expected_keys = [
         'symbol', 'price', 'tendencia_h1', 'tendencia_m15',
-        'ultimo_evento_m15', 'zona_madre_m15', 'score',
+        'ultimo_evento_m15', 'zona_madre_m15', 'entrada', 'stoploss', 'tp_1_1', 'score',
         'ob', 'fvg', 'barrida', 'estado', 'updated_at'
     ]
     
