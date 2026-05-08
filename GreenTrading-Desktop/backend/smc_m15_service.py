@@ -641,7 +641,7 @@ def crear_zona_m15(df_m15, eventos_m15, fvgs_m15, symbol, precio_actual):
         # A valid zone with OB/FVG/barrida should be shown even if price is far away.
         # The estado (ESPERANDO_ENTRADA, LLEGANDO_A_ZONA, EN_ZONA) handles distance logic.
         
-        print(f"  ZONA VALIDA CREADA:")
+        print(f"  ZONA VALIDA CREADA para {symbol}:")
         print(f"    - es_util: {es_util}")
         print(f"    - motivo: {motivo}")
         print(f"    - score: {score}")

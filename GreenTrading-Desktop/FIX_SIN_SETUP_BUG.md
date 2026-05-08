@@ -137,9 +137,9 @@ Added logs to `sync_setup_to_supabase()` to clearly show:
 
 - `GreenTrading-Desktop/backend/smc_m15_service.py`
   - Lines 639-650: Fixed `crear_zona_m15()` to not discard zones based on `es_util`
-  - Lines 854-873: Added comprehensive logging for "SIN SETUP" cases
-  - Lines 880-895: Added `es_util` extraction and logging
-  - Lines 926-939: Added comprehensive logging for valid setups
+  - Lines 854-888: Added comprehensive logging for "SIN SETUP" cases
+  - Lines 903-912: Added `es_util` extraction and logging for valid zones
+  - Lines 926-939: Added comprehensive summary logging for valid setups
   - Lines 107-154: Added logging to `sync_setup_to_supabase()`
 
 ## Testing Recommendations
