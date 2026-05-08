@@ -750,12 +750,25 @@ def calcular_transicion_estado(
     """
     Calcula la transición de estado válida basada en el estado previo.
     
-    Reglas de transición:
-    1. Nueva zona sin historial: solo ACTIVA o ESPERANDO_ENTRADA
-    2. ACTIVA/ESPERANDO_ENTRADA → EN_ZONA (si precio toca zona)
-    3. EN_ZONA → PROFIT (si precio sale en dirección favorable)
-    4. PROFIT/EN_ZONA → TP (si alcanza TP)
-    5. ACTIVA/EN_ZONA → SL (si alcanza SL)
+    MÁQUINA DE ESTADOS CORRECTA:
+    
+    ESPERANDO_ENTRADA <-> LLEGANDO_A_ZONA (pueden oscilar)
+    ESPERANDO_ENTRADA -> EN_ZONA
+    LLEGANDO_A_ZONA -> EN_ZONA
+    
+    EN_ZONA -> PROFIT (salida favorable)
+    EN_ZONA -> SL (toca stoploss)
+    EN_ZONA -> EN_ZONA (se mantiene)
+    
+    PROFIT -> TP (alcanza 1:1)
+    PROFIT -> SL (retrocede a stoploss)
+    PROFIT -> PROFIT (se mantiene)
+    
+    TP, SL, DESCARTADA = terminales (no cambian)
+    
+    REGLA CLAVE:
+    - Una vez EN_ZONA, NUNCA vuelve a: ESPERANDO_ENTRADA, LLEGANDO_A_ZONA, ACTIVA
+    - Una vez PROFIT, NUNCA vuelve a: EN_ZONA, ESPERANDO_ENTRADA, LLEGANDO_A_ZONA, ACTIVA
     
     Args:
         symbol: Symbol name
@@ -819,7 +832,7 @@ def calcular_transicion_estado(
     if direccion == "ALCISTA":
         if precio_actual <= stoploss:
             # Solo permitir SL si estado previo era válido
-            if estado_previo in ['ACTIVA', 'ESPERANDO_ENTRADA', 'LLEGANDO_A_ZONA', 'EN_ZONA']:
+            if estado_previo in ['ACTIVA', 'ESPERANDO_ENTRADA', 'LLEGANDO_A_ZONA', 'EN_ZONA', 'PROFIT']:
                 return "SL", "Stop Loss alcanzado"
         if precio_actual >= tp:
             # Solo permitir TP si estado previo pasó por EN_ZONA
@@ -828,7 +841,7 @@ def calcular_transicion_estado(
     else:
         # BAJISTA
         if precio_actual >= stoploss:
-            if estado_previo in ['ACTIVA', 'ESPERANDO_ENTRADA', 'LLEGANDO_A_ZONA', 'EN_ZONA']:
+            if estado_previo in ['ACTIVA', 'ESPERANDO_ENTRADA', 'LLEGANDO_A_ZONA', 'EN_ZONA', 'PROFIT']:
                 return "SL", "Stop Loss alcanzado"
         if precio_actual <= tp:
             if estado_previo in ['EN_ZONA', 'PROFIT']:
@@ -850,23 +863,34 @@ def calcular_transicion_estado(
             return estado_calculado, f"Transición desde {estado_previo}"
     
     elif estado_previo == 'EN_ZONA':
-        # Desde EN_ZONA, puede pasar a PROFIT
+        # FIX CRÍTICO: Una vez EN_ZONA, NUNCA vuelve a estados anteriores
+        # Solo puede ir a: PROFIT, SL, TP, o mantenerse EN_ZONA
         if estado_calculado == 'PROFIT':
             return "PROFIT", "Precio salió en dirección favorable"
+        elif estado_calculado == 'EN_ZONA':
+            return "EN_ZONA", "Precio sigue en zona"
         elif estado_calculado in ['ESPERANDO_ENTRADA', 'LLEGANDO_A_ZONA', 'ACTIVA']:
-            # Puede volver a esperar si el precio salió de la zona sin profit
-            return estado_calculado, "Precio salió de la zona"
+            # PROHIBIDO: No puede volver atrás - mantiene memoria de zona tocada
+            print(f"  WARNING: Bloqueando transición ilegal EN_ZONA -> {estado_calculado}")
+            print(f"  Zona mantiene memoria: una vez tocada, nunca vuelve a estados iniciales")
+            return "EN_ZONA", "Zona mantiene memoria (precio salió temporalmente sin profit)"
         else:
-            return estado_calculado, f"Transición desde EN_ZONA"
+            # Para cualquier otro caso, mantener EN_ZONA hasta resolución
+            return "EN_ZONA", "Zona mantiene estado (esperando PROFIT o SL)"
     
     elif estado_previo == 'PROFIT':
-        # Desde PROFIT, puede seguir en PROFIT o pasar a EN_ZONA si retrocede
-        if estado_calculado == 'EN_ZONA':
-            return "EN_ZONA", "Precio retrocedió a zona"
-        elif estado_calculado == 'PROFIT':
+        # FIX CRÍTICO: Una vez PROFIT, NUNCA vuelve a EN_ZONA ni estados anteriores
+        # Solo puede ir a: TP, SL, o mantenerse PROFIT
+        if estado_calculado == 'PROFIT':
             return "PROFIT", "Mantiene profit"
+        elif estado_calculado in ['EN_ZONA', 'ESPERANDO_ENTRADA', 'LLEGANDO_A_ZONA', 'ACTIVA']:
+            # PROHIBIDO: No puede retroceder - profit es irreversible hasta TP/SL
+            print(f"  WARNING: Bloqueando transición ilegal PROFIT -> {estado_calculado}")
+            print(f"  Una vez en profit, nunca retrocede a estados anteriores")
+            return "PROFIT", "Mantiene profit (bloqueada transición hacia atrás)"
         else:
-            return estado_calculado, f"Transición desde PROFIT"
+            # Mantener PROFIT para casos no cubiertos
+            return "PROFIT", "Mantiene profit (esperando TP o SL)"
     
     # Default: mantener estado calculado
     return estado_calculado, f"Transición estándar desde {estado_previo}"
