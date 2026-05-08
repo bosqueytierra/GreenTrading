@@ -17,9 +17,9 @@ from datetime import datetime
 try:
     sys.path.insert(0, os.path.dirname(__file__))
     from smc_m15_service import analyze_symbol_smc
-    print("✅ SMC service imported (direct implementation)")
+    print("OK: SMC service imported (direct implementation)")
 except ImportError as e:
-    print(f"❌ SMC service import failed: {e}")
+    print(f"ERROR: SMC service import failed: {e}")
     sys.exit(1)
 
 
@@ -53,7 +53,7 @@ def test_with_direct_implementation():
     result = analyze_symbol_smc("Boom 1000 Index", df_h1, df_m15)
     
     # Verify structure
-    print(f"\n✅ Analysis completed:")
+    print(f"\nOK: Analysis completed:")
     print(f"   Symbol: {result['symbol']}")
     print(f"   Price: {result['price']}")
     print(f"   Tendencia H1: {result['tendencia_h1']}")
@@ -69,17 +69,17 @@ def test_with_direct_implementation():
     assert 'tendencia_m15' in result, "M15 trend field should be present"
     assert 'ultimo_evento_m15' in result, "Last M15 event field should be present"
     
-    print("\n✅ BASE STRUCTURE always present and calculated")
+    print("\nOK: BASE STRUCTURE always present and calculated")
     print(f"   (Even if no swings detected, fields exist and show '--' not empty string)")
     
     # Check if we have a zone
     if result['zona_madre_m15']['desde'] == 0:
-        print("✅ No zone detected - estado shows SIN SETUP")
-        print("✅ Trends/events may be '--' if no swings (which is correct behavior)")
+        print("OK: No zone detected - estado shows SIN SETUP")
+        print("OK: Trends/events may be '--' if no swings (which is correct behavior)")
         # When no swings detected, trends/events show '--', which is correct
         # The fix ensures these fields exist and are calculated, not skipped
     else:
-        print("✅ Zone detected - full setup available")
+        print("OK: Zone detected - full setup available")
 
 
 def test_no_data():
@@ -94,7 +94,7 @@ def test_no_data():
     
     result = analyze_symbol_smc("Crash 500 Index", df_h1, df_m15)
     
-    print(f"\n✅ Minimal response created:")
+    print(f"\nOK: Minimal response created:")
     print(f"   Symbol: {result['symbol']}")
     print(f"   Tendencia H1: {result['tendencia_h1']}")
     print(f"   Tendencia M15: {result['tendencia_m15']}")
@@ -107,7 +107,7 @@ def test_no_data():
     assert result['ultimo_evento_m15'] == '--', "Should be '--' when no data"
     assert result['estado'] == 'SIN SETUP', "Should be 'SIN SETUP' when no data"
     
-    print("\n✅ Catastrophic failure handled correctly")
+    print("\nOK: Catastrophic failure handled correctly")
 
 
 def test_response_structure():
@@ -129,7 +129,7 @@ def test_response_structure():
         'ob', 'fvg', 'barrida', 'estado', 'updated_at'
     ]
     
-    print("\n✅ Checking response structure:")
+    print("\nOK: Checking response structure:")
     for key in expected_keys:
         if key in result:
             print(f"   ✓ {key}: {result[key]}")
@@ -137,7 +137,7 @@ def test_response_structure():
             print(f"   ✗ {key}: MISSING")
             assert False, f"Missing key: {key}"
     
-    print("\n✅ All required fields present")
+    print("\nOK: All required fields present")
 
 
 def main():
@@ -154,19 +154,19 @@ def main():
         test_response_structure()
         
         print("\n" + "="*60)
-        print("✅ ALL TESTS PASSED")
+        print("OK: ALL TESTS PASSED")
         print("="*60)
         print("\nSummary:")
-        print("✅ BASE STRUCTURE (H1/M15 trends, last M15 event) ALWAYS calculated")
-        print("✅ ZONE/SETUP is optional (SIN SETUP when not present)")
-        print("✅ Response structure is complete and correct")
-        print("✅ Direct implementation works without external SMC engine")
+        print("OK: BASE STRUCTURE (H1/M15 trends, last M15 event) ALWAYS calculated")
+        print("OK: ZONE/SETUP is optional (SIN SETUP when not present)")
+        print("OK: Response structure is complete and correct")
+        print("OK: Direct implementation works without external SMC engine")
         
     except AssertionError as e:
-        print(f"\n❌ TEST FAILED: {e}")
+        print(f"\nERROR: TEST FAILED: {e}")
         sys.exit(1)
     except Exception as e:
-        print(f"\n❌ UNEXPECTED ERROR: {e}")
+        print(f"\nERROR: UNEXPECTED ERROR: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

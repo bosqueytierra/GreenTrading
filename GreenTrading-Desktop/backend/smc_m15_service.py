@@ -25,10 +25,172 @@ import pandas as pd
 # CRITICAL LOG: Confirm which file is being executed
 print("SMC_SERVICE_PATH:", __file__)
 
+# Import Supabase service
+try:
+    import supabase_service
+except ImportError:
+    print("WARNING: Supabase service not available")
+    supabase_service = None
+
 # Configuration
 SWING_LOOKBACK = 3
 CLOSE_BREAK = True
 M1_VELAS_ZONA = 15
+
+# =========================
+# SMART SYNC / DEBOUNCE
+# =========================
+
+# Global cache para último estado de cada símbolo
+# Key: symbol, Value: dict con campos críticos
+_setup_cache = {}
+
+def _has_relevant_changes(symbol: str, new_data: dict) -> bool:
+    """
+    Determina si hay cambios relevantes que justifiquen un UPDATE en Supabase.
+    
+    Solo actualiza si cambian campos críticos:
+    - estado
+    - entrada
+    - stoploss
+    - tp_1_1
+    - score
+    - zona_desde/zona_hasta
+    - precio (cambio significativo >1%)
+    
+    Args:
+        symbol: Symbol name
+        new_data: Nuevo setup data con campos críticos
+    
+    Returns:
+        True si hay cambios relevantes, False si no
+    """
+    if symbol not in _setup_cache:
+        # Primera vez: siempre sincronizar
+        _setup_cache[symbol] = new_data
+        return True
+    
+    old_data = _setup_cache[symbol]
+    
+    # Campos críticos para comparar
+    critical_fields = [
+        'estado',
+        'entrada',
+        'stoploss',
+        'tp_1_1',
+        'score',
+        'zona_desde',
+        'zona_hasta'
+    ]
+    
+    # Verificar cambios en campos críticos
+    for field in critical_fields:
+        if old_data.get(field) != new_data.get(field):
+            print(f"SYNC TRIGGER: {symbol} - {field} changed from {old_data.get(field)} to {new_data.get(field)}")
+            _setup_cache[symbol] = new_data
+            return True
+    
+    # Verificar cambio significativo en precio (>1%)
+    old_price = old_data.get('precio_actual', 0)
+    new_price = new_data.get('precio_actual', 0)
+    if old_price > 0:
+        price_change_pct = abs(new_price - old_price) / old_price * 100
+        if price_change_pct > 1.0:
+            print(f"SYNC TRIGGER: {symbol} - price changed {price_change_pct:.2f}%")
+            _setup_cache[symbol] = new_data
+            return True
+    
+    # No hay cambios relevantes
+    return False
+
+
+def sync_setup_to_supabase(analysis_result: dict) -> None:
+    """
+    Sincroniza setup con Supabase solo si hay cambios relevantes.
+    
+    Implementa smart sync / debounce:
+    - Solo actualiza cuando cambian campos críticos
+    - Evita spam updates innecesarios
+    - Cache de estado previo por símbolo
+    
+    Args:
+        analysis_result: Resultado de analyze_symbol_smc()
+    """
+    if not supabase_service:
+        return
+    
+    # Skip SIN SETUP
+    if analysis_result.get('estado') == 'SIN SETUP':
+        return
+    
+    # Skip si faltan campos requeridos
+    if not analysis_result.get('entrada') or not analysis_result.get('stoploss'):
+        return
+    
+    symbol = analysis_result['symbol']
+    
+    # Preparar datos críticos para comparación
+    critical_data = {
+        'estado': analysis_result.get('estado_historial', analysis_result.get('estado_dashboard', 'ESPERANDO_ENTRADA')),
+        'entrada': analysis_result.get('entrada'),
+        'stoploss': analysis_result.get('stoploss'),
+        'tp_1_1': analysis_result.get('tp_1_1'),
+        'score': analysis_result.get('score', 0),
+        'zona_desde': analysis_result.get('zona_madre_m15', {}).get('desde', 0),
+        'zona_hasta': analysis_result.get('zona_madre_m15', {}).get('hasta', 0),
+        'precio_actual': analysis_result.get('price')
+    }
+    
+    # Verificar si hay cambios relevantes
+    if not _has_relevant_changes(symbol, critical_data):
+        # No hay cambios, skip sync
+        return
+    
+    # Hay cambios: preparar setup data completo
+    setup_data = {
+        'strategy_id': 'SMC_M15_PRO',
+        'strategy_name': 'SMC M15 PRO',
+        'symbol': symbol,
+        'tendencia_h1': analysis_result.get('tendencia_h1', '--'),
+        'tendencia_m15': analysis_result.get('tendencia_m15', '--'),
+        'ultimo_evento_m15': analysis_result.get('ultimo_evento_m15', '--'),
+        'entrada': critical_data['entrada'],
+        'stoploss': critical_data['stoploss'],
+        'tp_1_1': critical_data['tp_1_1'],
+        'score': critical_data['score'],
+        'ob': analysis_result.get('ob') in ['SÍ', 'SI', 'YES'],
+        'fvg': analysis_result.get('fvg') in ['SÍ', 'SI', 'YES'],
+        'barrida': analysis_result.get('barrida') in ['SÍ', 'SI', 'YES'],
+        'estado': critical_data['estado'],
+        'estado_dashboard': analysis_result.get('estado_dashboard', 'ESPERANDO_ENTRADA'),
+        'precio_detectado': critical_data['precio_actual'],
+        'precio_actual': critical_data['precio_actual']
+    }
+    
+    # Buscar setup activo existente
+    existing = supabase_service.get_active_setup(
+        setup_data['strategy_id'],
+        setup_data['symbol'],
+        setup_data['entrada'],
+        setup_data['stoploss']
+    )
+    
+    if existing:
+        # Update existente
+        setup_id = existing['id']
+        updates = {
+            'estado': setup_data['estado'],
+            'estado_dashboard': setup_data['estado_dashboard'],
+            'precio_actual': setup_data['precio_actual']
+        }
+        result = supabase_service.update_setup(setup_id, updates)
+        if result:
+            print(f"SUPABASE SYNC: Updated {symbol}")
+    else:
+        # Create nuevo
+        result = supabase_service.create_setup(setup_data)
+        if result:
+            print(f"SUPABASE SYNC: Created {symbol}")
 
 
 # =========================
@@ -475,6 +637,131 @@ def crear_zona_m15(df_m15, eventos_m15, fvgs_m15, symbol, precio_actual):
 
 
 # =========================
+# NIVELES OPERATIVOS Y ESTADOS
+# =========================
+
+def calcular_niveles_operativos(zona: dict, direccion_operativa: str) -> dict:
+    """
+    Calcula entrada, stoploss y tp_1_1 según la zona y dirección.
+    
+    Args:
+        zona: Zona con zona_desde y zona_hasta
+        direccion_operativa: "ALCISTA" o "BAJISTA"
+    
+    Returns:
+        dict con entrada, stoploss, tp_1_1
+    """
+    zona_desde = zona.get("zona_desde", 0)
+    zona_hasta = zona.get("zona_hasta", 0)
+    zona_size = abs(zona_hasta - zona_desde)
+    
+    if direccion_operativa == "ALCISTA":
+        # Para ALCISTA (Boom): entrada arriba, SL abajo
+        entrada = zona_hasta
+        stoploss = zona_desde
+        tp_1_1 = entrada + zona_size  # Proyección 1:1 hacia arriba
+    else:
+        # Para BAJISTA (Crash): entrada abajo, SL arriba
+        entrada = zona_desde
+        stoploss = zona_hasta
+        tp_1_1 = entrada - zona_size  # Proyección 1:1 hacia abajo
+    
+    return {
+        "entrada": round(entrada, 2),
+        "stoploss": round(stoploss, 2),
+        "tp_1_1": round(tp_1_1, 2)
+    }
+
+
+def calcular_estado_dashboard(precio_actual: float, entrada: float, zona_desde: float, zona_hasta: float, direccion: str) -> str:
+    """
+    Calcula el estado del dashboard según la posición del precio.
+    
+    Estados:
+    - SIN_SETUP: No hay zona válida
+    - ESPERANDO_ENTRADA: Precio lejos de zona (>50 puntos)
+    - LLEGANDO_A_ZONA: Precio acercándose (10-50 puntos)
+    - EN_ZONA: Precio dentro de la zona
+    - PROFIT: Precio superó entrada en dirección esperada
+    
+    Args:
+        precio_actual: Precio actual
+        entrada: Precio de entrada
+        zona_desde: Límite inferior de zona
+        zona_hasta: Límite superior de zona
+        direccion: "ALCISTA" o "BAJISTA"
+    
+    Returns:
+        Estado dashboard
+    """
+    # Check if price is in zone
+    if zona_desde <= precio_actual <= zona_hasta:
+        return "EN_ZONA"
+    
+    # Check if price reached profit
+    if direccion == "ALCISTA":
+        if precio_actual > entrada:
+            return "PROFIT"
+        # Price below zone
+        distancia = zona_desde - precio_actual
+    else:
+        # BAJISTA
+        if precio_actual < entrada:
+            return "PROFIT"
+        # Price above zone
+        distancia = precio_actual - zona_hasta
+    
+    # Calculate distance to zone
+    if distancia > 50:
+        return "ESPERANDO_ENTRADA"
+    elif distancia >= 10:
+        return "LLEGANDO_A_ZONA"
+    else:
+        return "ESPERANDO_ENTRADA"
+
+
+def calcular_estado_historial(estado_dashboard: str, precio_actual: float, entrada: float, stoploss: float, tp: float) -> str:
+    """
+    Mapea estado dashboard a estado historial y evalúa TP/SL.
+    
+    Estados historial:
+    - ESPERANDO_ENTRADA: Esperando entrada
+    - LLEGANDO_A_ZONA: Acercándose a zona
+    - EN_ZONA: En zona
+    - PROFIT: En ganancia flotante
+    - TP: Take profit alcanzado
+    - SL: Stop loss alcanzado
+    - DESCARTADA: Zona invalidada (no usado en SMC_M15_PRO)
+    
+    Args:
+        estado_dashboard: Estado actual del dashboard
+        precio_actual: Precio actual
+        entrada: Precio de entrada
+        stoploss: Stop loss
+        tp: Take profit 1:1
+    
+    Returns:
+        Estado historial
+    """
+    # Check TP/SL first
+    if entrada < stoploss:
+        # ALCISTA
+        if precio_actual <= stoploss:
+            return "SL"
+        if precio_actual >= tp:
+            return "TP"
+    else:
+        # BAJISTA
+        if precio_actual >= stoploss:
+            return "SL"
+        if precio_actual <= tp:
+            return "TP"
+    
+    # Map dashboard states to historial states
+    return estado_dashboard
+
+
+# =========================
 # MAIN ANALYSIS FUNCTION
 # =========================
 
@@ -593,9 +880,38 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
         score = zona.get('score', 0)
         print(f"    - Score: {score}")
         
-        # Determine state
-        estado = "ACTIVA" if score > 0 else "SIN SETUP"
-        print(f"  Estado: {estado}")
+        # Get direccion_operativa
+        direccion_operativa = zona.get('direccion_operativa', zona.get('direccion', 'ALCISTA'))
+        
+        # Calculate operational levels (entrada, stoploss, tp_1_1)
+        niveles = calcular_niveles_operativos(zona, direccion_operativa)
+        entrada = niveles["entrada"]
+        stoploss = niveles["stoploss"]
+        tp_1_1 = niveles["tp_1_1"]
+        
+        print(f"    - Entrada: {entrada}")
+        print(f"    - StopLoss: {stoploss}")
+        print(f"    - TP 1:1: {tp_1_1}")
+        
+        # Calculate dashboard state
+        estado_dashboard = calcular_estado_dashboard(
+            precio_actual,
+            entrada,
+            zona['zona_desde'],
+            zona['zona_hasta'],
+            direccion_operativa
+        )
+        print(f"  Estado Dashboard: {estado_dashboard}")
+        
+        # Calculate historial state (provisional)
+        estado_historial = calcular_estado_historial(
+            estado_dashboard,
+            precio_actual,
+            entrada,
+            stoploss,
+            tp_1_1
+        )
+        print(f"  Estado Historial: {estado_historial}")
         
         # Build full response with zone
         result = {
@@ -608,14 +924,23 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
                 "desde": float(zona.get('zona_desde', 0)),
                 "hasta": float(zona.get('zona_hasta', 0))
             },
+            "entrada": entrada,
+            "stoploss": stoploss,
+            "tp_1_1": tp_1_1,
+            "estado_dashboard": estado_dashboard,
+            "estado_historial": estado_historial,
             "score": score,
             "ob": "SÍ" if has_ob else "NO",
             "fvg": "SÍ" if has_fvg else "NO",
             "barrida": "SÍ" if has_barrida else "NO",
-            "estado": estado,
+            "estado": estado_dashboard,  # Keep for compatibility
             "updated_at": datetime.now(timezone.utc).isoformat()
         }
         print_result_summary(result)
+        
+        # Sync to Supabase (smart sync with debounce)
+        sync_setup_to_supabase(result)
+        
         return result
         
     except Exception as e:

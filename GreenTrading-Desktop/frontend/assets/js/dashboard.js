@@ -80,7 +80,7 @@ async function loadDashboardData() {
         updateLastUpdateTime();
         
     } catch (error) {
-        console.error('❌ Error loading SMC dashboard data:', error);
+        console.error('Error loading SMC dashboard data:', error);
         updateConnectionStatus(false);
         showError(error.message);
     }
