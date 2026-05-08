@@ -57,8 +57,6 @@ def main():
     
     # Test 1: Nueva zona detectada lejos de precio - debe quedar ESPERANDO_ENTRADA
     tests_total += 1
-    # Test 1: Nueva zona detectada lejos de precio - debe quedar ESPERANDO_ENTRADA  
-    tests_total += 1
     if test_case(
         "Nueva zona lejos del precio",
         "Boom 1000 Index",
@@ -75,17 +73,35 @@ def main():
     ):
         tests_passed += 1
     
-    # Test 2: Nueva zona pero precio ya está EN_ZONA - debe quedar ACTIVA (no EN_ZONA sin historial)
+    # Test 2: Nueva zona con precio EN_ZONA - PERMITIDO si precio está realmente dentro
     tests_total += 1
     if test_case(
-        "Nueva zona con precio EN_ZONA (no permitido sin historial)",
+        "Nueva zona con precio EN_ZONA (permitido si precio realmente en zona)",
         "Boom 1000 Index",
         None,  # Sin estado previo
         "EN_ZONA",  # El cálculo dice EN_ZONA
-        1045.0,  # Precio dentro de zona
+        1045.0,  # Precio dentro de zona (1040-1050)
         1050.0,
         1040.0,
         1060.0,
+        1040.0,
+        1050.0,
+        "EN_ZONA",  # PERMITIDO porque precio está realmente en zona
+        "dentro de zona"
+    ):
+        tests_passed += 1
+    
+    # Test 2b: Nueva zona con precio fuera pero calculado EN_ZONA - debe quedar ACTIVA
+    tests_total += 1
+    if test_case(
+        "Nueva zona calculado EN_ZONA pero precio fuera (no permitido)",
+        "Boom 1000 Index",
+        None,  # Sin estado previo
+        "EN_ZONA",  # El cálculo dice EN_ZONA
+        1038.0,  # Precio FUERA de zona (1040-1050) pero arriba de SL (1030)
+        1050.0,
+        1030.0,  # SL más abajo
+        1070.0,
         1040.0,
         1050.0,
         "ACTIVA",  # Debe corregir a ACTIVA

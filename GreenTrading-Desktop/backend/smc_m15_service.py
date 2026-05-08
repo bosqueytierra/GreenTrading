@@ -778,7 +778,19 @@ def calcular_transicion_estado(
     
     # CHECK 1: Si NO hay estado previo, solo permitir ACTIVA/ESPERANDO_ENTRADA
     if not estado_previo:
-        # Nueva zona: verificar si ya tocó TP/SL (situación anómala)
+        # ORDEN DE VALIDACION:
+        # 1. Primero verificar si precio está en zona (permitir EN_ZONA si es el caso)
+        # 2. Luego verificar TP/SL (situaciones anómalas)
+        # 3. Finalmente, otros estados iniciales válidos
+        
+        # Verificar si precio está realmente dentro de la zona
+        en_zona_real = zona_desde <= precio_actual <= zona_hasta
+        
+        # Si calculado es EN_ZONA Y precio está realmente en zona, permitirlo
+        if estado_calculado == 'EN_ZONA' and en_zona_real:
+            return "EN_ZONA", "Nueva zona detectada (precio dentro de zona)"
+        
+        # Si no está en zona, verificar si ya tocó TP/SL (situación anómala)
         en_tp = False
         en_sl = False
         
@@ -796,7 +808,8 @@ def calcular_transicion_estado(
         elif estado_calculado in ['ACTIVA', 'ESPERANDO_ENTRADA', 'LLEGANDO_A_ZONA']:
             return estado_calculado, "Nueva zona detectada"
         elif estado_calculado == 'EN_ZONA':
-            return "ACTIVA", "Nueva zona detectada (precio en zona, sin historial previo)"
+            # Precio NO está realmente en zona pero calculado dice EN_ZONA
+            return "ACTIVA", "Nueva zona detectada (calculado EN_ZONA, sin historial previo)"
         elif estado_calculado == 'PROFIT':
             return "ACTIVA", "Nueva zona detectada (precio en profit, sin historial previo)"
         else:
