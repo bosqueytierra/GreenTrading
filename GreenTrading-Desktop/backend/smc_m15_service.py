@@ -1015,6 +1015,19 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
             print(f"  Returning BASE STRUCTURE with SIN SETUP")
             
             # COMPREHENSIVE LOG as requested in problem statement
+            print(f"\n=== LOG TRANSICION ESTADO {symbol} ===")
+            print(f"  symbol: {symbol}")
+            print(f"  existe_zona_valida: False")
+            print(f"  zona_desde: N/A")
+            print(f"  zona_hasta: N/A")
+            print(f"  precio_actual: {precio_actual}")
+            print(f"  estado_previo: N/A")
+            print(f"  estado_calculado: SIN SETUP")
+            print(f"  estado_final: SIN SETUP")
+            print(f"  motivo_transicion: No existe zona valida (sin OB/FVG/barrida)")
+            print(f"  se_guarda_en_supabase: False")
+            print(f"======================================\n")
+            
             print(f"\n=== RESUMEN SETUP {symbol} ===")
             print(f"  zona_madre_m15: NINGUNA")
             print(f"  score: 0")
@@ -1121,16 +1134,18 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
         # LOG COMPLETO según requerimientos
         print(f"\n=== LOG TRANSICION ESTADO {symbol} ===")
         print(f"  symbol: {symbol}")
+        print(f"  existe_zona_valida: True")
+        print(f"  zona_desde: {zona['zona_desde']}")
+        print(f"  zona_hasta: {zona['zona_hasta']}")
+        print(f"  precio_actual: {precio_actual}")
         print(f"  estado_previo: {estado_previo if estado_previo else 'NINGUNO (nueva zona)'}")
         print(f"  estado_calculado: {estado_dashboard}")
         print(f"  estado_final: {estado_historial}")
-        print(f"  precio_actual: {precio_actual}")
-        print(f"  zona_desde: {zona['zona_desde']}")
-        print(f"  zona_hasta: {zona['zona_hasta']}")
         print(f"  entrada: {entrada}")
         print(f"  stoploss: {stoploss}")
         print(f"  tp_1_1: {tp_1_1}")
         print(f"  motivo_transicion: {motivo_transicion}")
+        print(f"  se_guarda_en_supabase: {estado_historial != 'SIN SETUP'}")
         print(f"======================================\n")
         
         # COMPREHENSIVE LOG as requested in problem statement
@@ -1165,7 +1180,7 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
             "ob": "SÍ" if has_ob else "NO",
             "fvg": "SÍ" if has_fvg else "NO",
             "barrida": "SÍ" if has_barrida else "NO",
-            "estado": estado_dashboard,  # Keep for compatibility
+            "estado": estado_historial,  # CRITICAL FIX: Use estado_historial (validated by state machine)
             "updated_at": datetime.now(timezone.utc).isoformat()
         }
         print_result_summary(result)

@@ -158,7 +158,18 @@ function createTableRow(snapshot) {
     const timeStr = formatTime(updated_at);
     
     // Apply row color based on estado
-    const rowClass = estado === 'ACTIVA' ? 'row-activa' : 'row-sin-setup';
+    let rowClass = 'row-sin-setup';
+    if (estado === 'ACTIVA' || estado === 'ESPERANDO_ENTRADA' || estado === 'LLEGANDO_A_ZONA') {
+        rowClass = 'row-activa';
+    } else if (estado === 'EN_ZONA') {
+        rowClass = 'row-en-zona';
+    } else if (estado === 'PROFIT') {
+        rowClass = 'row-profit';
+    } else if (estado === 'TP') {
+        rowClass = 'row-tp';
+    } else if (estado === 'SL') {
+        rowClass = 'row-sl';
+    }
     
     return `
         <tr class="${rowClass}">
@@ -192,10 +203,22 @@ function formatZone(zona) {
  * Format estado badge
  */
 function formatEstadoBadge(estado) {
-    if (estado === 'ACTIVA') {
-        return '<span class="status-badge status-activa">✓ ACTIVA</span>';
+    if (!estado || estado === 'SIN SETUP') {
+        return '<span class="status-badge status-sin-setup">○ SIN SETUP</span>';
     }
-    return '<span class="status-badge status-sin-setup">○ SIN SETUP</span>';
+    
+    // Map estados to badges
+    const estadoMap = {
+        'ACTIVA': '<span class="status-badge status-activa">✓ ACTIVA</span>',
+        'ESPERANDO_ENTRADA': '<span class="status-badge status-esperando">⏳ ESPERANDO ENTRADA</span>',
+        'LLEGANDO_A_ZONA': '<span class="status-badge status-llegando">→ LLEGANDO</span>',
+        'EN_ZONA': '<span class="status-badge status-en-zona">🎯 EN ZONA</span>',
+        'PROFIT': '<span class="status-badge status-profit">💰 PROFIT</span>',
+        'TP': '<span class="status-badge status-tp">✅ TP</span>',
+        'SL': '<span class="status-badge status-sl">❌ SL</span>'
+    };
+    
+    return estadoMap[estado] || '<span class="status-badge status-activa">✓ ' + estado + '</span>';
 }
 
 /**
