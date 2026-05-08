@@ -189,14 +189,20 @@ def sync_setup_to_supabase(analysis_result: dict) -> None:
             'estado_dashboard': setup_data['estado_dashboard'],
             'precio_actual': setup_data['precio_actual']
         }
+        print(f"  SUPABASE SYNC: UPDATE intent para {symbol}, id={setup_id}, estado={setup_data['estado']}")
         result = supabase_service.update_setup(setup_id, updates)
         if result:
             print(f"SUPABASE SYNC: Updated {symbol}")
+        else:
+            print(f"SUPABASE SYNC WARNING: update_setup devolvio None para {symbol}")
     else:
         # Create nuevo
+        print(f"  SUPABASE SYNC: INSERT intent para {symbol} (nuevo setup)")
         result = supabase_service.create_setup(setup_data)
         if result:
             print(f"SUPABASE SYNC: Created {symbol}")
+        else:
+            print(f"SUPABASE SYNC WARNING: create_setup devolvio None para {symbol}")
 
 
 # =========================
