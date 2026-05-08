@@ -34,6 +34,15 @@ SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
 _supabase_client: Optional[Client] = None
 
 
+def _mask_supabase_key(key: Optional[str]) -> str:
+    """Mask Supabase key for logs without exposing the full value."""
+    if not key:
+        return "(NO CONFIGURADA)"
+    if len(key) <= 12:
+        return "(CONFIGURADA)"
+    return f"{key[:8]}...{key[-4:]}"
+
+
 def init_supabase() -> Optional[Client]:
     """
     Initialize Supabase client with environment variables.
@@ -49,7 +58,7 @@ def init_supabase() -> Optional[Client]:
     
     # Log env values for diagnostics (mask key)
     url_diag = SUPABASE_URL if SUPABASE_URL else "(NO CONFIGURADA)"
-    key_diag = (SUPABASE_ANON_KEY[:8] + "..." + SUPABASE_ANON_KEY[-4:]) if SUPABASE_ANON_KEY and len(SUPABASE_ANON_KEY) > 12 else ("(CONFIGURADA)" if SUPABASE_ANON_KEY else "(NO CONFIGURADA)")
+    key_diag = _mask_supabase_key(SUPABASE_ANON_KEY)
     print(f"ENV CHECK: SUPABASE_URL = {url_diag}")
     print(f"ENV CHECK: SUPABASE_ANON_KEY = {key_diag}")
 

@@ -202,19 +202,31 @@ function formatZonaMadre(zona, entrada, stoploss, symbolShort) {
 
     const entradaStr = hasEntrada ? Number(entrada).toFixed(2) : '--';
     const slStr = hasSL ? Number(stoploss).toFixed(2) : '--';
+    const symbolAttr = escapeHtmlAttr(symbolShort);
+    const entradaAttr = escapeHtmlAttr(entradaStr);
+    const slAttr = escapeHtmlAttr(slStr);
 
     return `
         <div class="zona-madre-cell">
             <div class="zona-linea"><span class="zona-label">ENTRADA:</span> <span class="zona-valor">${entradaStr}</span></div>
             <div class="zona-linea"><span class="zona-label">STOPLOSS:</span> <span class="zona-valor zona-sl">${slStr}</span></div>
             <button class="copy-zona-btn"
-                data-symbol="${symbolShort.replace(/"/g, '&quot;')}"
-                data-entrada="${entradaStr}"
-                data-stoploss="${slStr}"
+                data-symbol="${symbolAttr}"
+                data-entrada="${entradaAttr}"
+                data-stoploss="${slAttr}"
                 onclick="copyZoneInfo(this)"
                 title="Copiar zona">&#x2398;</button>
         </div>
     `;
+}
+
+function escapeHtmlAttr(value) {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
 }
 
 /**
