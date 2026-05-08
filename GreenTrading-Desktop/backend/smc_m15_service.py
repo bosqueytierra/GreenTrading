@@ -117,14 +117,17 @@ def sync_setup_to_supabase(analysis_result: dict) -> None:
         analysis_result: Resultado de analyze_symbol_smc()
     """
     if not supabase_service:
+        print("  SUPABASE SYNC: Service not available")
         return
     
     # Skip SIN SETUP
     if analysis_result.get('estado') == 'SIN SETUP':
+        print(f"  SUPABASE SYNC: Skipping {analysis_result.get('symbol')} - SIN SETUP no se guarda en historial")
         return
     
     # Skip si faltan campos requeridos
     if not analysis_result.get('entrada') or not analysis_result.get('stoploss'):
+        print(f"  SUPABASE SYNC: Skipping {analysis_result.get('symbol')} - falta entrada o stoploss")
         return
     
     symbol = analysis_result['symbol']
@@ -144,7 +147,10 @@ def sync_setup_to_supabase(analysis_result: dict) -> None:
     # Verificar si hay cambios relevantes
     if not _has_relevant_changes(symbol, critical_data):
         # No hay cambios, skip sync
+        print(f"  SUPABASE SYNC: Skipping {symbol} - no hay cambios relevantes")
         return
+    
+    print(f"  SUPABASE SYNC: Preparing sync for {symbol} - cambios detectados")
     
     # Hay cambios: preparar setup data completo
     setup_data = {
@@ -630,8 +636,18 @@ def crear_zona_m15(df_m15, eventos_m15, fvgs_m15, symbol, precio_actual):
         zona["motivo"] = motivo
         zona["direccion_operativa"] = direccion_op
 
-        if es_util:
-            return zona
+        # CRITICAL FIX: Don't discard zones just because price hasn't reached them yet!
+        # es_util is informative (for scoring/distance) but NOT a rejection criterion.
+        # A valid zone with OB/FVG/barrida should be shown even if price is far away.
+        # The estado (ESPERANDO_ENTRADA, LLEGANDO_A_ZONA, EN_ZONA) handles distance logic.
+        
+        print(f"  ZONA VALIDA CREADA:")
+        print(f"    - es_util: {es_util}")
+        print(f"    - motivo: {motivo}")
+        print(f"    - score: {score}")
+        print(f"    - Returning zona (es_util no longer blocks valid zones)")
+        
+        return zona
 
     return None
 
@@ -844,6 +860,19 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
         if not zona:
             print(f"  WARNING NO ZONE created (no OB/FVG or not operative)")
             print(f"  Returning BASE STRUCTURE with SIN SETUP")
+            
+            # COMPREHENSIVE LOG as requested in problem statement
+            print(f"\n=== RESUMEN SETUP {symbol} ===")
+            print(f"  zona_madre_m15: NINGUNA")
+            print(f"  score: 0")
+            print(f"  ob: NO")
+            print(f"  fvg: NO")
+            print(f"  barrida: NO")
+            print(f"  es_util: N/A")
+            print(f"  estado_final: SIN SETUP")
+            print(f"  guardado_historial: NO (sin zona valida)")
+            print(f"===============================\n")
+            
             result = {
                 "symbol": symbol,
                 "price": precio_actual,
@@ -871,6 +900,7 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
         has_ob = zona.get('ob') is not None
         has_fvg = zona.get('fvg') is not None
         has_barrida = zona.get('barrida') is not None
+        es_util = zona.get('es_util', False)
         
         print(f"    - OB: {'SI' if has_ob else 'NO'}")
         print(f"    - FVG: {'SI' if has_fvg else 'NO'}")
@@ -879,6 +909,7 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
         # Get score from zone
         score = zona.get('score', 0)
         print(f"    - Score: {score}")
+        print(f"    - es_util: {es_util} - {zona.get('motivo', 'N/A')}")
         
         # Get direccion_operativa
         direccion_operativa = zona.get('direccion_operativa', zona.get('direccion', 'ALCISTA'))
@@ -912,6 +943,18 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
             tp_1_1
         )
         print(f"  Estado Historial: {estado_historial}")
+        
+        # COMPREHENSIVE LOG as requested in problem statement
+        print(f"\n=== RESUMEN SETUP {symbol} ===")
+        print(f"  zona_madre_m15: desde={zona['zona_desde']}, hasta={zona['zona_hasta']}")
+        print(f"  score: {score}")
+        print(f"  ob: {'SI' if has_ob else 'NO'}")
+        print(f"  fvg: {'SI' if has_fvg else 'NO'}")
+        print(f"  barrida: {'SI' if has_barrida else 'NO'}")
+        print(f"  es_util: {es_util}")
+        print(f"  estado_final: {estado_dashboard}")
+        print(f"  guardado_historial: SI (zona valida con score={score})")
+        print(f"===============================\n")
         
         # Build full response with zone
         result = {
