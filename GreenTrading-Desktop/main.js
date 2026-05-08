@@ -203,20 +203,20 @@ async function selectPythonExecutable() {
  * Start Python backend process
  */
 async function startPythonBackend() {
-  return new Promise(async (resolve, reject) => {
-    console.log('🐍 Starting Python backend...');
+  console.log('🐍 Starting Python backend...');
+  
+  try {
+    // Select best Python executable
+    const pythonExec = await selectPythonExecutable();
     
-    try {
-      // Select best Python executable
-      const pythonExec = await selectPythonExecutable();
-      
-      // CRITICAL LOGS: Confirm Python backend path and executable
-      console.log('PYTHON BACKEND CWD:', path.dirname(PYTHON_BACKEND.script));
-      console.log('PYTHON BACKEND SCRIPT:', PYTHON_BACKEND.script);
-      
-      // Build command arguments
-      const spawnArgs = [...pythonExec.args, PYTHON_BACKEND.script];
-      
+    // CRITICAL LOGS: Confirm Python backend path and executable
+    console.log('PYTHON BACKEND CWD:', path.dirname(PYTHON_BACKEND.script));
+    console.log('PYTHON BACKEND SCRIPT:', PYTHON_BACKEND.script);
+    
+    // Build command arguments
+    const spawnArgs = [...pythonExec.args, PYTHON_BACKEND.script];
+    
+    return new Promise((resolve, reject) => {
       pythonProcess = spawn(pythonExec.cmd, spawnArgs, {
         stdio: ['pipe', 'pipe', 'pipe']
       });
@@ -252,11 +252,11 @@ async function startPythonBackend() {
           resolve(); // Continue anyway
         }
       }, 10000);
-    } catch (error) {
-      console.error('❌ Error selecting Python executable:', error.message);
-      reject(error);
-    }
-  });
+    });
+  } catch (error) {
+    console.error('❌ Error selecting Python executable:', error.message);
+    throw error;
+  }
 }
 
 /**
