@@ -553,6 +553,55 @@ body {
     font-weight: 600;
 }
 
+/* NEW: Additional estado badge styles for all states */
+.status-esperando {
+    background-color: #fef3c7;
+    color: #92400e;
+    font-weight: 600;
+}
+
+.status-llegando {
+    background-color: #dbeafe;
+    color: #1e40af;
+    font-weight: 600;
+}
+
+.status-en-zona {
+    background-color: #e0e7ff;
+    color: #4338ca;
+    font-weight: 700;
+}
+
+.status-profit {
+    background-color: #d1fae5;
+    color: #065f46;
+    font-weight: 700;
+}
+
+.status-tp {
+    background-color: var(--accent-green-light);
+    color: var(--accent-green);
+    font-weight: 700;
+}
+
+.status-sl {
+    background-color: var(--accent-red-light);
+    color: var(--accent-red);
+    font-weight: 700;
+}
+
+.status-pausada {
+    background-color: #e5e7eb;
+    color: #374151;
+    font-weight: 600;
+}
+
+.status-descartada {
+    background-color: #fee2e2;
+    color: #991b1b;
+    font-weight: 600;
+}
+
 /* Time value */
 .time-value {
     font-size: 11px;

@@ -123,6 +123,8 @@ function createTableRow(snapshot) {
     console.log("DEBUG ROW ZONE:", snapshot?.zona_madre_m15);
     console.log("DEBUG ROW SCORE:", snapshot?.score);
     console.log("DEBUG ROW ESTADO:", snapshot?.estado);
+    console.log("DEBUG ROW ESTADO_FINAL:", snapshot?.estado_final);
+    console.log("DEBUG ROW ESTADO_HISTORIAL:", snapshot?.estado_historial);
     
     const {
         symbol,
@@ -136,8 +138,14 @@ function createTableRow(snapshot) {
         fvg,
         barrida,
         estado,
+        estado_final,      // NEW: Use validated final state
+        estado_historial,  // NEW: Use validated historial state
         updated_at
     } = snapshot;
+    
+    // FIXED BUG 3: Use estado_final (validated) or estado_historial (validated) or fallback to estado
+    const estadoToDisplay = estado_final || estado_historial || estado;
+    console.log("DEBUG ESTADO TO DISPLAY:", estadoToDisplay);
     
     // Format symbol (shorter name)
     const symbolShort = symbol.replace(' Index', '');
@@ -148,8 +156,8 @@ function createTableRow(snapshot) {
     // Format zone
     const zoneStr = formatZone(zona_madre_m15);
     
-    // Format estado badge
-    const estadoBadge = formatEstadoBadge(estado);
+    // Format estado badge with validated state
+    const estadoBadge = formatEstadoBadge(estadoToDisplay);
     
     // Format score badge
     const scoreBadge = formatScoreBadge(score);
@@ -158,7 +166,7 @@ function createTableRow(snapshot) {
     const timeStr = formatTime(updated_at);
     
     // Apply row color based on estado
-    const rowClass = estado === 'ACTIVA' ? 'row-activa' : 'row-sin-setup';
+    const rowClass = estadoToDisplay === 'ACTIVA' ? 'row-activa' : 'row-sin-setup';
     
     return `
         <tr class="${rowClass}">
@@ -190,12 +198,46 @@ function formatZone(zona) {
 
 /**
  * Format estado badge
+ * FIXED BUG 3: Support all estado types, not just ACTIVA
  */
 function formatEstadoBadge(estado) {
-    if (estado === 'ACTIVA') {
-        return '<span class="status-badge status-activa">✓ ACTIVA</span>';
+    // Normalize estado - handle both 'SIN SETUP' and 'SIN_SETUP'
+    const estadoNormalized = estado ? estado.toUpperCase().replace(/ /g, '_') : 'SIN_SETUP';
+    
+    // Map all possible estados to badges
+    switch (estadoNormalized) {
+        case 'ACTIVA':
+            return '<span class="status-badge status-activa">✓ ACTIVA</span>';
+        
+        case 'ESPERANDO_ENTRADA':
+            return '<span class="status-badge status-esperando">⏳ ESPERANDO ENTRADA</span>';
+        
+        case 'LLEGANDO_A_ZONA':
+            return '<span class="status-badge status-llegando">↓ LLEGANDO A ZONA</span>';
+        
+        case 'EN_ZONA':
+            return '<span class="status-badge status-en-zona">🎯 EN ZONA</span>';
+        
+        case 'PROFIT':
+            return '<span class="status-badge status-profit">💰 PROFIT</span>';
+        
+        case 'TP':
+            return '<span class="status-badge status-tp">✅ TP</span>';
+        
+        case 'SL':
+            return '<span class="status-badge status-sl">❌ SL</span>';
+        
+        case 'PAUSADA':
+            return '<span class="status-badge status-pausada">⏸ PAUSADA</span>';
+        
+        case 'DESCARTADA':
+            return '<span class="status-badge status-descartada">🗑 DESCARTADA</span>';
+        
+        case 'SIN_SETUP':
+        case 'SIN SETUP':
+        default:
+            return '<span class="status-badge status-sin-setup">○ SIN SETUP</span>';
     }
-    return '<span class="status-badge status-sin-setup">○ SIN SETUP</span>';
 }
 
 /**

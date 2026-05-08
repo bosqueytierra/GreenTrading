@@ -1090,6 +1090,8 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
         # Obtener estado previo guardado en Supabase (si existe)
         estado_previo = None
         existing_setup = None
+        existe_setup_previo = False
+        
         if supabase_service:
             existing_setup = supabase_service.get_active_setup(
                 'SMC_M15_PRO',
@@ -1099,9 +1101,12 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
             )
             if existing_setup:
                 estado_previo = existing_setup.get('estado')
+                existe_setup_previo = True
                 print(f"  Estado Previo (guardado): {estado_previo}")
             else:
                 print(f"  Estado Previo: NINGUNO (nueva zona)")
+        else:
+            print(f"  SUPABASE ERROR: Service not available, cannot read estado_previo")
         
         # Calculate historial state with state machine validation
         estado_historial, motivo_transicion = calcular_estado_historial(
@@ -1118,11 +1123,13 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
         print(f"  Estado Historial (validado): {estado_historial}")
         print(f"  Motivo transición: {motivo_transicion}")
         
-        # LOG COMPLETO según requerimientos
+        # LOG COMPLETO según requerimientos del problema
         print(f"\n=== LOG TRANSICION ESTADO {symbol} ===")
         print(f"  symbol: {symbol}")
-        print(f"  estado_previo: {estado_previo if estado_previo else 'NINGUNO (nueva zona)'}")
+        print(f"  existe_setup_previo: {existe_setup_previo}")
+        print(f"  estado_previo: {estado_previo if estado_previo else 'NINGUNO'}")
         print(f"  estado_calculado: {estado_dashboard}")
+        print(f"  estado_validado: {estado_historial}")
         print(f"  estado_final: {estado_historial}")
         print(f"  precio_actual: {precio_actual}")
         print(f"  zona_desde: {zona['zona_desde']}")
@@ -1146,6 +1153,7 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
         print(f"===============================\n")
         
         # Build full response with zone
+        # CRITICAL FIX BUG 2: Use estado_historial (validated) instead of estado_dashboard (raw)
         result = {
             "symbol": symbol,
             "price": precio_actual,
@@ -1159,13 +1167,14 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
             "entrada": entrada,
             "stoploss": stoploss,
             "tp_1_1": tp_1_1,
-            "estado_dashboard": estado_dashboard,
-            "estado_historial": estado_historial,
+            "estado_dashboard": estado_dashboard,  # Keep for debugging
+            "estado_historial": estado_historial,  # Validated state
+            "estado_final": estado_historial,      # NEW: Final state for dashboard
             "score": score,
             "ob": "SÍ" if has_ob else "NO",
             "fvg": "SÍ" if has_fvg else "NO",
             "barrida": "SÍ" if has_barrida else "NO",
-            "estado": estado_dashboard,  # Keep for compatibility
+            "estado": estado_historial,  # FIXED: Use estado_historial NOT estado_dashboard
             "updated_at": datetime.now(timezone.utc).isoformat()
         }
         print_result_summary(result)

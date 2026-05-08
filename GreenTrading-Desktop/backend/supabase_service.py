@@ -37,19 +37,32 @@ def init_supabase() -> Optional[Client]:
     global _supabase_client
     
     if _supabase_client is not None:
+        print("SUPABASE OK: Using existing client instance")
         return _supabase_client
     
     if not SUPABASE_URL or not SUPABASE_ANON_KEY:
-        print("WARNING: Supabase credentials not configured")
+        print("SUPABASE ERROR: Credentials not configured")
         print("  Set SUPABASE_URL and SUPABASE_ANON_KEY in .env file")
         return None
     
     try:
+        # Initialize Supabase client - compatible with version 2.3.0
+        # Note: Do NOT pass proxy/proxies parameters as they're not supported
         _supabase_client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
-        print(f"Supabase client initialized: {SUPABASE_URL}")
+        print(f"SUPABASE OK: Client initialized successfully")
+        print(f"  URL: {SUPABASE_URL}")
         return _supabase_client
+    except TypeError as e:
+        if "proxy" in str(e) or "proxies" in str(e):
+            print(f"SUPABASE ERROR: Proxy parameter not supported in this version: {e}")
+            print("  Solution: Remove proxy/proxies parameters from create_client call")
+        else:
+            print(f"SUPABASE ERROR: TypeError initializing client: {e}")
+        return None
     except Exception as e:
-        print(f"ERROR: Error initializing Supabase client: {e}")
+        print(f"SUPABASE ERROR: Error initializing Supabase client: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 
@@ -143,9 +156,15 @@ def get_active_setup(strategy_id: str, symbol: str, entrada: float, stoploss: fl
     """
     client = get_client()
     if not client:
+        print(f"SUPABASE ERROR: Cannot query active setup - client not initialized")
         return None
     
     try:
+        print(f"SUPABASE: Querying active setup for {symbol}")
+        print(f"  strategy_id: {strategy_id}")
+        print(f"  entrada: {entrada}")
+        print(f"  stoploss: {stoploss}")
+        
         result = (
             client.table("green_trading_setups")
             .select("*")
@@ -160,10 +179,19 @@ def get_active_setup(strategy_id: str, symbol: str, entrada: float, stoploss: fl
         )
         
         if result.data:
-            return result.data[0]
-        return None
+            setup = result.data[0]
+            estado_previo = setup.get('estado')
+            print(f"SUPABASE OK: estado_previo encontrado = {estado_previo}")
+            print(f"  setup_id: {setup.get('id')}")
+            print(f"  created_at: {setup.get('created_at')}")
+            return setup
+        else:
+            print(f"SUPABASE: No estado_previo encontrado (nueva zona)")
+            return None
     except Exception as e:
-        print(f"ERROR: Error getting active setup: {e}")
+        print(f"SUPABASE ERROR: Error getting active setup for {symbol}: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 
