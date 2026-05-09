@@ -792,8 +792,15 @@ def calcular_estado_dashboard(
     Returns:
         Estado dashboard: SIN_SETUP | EN_ZONA | ACTIVA | LLEGANDO_A_ZONA
     """
-    # EN_ZONA: precio dentro de la zona (valido para ambas direcciones)
-    if zona_desde <= precio_actual <= zona_hasta:
+    # EN_ZONA tiene prioridad absoluta:
+    # BOOM (ALCISTA): stoploss <= precio_actual <= entrada
+    # CRASH (BAJISTA): entrada <= precio_actual <= stoploss
+    if direccion == "ALCISTA":
+        en_zona_operativa = zona_desde <= precio_actual <= entrada
+    else:
+        en_zona_operativa = entrada <= precio_actual <= zona_hasta
+
+    if en_zona_operativa:
         return "EN_ZONA"
 
     if direccion == "ALCISTA":
@@ -897,6 +904,10 @@ def calcular_transicion_estado(
     # Para Boom (ALCISTA): entrada > stoploss (SL abajo, entrada arriba)
     # Para Crash (BAJISTA): entrada < stoploss (SL arriba, entrada abajo)
     direccion = "ALCISTA" if entrada > stoploss else "BAJISTA"
+    en_zona_operativa = (
+        (direccion == "ALCISTA" and stoploss <= precio_actual <= entrada) or
+        (direccion == "BAJISTA" and entrada <= precio_actual <= stoploss)
+    )
     
     # CHECK 1: Si NO hay estado previo, solo permitir ACTIVA/ESPERANDO_ENTRADA
     if not estado_previo:
@@ -906,13 +917,17 @@ def calcular_transicion_estado(
         # 2. Verificar TP/SL (situaciones anómalas)
         # 3. Otros estados iniciales válidos
 
-        # SIN_SETUP primero: si calcular_estado_dashboard determino que el precio
-        # ya paso al lado incorrecto del stoploss, la zona no es valida.
+        # EN_ZONA tiene prioridad absoluta
+        if en_zona_operativa:
+            return "EN_ZONA", "Nueva zona detectada (precio dentro de zona)"
+
+        # SIN_SETUP: si calcular_estado_dashboard determino que el precio
+        # ya paso al lado incorrecto del stoploss, la zona puede ser invalida.
         if estado_calculado == 'SIN_SETUP':
             return "SIN_SETUP", "Zona invalida: precio fuera del rango valido para esta direccion"
 
         # Verificar si precio está realmente dentro de la zona
-        en_zona_real = zona_desde <= precio_actual <= zona_hasta
+        en_zona_real = en_zona_operativa
         
         # Si calculado es EN_ZONA Y precio está realmente en zona, permitirlo
         if estado_calculado == 'EN_ZONA' and en_zona_real:
@@ -969,7 +984,14 @@ def calcular_transicion_estado(
     # CHECK 4: Validar transiciones permitidas según estado previo
     if estado_previo in ['ACTIVA', 'ESPERANDO_ENTRADA', 'LLEGANDO_A_ZONA']:
         # Desde estados iniciales, solo puede pasar a EN_ZONA
-        if estado_calculado == 'EN_ZONA':
+        if en_zona_operativa or estado_calculado == 'EN_ZONA':
+            print("\nPRICE ENTERED ZONE")
+            print(f"  symbol: {symbol}")
+            print(f"  estado_previo: {estado_previo}")
+            print(f"  precio_actual: {precio_actual}")
+            print(f"  entrada: {entrada}")
+            print(f"  stoploss: {stoploss}")
+            print(f"  nuevo_estado: EN_ZONA")
             return "EN_ZONA", "Precio tocó la zona"
         elif estado_calculado == 'PROFIT':
             # No puede saltar a PROFIT sin pasar por EN_ZONA
@@ -979,7 +1001,7 @@ def calcular_transicion_estado(
     
     elif estado_previo == 'EN_ZONA':
         # Una vez EN_ZONA, solo puede ir a: PROFIT, SL, TP, o mantenerse EN_ZONA.
-        if estado_calculado == 'EN_ZONA':
+        if en_zona_operativa or estado_calculado == 'EN_ZONA':
             return "EN_ZONA", "Precio sigue en zona"
         # Detectar PROFIT por posicion de precio: el precio salio del lado favorable.
         # Para Crash (BAJISTA): precio cayo por debajo de la entrada (zona_desde).
@@ -1202,16 +1224,26 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame, d
             print(f"    zona_desde: {zona_desde}, zona_hasta: {zona_hasta}")
             print(f"    direccion_operativa: {direccion_operativa}")
 
-            # Calcular estado dashboard con la zona guardada
-            estado_dashboard = calcular_estado_dashboard(
-                precio_actual,
-                entrada,
-                zona_desde,
-                zona_hasta,
-                direccion_operativa,
-                df_m1=df_m1,
-                symbol=symbol
+            # EN_ZONA tiene prioridad absoluta en MODO SEGUIMIENTO
+            en_zona_seguimiento = (
+                (direccion_operativa == "ALCISTA" and stoploss <= precio_actual <= entrada) or
+                (direccion_operativa == "BAJISTA" and entrada <= precio_actual <= stoploss)
             )
+
+            if en_zona_seguimiento:
+                estado_dashboard = "EN_ZONA"
+                print(f"  MODO SEGUIMIENTO: EN_ZONA forzado por rango operativo guardado")
+            else:
+                # Calcular estado dashboard con la zona guardada
+                estado_dashboard = calcular_estado_dashboard(
+                    precio_actual,
+                    entrada,
+                    zona_desde,
+                    zona_hasta,
+                    direccion_operativa,
+                    df_m1=df_m1,
+                    symbol=symbol
+                )
             print(f"  Estado Dashboard (calculado, MODO SEGUIMIENTO): {estado_dashboard}")
 
             # Calcular estado historial con maquina de estados
