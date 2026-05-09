@@ -9,7 +9,7 @@ import sys
 sys.path.insert(0, '/home/runner/work/GreenTrading/GreenTrading/GreenTrading-Desktop/backend')
 
 import pandas as pd
-from smc_m15_service import calcular_transicion_estado, calcular_estado_dashboard
+from smc_m15_service import calcular_transicion_estado, calcular_estado_dashboard, M1_VELAS_ZONA
 
 
 def test_dashboard(name, precio_actual, entrada, zona_desde, zona_hasta, direccion, expected, df_m1=None):
@@ -141,8 +141,8 @@ def main():
     # Boom con M1 bajistas rapidos: precio podria llegar en < 5 min -> LLEGANDO_A_ZONA
     tests_total += 1
     df_boom_m1_fast = pd.DataFrame({
-        'open': [5855.0] * 15,
-        'close': [5850.0] * 15,  # 5pts bajistas cada vela = 5 pts/min
+        'open': [5855.0] * M1_VELAS_ZONA,
+        'close': [5850.0] * M1_VELAS_ZONA,  # 5pts bajistas cada vela = 5 pts/min
     })
     if test_dashboard(
         "Boom con M1 rapidos (LLEGANDO_A_ZONA velocity-based)",
@@ -154,8 +154,8 @@ def main():
     # Boom con M1 bajistas lentos: precio tardaria > 5 min -> ACTIVA
     tests_total += 1
     df_boom_m1_slow = pd.DataFrame({
-        'open': [5854.0] * 15,
-        'close': [5852.0] * 15,  # 2pts bajistas cada vela = 2 pts/min
+        'open': [5854.0] * M1_VELAS_ZONA,
+        'close': [5852.0] * M1_VELAS_ZONA,  # 2pts bajistas cada vela = 2 pts/min
     })
     if test_dashboard(
         "Boom con M1 lentos (ACTIVA velocity-based)",

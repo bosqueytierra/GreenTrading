@@ -36,6 +36,7 @@ except ImportError:
 SWING_LOOKBACK = 3
 CLOSE_BREAK = True
 M1_VELAS_ZONA = 15
+LLEGANDO_A_ZONA_MINUTOS_UMBRAL = 5.0  # Tiempo estimado (en minutos) por debajo del cual se clasifica LLEGANDO_A_ZONA
 
 # =========================
 # SMART SYNC / DEBOUNCE
@@ -723,20 +724,15 @@ def calcular_velocidad_m1_hacia_zona(df_m1, entrada, direccion, min_velas=3, loo
         return {"cantidad_velas": 0, "velocidad": 0.0, "suficientes": False}
 
     df_recent = df_m1.tail(lookback)
-    movimientos = []
 
-    for i in range(len(df_recent)):
-        o = float(df_recent["open"].iloc[i])
-        c = float(df_recent["close"].iloc[i])
-
-        if direccion == "ALCISTA":
-            # BOOM: precio debe bajar hacia la entrada
-            if c < o:
-                movimientos.append(o - c)
-        else:
-            # CRASH: precio debe subir hacia la entrada
-            if c > o:
-                movimientos.append(c - o)
+    if direccion == "ALCISTA":
+        # BOOM: velas bajistas (close < open) empujan precio hacia la entrada (abajo)
+        mask = df_recent["close"] < df_recent["open"]
+        movimientos = (df_recent.loc[mask, "open"] - df_recent.loc[mask, "close"]).tolist()
+    else:
+        # CRASH: velas alcistas (close > open) empujan precio hacia la entrada (arriba)
+        mask = df_recent["close"] > df_recent["open"]
+        movimientos = (df_recent.loc[mask, "close"] - df_recent.loc[mask, "open"]).tolist()
 
     cantidad = len(movimientos)
     if cantidad < min_velas:
@@ -821,7 +817,7 @@ def calcular_estado_dashboard(
 
     if suficientes and velocidad > 0:
         tiempo_estimado = distancia / velocidad
-        estado_resultado = "LLEGANDO_A_ZONA" if tiempo_estimado <= 5.0 else "ACTIVA"
+        estado_resultado = "LLEGANDO_A_ZONA" if tiempo_estimado <= LLEGANDO_A_ZONA_MINUTOS_UMBRAL else "ACTIVA"
     else:
         tiempo_estimado = None
         estado_resultado = "ACTIVA"
