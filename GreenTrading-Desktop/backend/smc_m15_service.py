@@ -120,9 +120,10 @@ def sync_setup_to_supabase(analysis_result: dict) -> None:
         print("  SUPABASE SYNC: Service not available")
         return
     
-    # Skip SIN SETUP
-    if analysis_result.get('estado') == 'SIN SETUP':
-        print(f"  SUPABASE SYNC: Skipping {analysis_result.get('symbol')} - SIN SETUP no se guarda en historial")
+    # Skip SIN SETUP / SIN_SETUP
+    estado_actual = analysis_result.get('estado', '')
+    if estado_actual in ('SIN SETUP', 'SIN_SETUP'):
+        print(f"  SUPABASE SYNC: Skipping {analysis_result.get('symbol')} - SIN_SETUP no se guarda en historial")
         return
     
     # Skip si faltan campos requeridos
@@ -697,49 +698,60 @@ def calcular_niveles_operativos(zona: dict, direccion_operativa: str) -> dict:
 
 def calcular_estado_dashboard(precio_actual: float, entrada: float, zona_desde: float, zona_hasta: float, direccion: str) -> str:
     """
-    Calcula el estado del dashboard según la posición del precio.
-    
-    Estados:
-    - SIN_SETUP: No hay zona válida
-    - ESPERANDO_ENTRADA: Precio lejos de zona (>50 puntos)
-    - LLEGANDO_A_ZONA: Precio acercándose (10-50 puntos)
-    - EN_ZONA: Precio dentro de la zona
-    - PROFIT: Precio superó entrada en dirección esperada
-    
+    Calcula el estado del dashboard segun la posicion del precio.
+
+    Reglas por direccion:
+
+    BAJISTA (Crash):
+        - entrada = zona_desde (borde inferior), stoploss = zona_hasta (borde superior)
+        - El precio debe venir desde ABAJO para buscar la zona
+        - Si precio > zona_hasta: SIN_SETUP (precio sobre stoploss, zona invalida)
+        - Si zona_desde <= precio <= zona_hasta: EN_ZONA
+        - Si precio < zona_desde: ACTIVA (dist > 50) o LLEGANDO_A_ZONA (dist <= 50)
+        - PROFIT: calculado solo por la maquina de estados (requiere haber pasado por EN_ZONA)
+
+    ALCISTA (Boom):
+        - entrada = zona_hasta (borde superior), stoploss = zona_desde (borde inferior)
+        - El precio debe venir desde ARRIBA para buscar la zona
+        - Si precio < zona_desde: SIN_SETUP (precio bajo stoploss, zona invalida)
+        - Si zona_desde <= precio <= zona_hasta: EN_ZONA
+        - Si precio > zona_hasta: ACTIVA (dist > 50) o LLEGANDO_A_ZONA (dist <= 50)
+        - PROFIT: calculado solo por la maquina de estados (requiere haber pasado por EN_ZONA)
+
     Args:
         precio_actual: Precio actual
-        entrada: Precio de entrada
-        zona_desde: Límite inferior de zona
-        zona_hasta: Límite superior de zona
+        entrada: Precio de entrada (zona_desde para Crash, zona_hasta para Boom)
+        zona_desde: Limite inferior de zona
+        zona_hasta: Limite superior de zona
         direccion: "ALCISTA" o "BAJISTA"
-    
+
     Returns:
-        Estado dashboard
+        Estado dashboard: SIN_SETUP | EN_ZONA | ACTIVA | LLEGANDO_A_ZONA
     """
-    # Check if price is in zone
+    # EN_ZONA: precio dentro de la zona (valido para ambas direcciones)
     if zona_desde <= precio_actual <= zona_hasta:
         return "EN_ZONA"
-    
-    # Check if price reached profit
+
     if direccion == "ALCISTA":
-        if precio_actual > entrada:
-            return "PROFIT"
-        # Price below zone
-        distancia = zona_desde - precio_actual
-    else:
-        # BAJISTA
-        if precio_actual < entrada:
-            return "PROFIT"
-        # Price above zone
+        # Boom: precio se acerca desde ARRIBA.
+        # Si esta por debajo del stoploss (zona_desde), la zona es invalida.
+        if precio_actual < zona_desde:
+            return "SIN_SETUP"
+        # precio_actual > zona_hasta: acercandose desde arriba
         distancia = precio_actual - zona_hasta
-    
-    # Calculate distance to zone
-    if distancia > 50:
-        return "ESPERANDO_ENTRADA"
-    elif distancia >= 10:
-        return "LLEGANDO_A_ZONA"
     else:
-        return "ESPERANDO_ENTRADA"
+        # BAJISTA (Crash): precio se acerca desde ABAJO.
+        # Si esta por encima del stoploss (zona_hasta), la zona es invalida.
+        if precio_actual > zona_hasta:
+            return "SIN_SETUP"
+        # precio_actual < zona_desde: acercandose desde abajo
+        distancia = zona_desde - precio_actual
+
+    # Clasificar por distancia a la zona
+    if distancia > 50:
+        return "ACTIVA"
+    else:
+        return "LLEGANDO_A_ZONA"
 
 
 def calcular_transicion_estado(
@@ -798,10 +810,16 @@ def calcular_transicion_estado(
     # CHECK 1: Si NO hay estado previo, solo permitir ACTIVA/ESPERANDO_ENTRADA
     if not estado_previo:
         # ORDEN DE VALIDACION:
-        # 1. Primero verificar si precio está en zona (permitir EN_ZONA si es el caso)
-        # 2. Luego verificar TP/SL (situaciones anómalas)
-        # 3. Finalmente, otros estados iniciales válidos
-        
+        # 0. SIN_SETUP tiene prioridad: zona invalida para dashboard
+        # 1. Verificar si precio está en zona (permitir EN_ZONA si es el caso)
+        # 2. Verificar TP/SL (situaciones anómalas)
+        # 3. Otros estados iniciales válidos
+
+        # SIN_SETUP primero: si calcular_estado_dashboard determino que el precio
+        # ya paso al lado incorrecto del stoploss, la zona no es valida.
+        if estado_calculado == 'SIN_SETUP':
+            return "SIN_SETUP", "Zona invalida: precio fuera del rango valido para esta direccion"
+
         # Verificar si precio está realmente dentro de la zona
         en_zona_real = zona_desde <= precio_actual <= zona_hasta
         
@@ -869,34 +887,35 @@ def calcular_transicion_estado(
             return estado_calculado, f"Transición desde {estado_previo}"
     
     elif estado_previo == 'EN_ZONA':
-        # FIX CRÍTICO: Una vez EN_ZONA, NUNCA vuelve a estados anteriores
-        # Solo puede ir a: PROFIT, SL, TP, o mantenerse EN_ZONA
-        if estado_calculado == 'PROFIT':
-            return "PROFIT", "Precio salió en dirección favorable"
-        elif estado_calculado == 'EN_ZONA':
+        # Una vez EN_ZONA, solo puede ir a: PROFIT, SL, TP, o mantenerse EN_ZONA.
+        if estado_calculado == 'EN_ZONA':
             return "EN_ZONA", "Precio sigue en zona"
-        elif estado_calculado in ['ESPERANDO_ENTRADA', 'LLEGANDO_A_ZONA', 'ACTIVA']:
-            # PROHIBIDO: No puede volver atrás - mantiene memoria de zona tocada
-            print(f"  WARNING: Bloqueando transición ilegal EN_ZONA -> {estado_calculado}")
-            print(f"  Zona mantiene memoria: una vez tocada, nunca vuelve a estados iniciales")
-            return "EN_ZONA", "Zona mantiene memoria (precio salió temporalmente sin profit)"
+        # Detectar PROFIT por posicion de precio: el precio salio del lado favorable.
+        # Para Crash (BAJISTA): precio cayo por debajo de la entrada (zona_desde).
+        # Para Boom (ALCISTA): precio subio por encima de la entrada (zona_hasta).
+        en_profit_side = (
+            (direccion == "BAJISTA" and precio_actual < zona_desde) or
+            (direccion == "ALCISTA" and precio_actual > zona_hasta)
+        )
+        if en_profit_side:
+            return "PROFIT", "Precio salio en direccion favorable"
+        elif estado_calculado == 'SIN_SETUP':
+            # precio cruzo al lado del stoploss; el CHECK 2 deberia haberlo capturado como SL
+            return "SL", "Stop Loss alcanzado"
         else:
-            # Para cualquier otro caso, mantener EN_ZONA hasta resolución
-            return "EN_ZONA", "Zona mantiene estado (esperando PROFIT o SL)"
+            # Precio salio temporalmente pero no en direccion de profit ni SL
+            return "EN_ZONA", "Zona mantiene memoria (precio salio temporalmente)"
     
     elif estado_previo == 'PROFIT':
-        # FIX CRÍTICO: Una vez PROFIT, NUNCA vuelve a EN_ZONA ni estados anteriores
-        # Solo puede ir a: TP, SL, o mantenerse PROFIT
-        if estado_calculado == 'PROFIT':
-            return "PROFIT", "Mantiene profit"
-        elif estado_calculado in ['EN_ZONA', 'ESPERANDO_ENTRADA', 'LLEGANDO_A_ZONA', 'ACTIVA']:
-            # PROHIBIDO: No puede retroceder - profit es irreversible hasta TP/SL
-            print(f"  WARNING: Bloqueando transición ilegal PROFIT -> {estado_calculado}")
-            print(f"  Una vez en profit, nunca retrocede a estados anteriores")
-            return "PROFIT", "Mantiene profit (bloqueada transición hacia atrás)"
-        else:
-            # Mantener PROFIT para casos no cubiertos
+        # Una vez PROFIT, NUNCA vuelve a EN_ZONA ni estados anteriores.
+        # Solo puede ir a: TP, SL, o mantenerse PROFIT.
+        # ACTIVA/LLEGANDO_A_ZONA calculados son normales aqui: el precio sigue
+        # en la zona de profit y calcular_estado_dashboard retorna distancia-basado.
+        if estado_calculado in ['EN_ZONA', 'ACTIVA', 'LLEGANDO_A_ZONA', 'SIN_SETUP']:
+            # Mantener PROFIT hasta que SL o TP sean alcanzados
             return "PROFIT", "Mantiene profit (esperando TP o SL)"
+        else:
+            return "PROFIT", "Mantiene profit"
     
     # Default: mantener estado calculado
     return estado_calculado, f"Transición estándar desde {estado_previo}"
@@ -1155,6 +1174,31 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
         )
         print(f"  Estado Historial (validado): {estado_historial}")
         print(f"  Motivo transición: {motivo_transicion}")
+        
+        # Si la zona es invalida para el dashboard, tratarla como SIN SETUP
+        if estado_historial == "SIN_SETUP":
+            print(f"  WARNING: Zona invalida para dashboard ({symbol}) - precio fuera del rango valido")
+            print(f"  entrada={entrada}, stoploss={stoploss}, precio={precio_actual}")
+            print(f"  Retornando SIN SETUP para no mostrar zona invalida en dashboard")
+            result = {
+                "symbol": symbol,
+                "price": precio_actual,
+                "tendencia_h1": format_trend(tendencia_h1),
+                "tendencia_m15": format_trend(tendencia_m15),
+                "ultimo_evento_m15": ultimo_evento_m15,
+                "zona_madre_m15": {"desde": 0, "hasta": 0},
+                "entrada": None,
+                "stoploss": None,
+                "tp_1_1": None,
+                "score": 0,
+                "ob": "NO",
+                "fvg": "NO",
+                "barrida": "NO",
+                "estado": "SIN SETUP",
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }
+            print_result_summary(result)
+            return result
         
         # LOG COMPLETO según requerimientos del problema
         print(f"\n=== LOG TRANSICION ESTADO {symbol} ===")
