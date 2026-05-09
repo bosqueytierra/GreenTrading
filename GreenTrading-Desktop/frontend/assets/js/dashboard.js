@@ -215,6 +215,7 @@ function formatZonaMadre(zona, entrada, stoploss, symbolShort) {
                 data-entrada="${entradaAttr}"
                 data-stoploss="${slAttr}"
                 onclick="copyZoneInfo(this)"
+                aria-label="Copiar informacion de zona"
                 title="Copiar zona">&#x2398;</button>
         </div>
     `;
