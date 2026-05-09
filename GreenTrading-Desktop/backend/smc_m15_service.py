@@ -1382,6 +1382,119 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame, d
             if estado_previo in ESTADOS_PRE_ZONA:
                 print(f"  MODO SEGUIMIENTO PRE-ZONA: comparando zona guardada vs zona fresca para {symbol}...")
 
+                # ----------------------------------------------------------
+                # PRIORIDAD ABSOLUTA: detectar toque de zona guardada ANTES
+                # de cualquier reemplazo.
+                # BOOM (ALCISTA): stoploss <= precio_actual <= entrada
+                # CRASH (BAJISTA): entrada <= precio_actual <= stoploss
+                # ----------------------------------------------------------
+                en_zona_actual = (
+                    (direccion_operativa == "ALCISTA" and stoploss <= precio_actual <= entrada) or
+                    (direccion_operativa == "BAJISTA" and entrada <= precio_actual <= stoploss)
+                )
+
+                print(f"\n=== CHECK_TRACKED_ZONE_TOUCH_BEFORE_REPLACE ===")
+                print(f"  symbol: {symbol}")
+                print(f"  estado_previo: {estado_previo}")
+                print(f"  precio_actual: {precio_actual}")
+                print(f"  entrada_actual: {entrada}")
+                print(f"  stoploss_actual: {stoploss}")
+                print(f"  en_zona_actual: {en_zona_actual}")
+                print(f"===============================================\n")
+
+                if en_zona_actual:
+                    # Precio ya toco la zona guardada: bloquear y marcar EN_ZONA.
+                    # NO recalcular ni reemplazar zona.
+                    print(f"\n=== ZONE_TOUCH_LOCKED ===")
+                    print(f"  symbol: {symbol}")
+                    print(f"  estado_previo: {estado_previo}")
+                    print(f"  nuevo_estado: EN_ZONA")
+                    print(f"  entrada: {entrada}")
+                    print(f"  stoploss: {stoploss}")
+                    print(f"=========================\n")
+
+                    estado_dashboard = "EN_ZONA"
+                    log_price_entered_zone_check(
+                        symbol=symbol,
+                        precio_actual=precio_actual,
+                        entrada=entrada,
+                        stoploss=stoploss,
+                        zona_desde=zona_desde,
+                        zona_hasta=zona_hasta,
+                        direccion_operativa=direccion_operativa,
+                        en_zona_operativa=True,
+                        estado_antes=estado_previo,
+                        estado_despues=estado_dashboard
+                    )
+                    print(f"  MODO SEGUIMIENTO PRE-ZONA: EN_ZONA bloqueado por toque de zona guardada")
+
+                    # Calcular estado historial con maquina de estados
+                    estado_historial, motivo_transicion = calcular_estado_historial(
+                        symbol,
+                        estado_dashboard,
+                        precio_actual,
+                        entrada,
+                        stoploss,
+                        tp_1_1,
+                        zona_desde,
+                        zona_hasta,
+                        estado_previo
+                    )
+                    print(f"  Estado Historial (validado, ZONE_TOUCH_LOCKED): {estado_historial}")
+                    print(f"  Motivo transicion: {motivo_transicion}")
+
+                    print(f"\n=== LOG TRANSICION ESTADO {symbol} (ZONE_TOUCH_LOCKED) ===")
+                    print(f"  symbol: {symbol}")
+                    print(f"  estado_previo: {estado_previo}")
+                    print(f"  estado_calculado: {estado_dashboard}")
+                    print(f"  estado_validado: {estado_historial}")
+                    print(f"  precio_actual: {precio_actual}")
+                    print(f"  zona_desde: {zona_desde}")
+                    print(f"  zona_hasta: {zona_hasta}")
+                    print(f"  entrada: {entrada}")
+                    print(f"  stoploss: {stoploss}")
+                    print(f"  tp_1_1: {tp_1_1}")
+                    print(f"  motivo_transicion: {motivo_transicion}")
+                    print(f"======================================================\n")
+
+                    print(f"\n=== RESUMEN SETUP {symbol} (ZONE_TOUCH_LOCKED) ===")
+                    print(f"  zona_madre_m15: desde={zona_desde}, hasta={zona_hasta}")
+                    print(f"  score: {score}")
+                    print(f"  ob: {'SI' if has_ob else 'NO'}")
+                    print(f"  fvg: {'SI' if has_fvg else 'NO'}")
+                    print(f"  barrida: {'SI' if has_barrida else 'NO'}")
+                    print(f"  estado_final: {estado_historial}")
+                    print(f"  guardado_historial: SI (ZONE_TOUCH_LOCKED, zona activa)")
+                    print(f"=================================================\n")
+
+                    result = {
+                        "symbol": symbol,
+                        "price": precio_actual,
+                        "tendencia_h1": format_trend(tendencia_h1),
+                        "tendencia_m15": format_trend(tendencia_m15),
+                        "ultimo_evento_m15": ultimo_evento_m15,
+                        "zona_madre_m15": {
+                            "desde": float(zona_desde),
+                            "hasta": float(zona_hasta)
+                        },
+                        "entrada": entrada,
+                        "stoploss": stoploss,
+                        "tp_1_1": tp_1_1,
+                        "estado_dashboard": estado_dashboard,
+                        "estado_historial": estado_historial,
+                        "estado_final": estado_historial,
+                        "score": score,
+                        "ob": "SI" if has_ob else "NO",
+                        "fvg": "SI" if has_fvg else "NO",
+                        "barrida": "SI" if has_barrida else "NO",
+                        "estado": estado_historial,
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    }
+                    print_result_summary(result)
+                    sync_setup_to_supabase(result)
+                    return result
+
+                # NO toco la zona guardada: ahora si comparar con zona fresca.
                 if zona_fresca_master:
                     dir_cand = zona_fresca_master.get('direccion_operativa', zona_fresca_master.get('direccion', direccion_operativa))
                     niv_cand = calcular_niveles_operativos(zona_fresca_master, dir_cand)
