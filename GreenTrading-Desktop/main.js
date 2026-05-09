@@ -14,6 +14,12 @@ const path = require('path');
 let mainWindow = null;
 let pythonProcess = null;
 
+// Concurrency guard for SMC snapshot fetches
+let snapshotFetchInProgress = false;
+
+// Timeout for snapshot fetch (15 seconds - enough for 10 symbols + Supabase)
+const SNAPSHOT_FETCH_TIMEOUT_MS = 15000;
+
 // Python backend configuration
 const PYTHON_BACKEND = {
   port: 8765,
@@ -337,21 +343,38 @@ ipcMain.handle('get-symbols-snapshot', async () => {
  * IPC Handler: Get SMC M15 PRO snapshot (Phase 3)
  */
 ipcMain.handle('get-smc-m15-pro-snapshot', async () => {
+  // Prevent concurrent snapshot fetches
+  if (snapshotFetchInProgress) {
+    console.log('SNAPSHOT FETCH SKIPPED_ALREADY_RUNNING (main process)');
+    return { success: false, error: 'SNAPSHOT_ALREADY_RUNNING' };
+  }
+
+  snapshotFetchInProgress = true;
+  console.log('SNAPSHOT FETCH START (main process)');
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), SNAPSHOT_FETCH_TIMEOUT_MS);
+
   try {
     const url = `http://${PYTHON_BACKEND.host}:${PYTHON_BACKEND.port}/api/smc/m15-pro/snapshot`;
-    console.log(`Fetching SMC M15 PRO snapshot from: ${url}`);
     
-    const response = await fetch(url);
+    const response = await fetch(url, { signal: controller.signal });
     
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
     
     const data = await response.json();
+    clearTimeout(timeoutId);
+    console.log(`SNAPSHOT FETCH OK (main process) - ${Array.isArray(data) ? data.length : '?'} rows`);
     return { success: true, data };
   } catch (error) {
-    console.error('Error fetching SMC snapshot:', error);
-    return { success: false, error: error.message };
+    const reason = error.name === 'AbortError' ? 'TIMEOUT' : error.message;
+    console.error(`SNAPSHOT FETCH ERROR (main process): ${reason}`);
+    return { success: false, error: reason };
+  } finally {
+    clearTimeout(timeoutId);
+    snapshotFetchInProgress = false;
   }
 });
 

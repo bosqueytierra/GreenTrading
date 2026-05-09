@@ -13,6 +13,7 @@ Architecture:
 
 import sys
 import os
+import time
 import traceback
 from datetime import datetime, timezone
 from typing import Optional
@@ -410,6 +411,7 @@ async def get_smc_m15_pro_snapshot():
     Returns:
         list: Array of SMC snapshots
     """
+    print("SNAPSHOT ENDPOINT HIT")
     print("Reading SMC M15 PRO snapshot for all dashboard symbols...")
     print("Candle configuration (matching master_bot.py):")
     print("  - H1 candles requested: 500")
@@ -454,9 +456,12 @@ async def get_smc_m15_pro_snapshot():
         return snapshots
     
     snapshots = []
+    snapshot_start = time.time()
     
     try:
         for symbol in DASHBOARD_SYMBOLS:
+            symbol_start = time.time()
+            print(f"SYMBOL START: {symbol}")
             try:
                 # Read candles for H1 and M15 (matching master_bot.py)
                 # master_bot.py uses: H1=500, M15=800, M1=600
@@ -473,9 +478,12 @@ async def get_smc_m15_pro_snapshot():
                     smc_result['price'] = m1_candle.get('close') if m1_candle else None
                 
                 snapshots.append(smc_result)
+                symbol_ms = int((time.time() - symbol_start) * 1000)
+                print(f"SYMBOL DONE: {symbol} {symbol_ms}ms")
                 
             except Exception as e:
-                print(f"Error analyzing {symbol}: {e}")
+                symbol_ms = int((time.time() - symbol_start) * 1000)
+                print(f"SYMBOL ERROR: {symbol} {symbol_ms}ms - {e}")
                 traceback.print_exc()
                 # Add SIN SETUP response for failed symbol - try service first, then minimal safe fallback
                 try:
@@ -498,7 +506,9 @@ async def get_smc_m15_pro_snapshot():
         if not snapshots:
             return []
     
-    print(f"SMC snapshot complete: {len(snapshots)} symbols analyzed")
+    total_ms = int((time.time() - snapshot_start) * 1000)
+    print(f"SNAPSHOT TOTAL: {total_ms}ms")
+    print(f"SNAPSHOT RETURNING {len(snapshots)} rows")
     return snapshots
 
 
