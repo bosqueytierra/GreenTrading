@@ -1225,7 +1225,7 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame, d
 
             # Bloquear zona solo cuando ya hubo trade en curso
             if estado_previo in {'EN_ZONA', 'PROFIT'}:
-                print(f"ZONE_LOCKED_AFTER_EN_ZONA: symbol={symbol}, estado_previo={estado_previo}, razon=trade_en_curso")
+                print(f"ZONE_LOCKED_AFTER_EN_ZONA: symbol={symbol}, estado_previo={estado_previo}, reason=trade_in_progress")
                 print(f"NEW_CANDIDATE_ZONE: symbol={symbol}, zona=SKIPPED_POR_BLOQUEO")
             else:
                 # Recalcular candidata como master_bot para evitar quedar pegado a zona vieja
@@ -1239,13 +1239,19 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame, d
                         f"evento_index={zona_candidata['evento'].get('index')}"
                     )
 
+                    zona_candidata_desde = float(zona_candidata['zona_desde'])
+                    zona_candidata_hasta = float(zona_candidata['zona_hasta'])
+                    zona_actual_desde = float(zona_desde)
+                    zona_actual_hasta = float(zona_hasta)
+
                     zona_diferente = (
-                        abs(float(zona_candidata['zona_desde']) - float(zona_desde)) > ZONE_COMPARISON_EPSILON or
-                        abs(float(zona_candidata['zona_hasta']) - float(zona_hasta)) > ZONE_COMPARISON_EPSILON
+                        abs(zona_candidata_desde - zona_actual_desde) > ZONE_COMPARISON_EPSILON or
+                        abs(zona_candidata_hasta - zona_actual_hasta) > ZONE_COMPARISON_EPSILON
                     )
 
                     if zona_diferente:
-                        direccion_operativa = zona_candidata.get('direccion_operativa') or direccion_operativa
+                        direccion_candidata = zona_candidata.get('direccion_operativa')
+                        direccion_operativa = direccion_candidata if direccion_candidata is not None else direccion_operativa
                         niveles_candidata = calcular_niveles_operativos(zona_candidata, direccion_operativa)
 
                         zona_anterior_desde = zona_desde
