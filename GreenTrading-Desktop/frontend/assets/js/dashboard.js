@@ -1,4 +1,4 @@
-console.log("DASHBOARD_JS_VERSION: FIX_LIVE_STATE_SEPARATION_V1");
+console.log("DASHBOARD_JS_VERSION: FIX_DASHBOARD_STABILITY_V2");
 
 /**
  * GreenTrading Desktop - Dashboard JavaScript
@@ -8,6 +8,9 @@ console.log("DASHBOARD_JS_VERSION: FIX_LIVE_STATE_SEPARATION_V1");
 // Auto-refresh interval (1 second)
 const AUTO_REFRESH_INTERVAL = 1000;
 let refreshIntervalId = null;
+
+// Concurrency guard: skip refresh if a fetch is already in progress
+let isFetchingSnapshot = false;
 
 /**
  * Initialize dashboard
@@ -45,7 +48,13 @@ function setupEventListeners() {
  * Load dashboard data from backend
  */
 async function loadDashboardData() {
-    console.log('📊 Loading SMC M15 PRO dashboard data...');
+    if (isFetchingSnapshot) {
+        console.log('SNAPSHOT FETCH SKIPPED_ALREADY_RUNNING');
+        return;
+    }
+
+    isFetchingSnapshot = true;
+    console.log('SNAPSHOT FETCH START');
     
     try {
         // Call SMC API through exposed window.api
@@ -63,7 +72,7 @@ async function loadDashboardData() {
         
         console.log("DEBUG SNAPSHOTS IS ARRAY:", Array.isArray(snapshots));
         console.log("DEBUG SNAPSHOTS FIRST:", snapshots?.[0]);
-        console.log(`✅ Loaded ${snapshots.length} SMC snapshots`);
+        console.log(`SNAPSHOT FETCH OK - ${snapshots.length} snapshots`);
         
         // Update connection status
         updateConnectionStatus(true);
@@ -80,9 +89,11 @@ async function loadDashboardData() {
         updateLastUpdateTime();
         
     } catch (error) {
-        console.error('Error loading SMC dashboard data:', error);
+        console.error('SNAPSHOT FETCH ERROR:', error.message);
         updateConnectionStatus(false);
         showError(error.message);
+    } finally {
+        isFetchingSnapshot = false;
     }
 }
 
@@ -441,15 +452,14 @@ function startAutoRefresh() {
     // Set new interval with error handling
     refreshIntervalId = setInterval(async () => {
         try {
-            console.log('⏰ Auto-refresh triggered');
             await loadDashboardData();
         } catch (error) {
-            console.error('❌ Auto-refresh error:', error);
+            console.error('Auto-refresh error:', error);
             // Continue interval even on error
         }
     }, AUTO_REFRESH_INTERVAL);
     
-    console.log(`✅ Auto-refresh started (every ${AUTO_REFRESH_INTERVAL / 1000}s)`);
+    console.log(`Auto-refresh started (every ${AUTO_REFRESH_INTERVAL / 1000}s)`);
 }
 
 /**
