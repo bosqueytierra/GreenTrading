@@ -37,6 +37,7 @@ SWING_LOOKBACK = 3
 CLOSE_BREAK = True
 M1_VELAS_ZONA = 15
 LLEGANDO_A_ZONA_MINUTOS_UMBRAL = 5.0  # Tiempo estimado (en minutos) por debajo del cual se clasifica LLEGANDO_A_ZONA
+ZONE_COMPARISON_EPSILON = 1e-9
 
 # =========================
 # SMART SYNC / DEBOUNCE
@@ -1239,8 +1240,8 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame, d
                     )
 
                     zona_diferente = (
-                        abs(float(zona_candidata['zona_desde']) - float(zona_desde)) > 1e-9 or
-                        abs(float(zona_candidata['zona_hasta']) - float(zona_hasta)) > 1e-9
+                        abs(float(zona_candidata['zona_desde']) - float(zona_desde)) > ZONE_COMPARISON_EPSILON or
+                        abs(float(zona_candidata['zona_hasta']) - float(zona_hasta)) > ZONE_COMPARISON_EPSILON
                     )
 
                     if zona_diferente:
