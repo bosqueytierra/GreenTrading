@@ -72,6 +72,72 @@ def log_price_entered_zone_check(
     print(f"  estado_antes: {estado_antes}")
     print(f"  estado_despues: {estado_despues}")
 
+
+def log_fresh_master_style_zone(symbol: str, precio_actual: float, zona_fresca: dict) -> None:
+    """
+    Log obligatorio: zona fresca calculada al estilo master_bot.
+    """
+    zona_desde = None
+    zona_hasta = None
+    entrada = None
+    stoploss = None
+    evento = None
+    score = None
+    es_util = None
+
+    if zona_fresca:
+        zona_desde = zona_fresca.get('zona_desde')
+        zona_hasta = zona_fresca.get('zona_hasta')
+        direccion_fresca = zona_fresca.get(
+            'direccion_operativa',
+            zona_fresca.get('direccion', direccion_operativa_por_indice(symbol) or 'ALCISTA')
+        )
+        try:
+            niveles_frescos = calcular_niveles_operativos(zona_fresca, direccion_fresca)
+            entrada = niveles_frescos.get('entrada')
+            stoploss = niveles_frescos.get('stoploss')
+        except Exception:
+            entrada = None
+            stoploss = None
+        evento = zona_fresca.get('evento')
+        score = zona_fresca.get('score')
+        es_util = zona_fresca.get('es_util')
+
+    print(f"\nFRESH_MASTER_STYLE_ZONE:")
+    print(f"  symbol: {symbol}")
+    print(f"  precio_actual: {precio_actual}")
+    print(f"  zona_desde: {zona_desde}")
+    print(f"  zona_hasta: {zona_hasta}")
+    print(f"  entrada: {entrada}")
+    print(f"  stoploss: {stoploss}")
+    print(f"  evento: {evento}")
+    print(f"  score: {score}")
+    print(f"  es_util: {es_util}")
+
+
+def log_tracked_supabase_zone(
+    symbol: str,
+    estado_previo: str,
+    zona_desde: float,
+    zona_hasta: float,
+    entrada: float,
+    stoploss: float,
+    created_at: str,
+    updated_at: str
+) -> None:
+    """
+    Log obligatorio: zona activa recuperada desde Supabase.
+    """
+    print(f"\nTRACKED_SUPABASE_ZONE:")
+    print(f"  symbol: {symbol}")
+    print(f"  estado_previo: {estado_previo}")
+    print(f"  zona_desde: {zona_desde}")
+    print(f"  zona_hasta: {zona_hasta}")
+    print(f"  entrada: {entrada}")
+    print(f"  stoploss: {stoploss}")
+    print(f"  created_at: {created_at}")
+    print(f"  updated_at: {updated_at}")
+
 def _has_relevant_changes(symbol: str, new_data: dict) -> bool:
     """
     Determina si hay cambios relevantes que justifiquen un UPDATE en Supabase.
@@ -1223,11 +1289,11 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame, d
         
         # ===================================================================
         # NIVEL B: SETUP/ZONA
-        # Dos modos:
-        #   MODO SEGUIMIENTO - hay setup activo no terminal en Supabase:
-        #     usar zona guardada, NO llamar crear_zona_m15
-        #   MODO BUSQUEDA - no hay setup activo:
-        #     llamar crear_zona_m15 para encontrar zona nueva
+        # Reglas de prioridad:
+        #   1) EN_ZONA / PROFIT: mantener zona guardada
+        #   2) ACTIVA / ESPERANDO_ENTRADA / LLEGANDO_A_ZONA:
+        #      comparar con zona fresca estilo master_bot y reemplazar si difiere
+        #   3) Sin setup activo: usar zona fresca estilo master_bot
         # ===================================================================
 
         # Estados no terminales que activan MODO SEGUIMIENTO
@@ -1288,15 +1354,21 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame, d
             has_barrida = bool(setup_activo.get('barrida', False))
             score = setup_activo.get('score', 0) or 0
 
-            # Log CURRENT_TRACKED_ZONE (obligatorio)
-            print(f"\n=== CURRENT_TRACKED_ZONE ===")
-            print(f"  symbol: {symbol}")
-            print(f"  estado_previo: {estado_previo}")
-            print(f"  entrada_actual: {entrada}")
-            print(f"  stoploss_actual: {stoploss}")
-            print(f"  zona_desde_actual: {zona_desde}")
-            print(f"  zona_hasta_actual: {zona_hasta}")
-            print(f"============================\n")
+            log_tracked_supabase_zone(
+                symbol=symbol,
+                estado_previo=estado_previo,
+                zona_desde=zona_desde,
+                zona_hasta=zona_hasta,
+                entrada=entrada,
+                stoploss=stoploss,
+                created_at=setup_activo.get('created_at'),
+                updated_at=setup_activo.get('updated_at')
+            )
+
+            # Calcular SIEMPRE zona fresca estilo master_bot para logging/comparación
+            fvgs_m15_seg = detectar_fvg(df_m15)
+            zona_fresca_master = crear_zona_m15(df_m15, eventos_m15, fvgs_m15_seg, symbol, precio_actual)
+            log_fresh_master_style_zone(symbol, precio_actual, zona_fresca_master)
 
             print(f"  MODO SEGUIMIENTO: usando zona guardada para {symbol}")
             print(f"    estado_previo: {estado_previo}")
@@ -1305,24 +1377,21 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame, d
             print(f"    direccion_operativa: {direccion_operativa}")
 
             # ------------------------------------------------------------------
-            # PRE-ZONA: intentar reemplazar zona por candidata más reciente/cercana
+            # PRE-ZONA: comparar zona guardada vs zona fresca estilo master_bot
             # ------------------------------------------------------------------
             if estado_previo in ESTADOS_PRE_ZONA:
-                print(f"  MODO SEGUIMIENTO PRE-ZONA: recalculando candidata para {symbol}...")
-                fvgs_m15_seg = detectar_fvg(df_m15)
-                zona_candidata = crear_zona_m15(df_m15, eventos_m15, fvgs_m15_seg, symbol, precio_actual)
+                print(f"  MODO SEGUIMIENTO PRE-ZONA: comparando zona guardada vs zona fresca para {symbol}...")
 
-                if zona_candidata:
-                    dir_cand = zona_candidata.get('direccion_operativa', zona_candidata.get('direccion', direccion_operativa))
-                    niv_cand = calcular_niveles_operativos(zona_candidata, dir_cand)
+                if zona_fresca_master:
+                    dir_cand = zona_fresca_master.get('direccion_operativa', zona_fresca_master.get('direccion', direccion_operativa))
+                    niv_cand = calcular_niveles_operativos(zona_fresca_master, dir_cand)
                     entrada_nueva   = niv_cand["entrada"]
                     stoploss_nueva  = niv_cand["stoploss"]
                     tp_nueva        = niv_cand["tp_1_1"]
-                    z_desde_nueva   = float(zona_candidata.get('zona_desde', 0))
-                    z_hasta_nueva   = float(zona_candidata.get('zona_hasta', 0))
-                    es_util_nueva   = zona_candidata.get('es_util', False)
-                    score_nueva     = zona_candidata.get('score', 0)
-                    dist_nueva      = abs(precio_actual - entrada_nueva)
+                    z_desde_nueva   = float(zona_fresca_master.get('zona_desde', 0))
+                    z_hasta_nueva   = float(zona_fresca_master.get('zona_hasta', 0))
+                    es_util_nueva   = bool(zona_fresca_master.get('es_util', False))
+                    score_nueva     = zona_fresca_master.get('score', 0)
 
                     # Log NEW_CANDIDATE_ZONE (obligatorio)
                     print(f"\n=== NEW_CANDIDATE_ZONE ===")
@@ -1333,19 +1402,17 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame, d
                     print(f"  zona_hasta_nueva: {z_hasta_nueva}")
                     print(f"  es_util: {es_util_nueva}")
                     print(f"  score: {score_nueva}")
-                    print(f"  distancia_a_entrada: {dist_nueva}")
                     print(f"==========================\n")
 
-                    # Reemplazar si la zona candidata es es_util, distinta y más cercana al precio actual.
-                    # crear_zona_m15 itera eventos en reversa, por lo que la candidata ya es la más reciente.
-                    dist_actual = abs(precio_actual - entrada)
+                    # Reemplazar si la zona fresca (estilo master_bot) es útil y distinta.
                     zona_cambio = (
                         es_util_nueva and
                         (
                             round(entrada_nueva, 2) != round(entrada, 2) or
-                            round(stoploss_nueva, 2) != round(stoploss, 2)
-                        ) and
-                        dist_nueva <= dist_actual
+                            round(stoploss_nueva, 2) != round(stoploss, 2) or
+                            round(z_desde_nueva, 2) != round(zona_desde, 2) or
+                            round(z_hasta_nueva, 2) != round(zona_hasta, 2)
+                        )
                     )
                     if zona_cambio:
                         # Log ZONE_REPLACED_BEFORE_TOUCH (obligatorio)
@@ -1365,14 +1432,28 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame, d
                         zona_desde       = z_desde_nueva
                         zona_hasta       = z_hasta_nueva
                         direccion_operativa = dir_cand
-                        has_ob           = zona_candidata.get('ob') is not None
-                        has_fvg          = zona_candidata.get('fvg') is not None
-                        has_barrida      = zona_candidata.get('barrida') is not None
+                        has_ob           = zona_fresca_master.get('ob') is not None
+                        has_fvg          = zona_fresca_master.get('fvg') is not None
+                        has_barrida      = zona_fresca_master.get('barrida') is not None
                         score            = score_nueva
+
+                        # Actualizar setup activo en Supabase con la zona fresca elegida
+                        if supabase_service and setup_activo and setup_activo.get('id'):
+                            updates_zona_fresca = {
+                                'entrada': entrada,
+                                'stoploss': stoploss,
+                                'tp_1_1': tp_1_1,
+                                'score': score,
+                                'ob': has_ob,
+                                'fvg': has_fvg,
+                                'barrida': has_barrida
+                            }
+                            print(f"  SUPABASE SYNC: actualizando setup activo con zona fresca (id={setup_activo.get('id')})")
+                            supabase_service.update_setup(setup_activo.get('id'), updates_zona_fresca)
                     else:
-                        print(f"  PRE-ZONA: candidata no reemplaza zona guardada (no es mas cercana, no es_util, o coincide).")
+                        print(f"  PRE-ZONA: zona guardada se mantiene (zona fresca coincide o no es_util).")
                 else:
-                    print(f"  PRE-ZONA: no se encontro candidata valida, manteniendo zona guardada.")
+                    print(f"  PRE-ZONA: no se encontro zona fresca valida, manteniendo zona guardada.")
 
             # ------------------------------------------------------------------
             # POST-ZONA: bloquear zona guardada (EN_ZONA / PROFIT)
@@ -1491,6 +1572,16 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame, d
         # MODO BUSQUEDA: no hay setup activo, buscar zona nueva
         # ---------------------------------------------------------------
         print(f"  MODO BUSQUEDA: buscando zona nueva para {symbol}...")
+        log_tracked_supabase_zone(
+            symbol=symbol,
+            estado_previo="NINGUNO",
+            zona_desde=None,
+            zona_hasta=None,
+            entrada=None,
+            stoploss=None,
+            created_at=None,
+            updated_at=None
+        )
 
         # Detect FVGs
         fvgs_m15 = detectar_fvg(df_m15)
@@ -1498,6 +1589,7 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame, d
 
         # Try to create zone
         zona = crear_zona_m15(df_m15, eventos_m15, fvgs_m15, symbol, precio_actual)
+        log_fresh_master_style_zone(symbol, precio_actual, zona)
         
         # If NO zone, return BASE STRUCTURE with SIN SETUP for zone part
         if not zona:
