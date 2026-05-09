@@ -6,6 +6,7 @@ Servicio de comunicación con Supabase para persistencia de setups
 """
 
 import os
+import traceback
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 from dotenv import load_dotenv
@@ -83,7 +84,6 @@ def init_supabase() -> Optional[Client]:
         return None
     except Exception as e:
         print(f"SUPABASE ERROR: Error initializing Supabase client: {e}")
-        import traceback
         traceback.print_exc()
         return None
 
@@ -138,7 +138,6 @@ def create_setup(setup_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             return None
     except Exception as e:
         print(f"SUPABASE ERROR: Error creando setup: {e}")
-        import traceback
         traceback.print_exc()
         return None
 
@@ -175,7 +174,6 @@ def update_setup(setup_id: int, updates: Dict[str, Any]) -> Optional[Dict[str, A
             return None
     except Exception as e:
         print(f"SUPABASE ERROR: Error actualizando setup ID {setup_id}: {e}")
-        import traceback
         traceback.print_exc()
         return None
 
@@ -231,7 +229,6 @@ def get_active_setup(strategy_id: str, symbol: str, entrada: float, stoploss: fl
             return None
     except Exception as e:
         print(f"SUPABASE ERROR: Error getting active setup for {symbol}: {e}")
-        import traceback
         traceback.print_exc()
         return None
 

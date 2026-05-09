@@ -238,7 +238,7 @@ function copyZoneInfo(btn) {
     const entrada = btn.dataset.entrada || '--';
     const stoploss = btn.dataset.stoploss || '--';
     const text = `${symbol}\nENTRADA: ${entrada}\nSTOPLOSS: ${stoploss}`;
-    navigator.clipboard.writeText(text).then(() => {
+    const handleSuccess = () => {
         const original = btn.innerHTML;
         btn.innerHTML = 'Copiado';
         btn.classList.add('copy-zona-btn--copiado');
@@ -246,9 +246,40 @@ function copyZoneInfo(btn) {
             btn.innerHTML = original;
             btn.classList.remove('copy-zona-btn--copiado');
         }, 1500);
-    }).catch(err => {
+    };
+
+    const handleError = (err) => {
         console.error('Error copiando al portapapeles:', err);
-    });
+        const original = btn.innerHTML;
+        btn.innerHTML = 'Error';
+        setTimeout(() => {
+            btn.innerHTML = original;
+        }, 1500);
+    };
+
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        navigator.clipboard.writeText(text).then(handleSuccess).catch(handleError);
+        return;
+    }
+
+    try {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.setAttribute('readonly', '');
+        textArea.style.position = 'absolute';
+        textArea.style.left = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.select();
+        const copied = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        if (copied) {
+            handleSuccess();
+        } else {
+            handleError(new Error('document.execCommand(copy) returned false'));
+        }
+    } catch (err) {
+        handleError(err);
+    }
 }
 
 /**
