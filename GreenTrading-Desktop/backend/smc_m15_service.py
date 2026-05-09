@@ -1193,7 +1193,9 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame, d
 
         if modo_seguimiento:
             # ---------------------------------------------------------------
-            # MODO SEGUIMIENTO: usar zona guardada en Supabase
+            # MODO SEGUIMIENTO:
+            # - EN_ZONA/PROFIT: bloquear zona guardada
+            # - ACTIVA/ESPERANDO_ENTRADA/LLEGANDO_A_ZONA: permitir reemplazo
             # ---------------------------------------------------------------
 
             # Inferir direccion_operativa desde el simbolo
@@ -1218,11 +1220,53 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame, d
             has_barrida = bool(setup_activo.get('barrida', False))
             score = setup_activo.get('score', 0) or 0
 
-            print(f"  MODO SEGUIMIENTO: usando zona guardada para {symbol}")
-            print(f"    estado_previo: {estado_previo}")
-            print(f"    entrada: {entrada}, stoploss: {stoploss}, tp_1_1: {tp_1_1}")
-            print(f"    zona_desde: {zona_desde}, zona_hasta: {zona_hasta}")
-            print(f"    direccion_operativa: {direccion_operativa}")
+            print(f"CURRENT_TRACKED_ZONE: symbol={symbol}, estado_previo={estado_previo}, entrada={entrada}, stoploss={stoploss}, tp_1_1={tp_1_1}, zona_desde={zona_desde}, zona_hasta={zona_hasta}, direccion={direccion_operativa}")
+
+            # Bloquear zona solo cuando ya hubo trade en curso
+            if estado_previo in {'EN_ZONA', 'PROFIT'}:
+                print(f"ZONE_LOCKED_AFTER_EN_ZONA: symbol={symbol}, estado_previo={estado_previo}, razon=trade_en_curso")
+                print(f"NEW_CANDIDATE_ZONE: symbol={symbol}, zona=SKIPPED_POR_BLOQUEO")
+            else:
+                # Recalcular candidata como master_bot para evitar quedar pegado a zona vieja
+                fvgs_m15 = detectar_fvg(df_m15)
+                zona_candidata = crear_zona_m15(df_m15, eventos_m15, fvgs_m15, symbol, precio_actual)
+
+                if zona_candidata:
+                    print(
+                        f"NEW_CANDIDATE_ZONE: symbol={symbol}, zona_desde={zona_candidata['zona_desde']}, "
+                        f"zona_hasta={zona_candidata['zona_hasta']}, evento={zona_candidata['evento'].get('evento')}, "
+                        f"evento_index={zona_candidata['evento'].get('index')}"
+                    )
+
+                    zona_diferente = (
+                        abs(float(zona_candidata['zona_desde']) - float(zona_desde)) > 1e-9 or
+                        abs(float(zona_candidata['zona_hasta']) - float(zona_hasta)) > 1e-9
+                    )
+
+                    if zona_diferente:
+                        direccion_operativa = zona_candidata.get('direccion_operativa') or direccion_operativa
+                        niveles_candidata = calcular_niveles_operativos(zona_candidata, direccion_operativa)
+
+                        zona_anterior_desde = zona_desde
+                        zona_anterior_hasta = zona_hasta
+
+                        zona_desde = float(zona_candidata['zona_desde'])
+                        zona_hasta = float(zona_candidata['zona_hasta'])
+                        entrada = niveles_candidata['entrada']
+                        stoploss = niveles_candidata['stoploss']
+                        tp_1_1 = niveles_candidata['tp_1_1']
+                        has_ob = zona_candidata.get('ob') is not None
+                        has_fvg = zona_candidata.get('fvg') is not None
+                        has_barrida = zona_candidata.get('barrida') is not None
+                        score = zona_candidata.get('score', score)
+
+                        print(
+                            f"ZONE_REPLACED_BEFORE_TOUCH: symbol={symbol}, estado_previo={estado_previo}, "
+                            f"old_zona=({zona_anterior_desde},{zona_anterior_hasta}), "
+                            f"new_zona=({zona_desde},{zona_hasta})"
+                        )
+                else:
+                    print(f"NEW_CANDIDATE_ZONE: symbol={symbol}, zona=NINGUNA")
 
             # EN_ZONA tiene prioridad absoluta en MODO SEGUIMIENTO
             en_zona_seguimiento = (
