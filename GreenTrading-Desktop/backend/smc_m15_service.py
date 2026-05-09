@@ -826,19 +826,21 @@ def calcular_estado_dashboard(
     else:
         en_zona_operativa = entrada <= precio_actual <= zona_hasta
 
+    estado_despues_check = "EN_ZONA" if en_zona_operativa else "CONTINUA_EVALUACION"
+    log_price_entered_zone_check(
+        symbol=symbol,
+        precio_actual=precio_actual,
+        entrada=entrada,
+        stoploss=zona_desde if direccion == "ALCISTA" else zona_hasta,
+        zona_desde=zona_desde,
+        zona_hasta=zona_hasta,
+        direccion_operativa=direccion,
+        en_zona_operativa=en_zona_operativa,
+        estado_antes="CALCULANDO_DASHBOARD",
+        estado_despues=estado_despues_check
+    )
+
     if en_zona_operativa:
-        log_price_entered_zone_check(
-            symbol=symbol,
-            precio_actual=precio_actual,
-            entrada=entrada,
-            stoploss=zona_desde if direccion == "ALCISTA" else zona_hasta,
-            zona_desde=zona_desde,
-            zona_hasta=zona_hasta,
-            direccion_operativa=direccion,
-            en_zona_operativa=en_zona_operativa,
-            estado_antes="CALCULANDO_DASHBOARD",
-            estado_despues="EN_ZONA"
-        )
         return "EN_ZONA"
 
     if direccion == "ALCISTA":
@@ -947,21 +949,24 @@ def calcular_transicion_estado(
         (direccion == "BAJISTA" and entrada <= precio_actual <= stoploss)
     )
     
+    estado_antes_check = estado_previo if estado_previo else estado_calculado
+    estado_despues_check = "EN_ZONA" if en_zona_operativa else estado_calculado
+    log_price_entered_zone_check(
+        symbol=symbol,
+        precio_actual=precio_actual,
+        entrada=entrada,
+        stoploss=stoploss,
+        zona_desde=zona_desde,
+        zona_hasta=zona_hasta,
+        direccion_operativa=direccion,
+        en_zona_operativa=en_zona_operativa,
+        estado_antes=estado_antes_check,
+        estado_despues=estado_despues_check
+    )
+
     # EN_ZONA tiene prioridad absoluta sobre ACTIVA/LLEGANDO/SIN_SETUP.
     # Importante: debe evaluarse antes de TP/SL para respetar límites inclusivos.
     if en_zona_operativa:
-        log_price_entered_zone_check(
-            symbol=symbol,
-            precio_actual=precio_actual,
-            entrada=entrada,
-            stoploss=stoploss,
-            zona_desde=zona_desde,
-            zona_hasta=zona_hasta,
-            direccion_operativa=direccion,
-            en_zona_operativa=en_zona_operativa,
-            estado_antes=estado_previo if estado_previo else estado_calculado,
-            estado_despues="EN_ZONA"
-        )
         return "EN_ZONA", "Precio tocó la zona"
 
     # CHECK 1: Si NO hay estado previo, solo permitir ACTIVA/ESPERANDO_ENTRADA
@@ -1288,6 +1293,18 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame, d
 
             if en_zona_seguimiento:
                 estado_dashboard = "EN_ZONA"
+                log_price_entered_zone_check(
+                    symbol=symbol,
+                    precio_actual=precio_actual,
+                    entrada=entrada,
+                    stoploss=stoploss,
+                    zona_desde=zona_desde,
+                    zona_hasta=zona_hasta,
+                    direccion_operativa=direccion_operativa,
+                    en_zona_operativa=en_zona_seguimiento,
+                    estado_antes=estado_previo if estado_previo else "MODO_SEGUIMIENTO",
+                    estado_despues=estado_dashboard
+                )
                 print(f"  MODO SEGUIMIENTO: EN_ZONA forzado por rango operativo guardado")
             else:
                 # Calcular estado dashboard con la zona guardada
