@@ -1154,27 +1154,25 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame, d
         if supabase_service:
             setup_activo = supabase_service.get_active_setup_by_symbol('SMC_M15_PRO', symbol)
 
+        # Determinar si aplica MODO SEGUIMIENTO y extraer datos guardados
+        modo_seguimiento = False
         if setup_activo and setup_activo.get('estado') in ESTADOS_SEGUIMIENTO:
-            # ---------------------------------------------------------------
-            # MODO SEGUIMIENTO: usar zona guardada en Supabase
-            # ---------------------------------------------------------------
             estado_previo = setup_activo.get('estado')
             entrada = setup_activo.get('entrada')
             stoploss = setup_activo.get('stoploss')
             tp_1_1 = setup_activo.get('tp_1_1')
 
-            # Validar que la zona guardada tiene datos suficientes
             if entrada is None or stoploss is None or tp_1_1 is None:
                 print(f"  WARNING MODO SEGUIMIENTO: datos incompletos en setup guardado ({symbol})")
                 print(f"    entrada={entrada}, stoploss={stoploss}, tp_1_1={tp_1_1}")
                 print(f"    Forzando MODO BUSQUEDA")
-                setup_activo = None
+            else:
+                modo_seguimiento = True
 
-        if setup_activo and setup_activo.get('estado') in ESTADOS_SEGUIMIENTO:
-            estado_previo = setup_activo.get('estado')
-            entrada = setup_activo.get('entrada')
-            stoploss = setup_activo.get('stoploss')
-            tp_1_1 = setup_activo.get('tp_1_1')
+        if modo_seguimiento:
+            # ---------------------------------------------------------------
+            # MODO SEGUIMIENTO: usar zona guardada en Supabase
+            # ---------------------------------------------------------------
 
             # Inferir direccion_operativa desde el simbolo
             direccion_operativa = direccion_operativa_por_indice(symbol)
@@ -1193,14 +1191,10 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame, d
                 zona_hasta = stoploss
 
             # Recuperar ob/fvg/barrida/score almacenados (pueden ser bool o string)
-            _ob_stored = setup_activo.get('ob', False)
-            _fvg_stored = setup_activo.get('fvg', False)
-            _barrida_stored = setup_activo.get('barrida', False)
+            has_ob = bool(setup_activo.get('ob', False))
+            has_fvg = bool(setup_activo.get('fvg', False))
+            has_barrida = bool(setup_activo.get('barrida', False))
             score = setup_activo.get('score', 0) or 0
-
-            has_ob = bool(_ob_stored)
-            has_fvg = bool(_fvg_stored)
-            has_barrida = bool(_barrida_stored)
 
             print(f"  MODO SEGUIMIENTO: usando zona guardada para {symbol}")
             print(f"    estado_previo: {estado_previo}")
