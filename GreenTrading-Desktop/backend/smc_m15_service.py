@@ -1232,6 +1232,9 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame, d
 
         # Estados no terminales que activan MODO SEGUIMIENTO
         ESTADOS_SEGUIMIENTO = {'ACTIVA', 'ESPERANDO_ENTRADA', 'LLEGANDO_A_ZONA', 'EN_ZONA', 'PROFIT'}
+        # Sub-clasificación para la lógica de zona en MODO SEGUIMIENTO
+        ESTADOS_PRE_ZONA  = {'ACTIVA', 'ESPERANDO_ENTRADA', 'LLEGANDO_A_ZONA'}
+        ESTADOS_POST_ZONA = {'EN_ZONA', 'PROFIT'}
 
         setup_activo = None
         if supabase_service:
@@ -1254,7 +1257,13 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame, d
 
         if modo_seguimiento:
             # ---------------------------------------------------------------
-            # MODO SEGUIMIENTO: usar zona guardada en Supabase
+            # MODO SEGUIMIENTO: zona guardada como punto de partida
+            # Se divide en dos sub-modos según el estado previo:
+            #   PRE-ZONA  (ACTIVA/ESPERANDO_ENTRADA/LLEGANDO_A_ZONA):
+            #     - recalcular candidata con crear_zona_m15
+            #     - reemplazar si la nueva zona es distinta y válida
+            #   POST-ZONA (EN_ZONA/PROFIT):
+            #     - bloquear zona guardada sin recalcular
             # ---------------------------------------------------------------
 
             # Inferir direccion_operativa desde el simbolo
@@ -1279,11 +1288,103 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame, d
             has_barrida = bool(setup_activo.get('barrida', False))
             score = setup_activo.get('score', 0) or 0
 
+            # Log CURRENT_TRACKED_ZONE (obligatorio)
+            print(f"\n=== CURRENT_TRACKED_ZONE ===")
+            print(f"  symbol: {symbol}")
+            print(f"  estado_previo: {estado_previo}")
+            print(f"  entrada_actual: {entrada}")
+            print(f"  stoploss_actual: {stoploss}")
+            print(f"  zona_desde_actual: {zona_desde}")
+            print(f"  zona_hasta_actual: {zona_hasta}")
+            print(f"============================\n")
+
             print(f"  MODO SEGUIMIENTO: usando zona guardada para {symbol}")
             print(f"    estado_previo: {estado_previo}")
             print(f"    entrada: {entrada}, stoploss: {stoploss}, tp_1_1: {tp_1_1}")
             print(f"    zona_desde: {zona_desde}, zona_hasta: {zona_hasta}")
             print(f"    direccion_operativa: {direccion_operativa}")
+
+            # ------------------------------------------------------------------
+            # PRE-ZONA: intentar reemplazar zona por candidata más reciente/cercana
+            # ------------------------------------------------------------------
+            if estado_previo in ESTADOS_PRE_ZONA:
+                print(f"  MODO SEGUIMIENTO PRE-ZONA: recalculando candidata para {symbol}...")
+                fvgs_m15_seg = detectar_fvg(df_m15)
+                zona_candidata = crear_zona_m15(df_m15, eventos_m15, fvgs_m15_seg, symbol, precio_actual)
+
+                if zona_candidata:
+                    dir_cand = zona_candidata.get('direccion_operativa', zona_candidata.get('direccion', direccion_operativa))
+                    niv_cand = calcular_niveles_operativos(zona_candidata, dir_cand)
+                    entrada_nueva   = niv_cand["entrada"]
+                    stoploss_nueva  = niv_cand["stoploss"]
+                    tp_nueva        = niv_cand["tp_1_1"]
+                    z_desde_nueva   = float(zona_candidata.get('zona_desde', 0))
+                    z_hasta_nueva   = float(zona_candidata.get('zona_hasta', 0))
+                    es_util_nueva   = zona_candidata.get('es_util', False)
+                    score_nueva     = zona_candidata.get('score', 0)
+                    dist_nueva      = abs(precio_actual - entrada_nueva)
+
+                    # Log NEW_CANDIDATE_ZONE (obligatorio)
+                    print(f"\n=== NEW_CANDIDATE_ZONE ===")
+                    print(f"  symbol: {symbol}")
+                    print(f"  entrada_nueva: {entrada_nueva}")
+                    print(f"  stoploss_nueva: {stoploss_nueva}")
+                    print(f"  zona_desde_nueva: {z_desde_nueva}")
+                    print(f"  zona_hasta_nueva: {z_hasta_nueva}")
+                    print(f"  es_util: {es_util_nueva}")
+                    print(f"  score: {score_nueva}")
+                    print(f"  distancia_a_entrada: {dist_nueva}")
+                    print(f"==========================\n")
+
+                    # Reemplazar si la zona candidata es es_util, distinta y más cercana al precio actual.
+                    # crear_zona_m15 itera eventos en reversa, por lo que la candidata ya es la más reciente.
+                    dist_actual = abs(precio_actual - entrada)
+                    zona_cambio = (
+                        es_util_nueva and
+                        (
+                            round(entrada_nueva, 2) != round(entrada, 2) or
+                            round(stoploss_nueva, 2) != round(stoploss, 2)
+                        ) and
+                        dist_nueva <= dist_actual
+                    )
+                    if zona_cambio:
+                        # Log ZONE_REPLACED_BEFORE_TOUCH (obligatorio)
+                        print(f"\n=== ZONE_REPLACED_BEFORE_TOUCH ===")
+                        print(f"  symbol: {symbol}")
+                        print(f"  motivo: nueva_zona_mas_reciente_es_util")
+                        print(f"  entrada_anterior: {entrada}")
+                        print(f"  entrada_nueva: {entrada_nueva}")
+                        print(f"  stoploss_anterior: {stoploss}")
+                        print(f"  stoploss_nueva: {stoploss_nueva}")
+                        print(f"==================================\n")
+
+                        # Reemplazar variables de zona
+                        entrada          = entrada_nueva
+                        stoploss         = stoploss_nueva
+                        tp_1_1           = tp_nueva
+                        zona_desde       = z_desde_nueva
+                        zona_hasta       = z_hasta_nueva
+                        direccion_operativa = dir_cand
+                        has_ob           = zona_candidata.get('ob') is not None
+                        has_fvg          = zona_candidata.get('fvg') is not None
+                        has_barrida      = zona_candidata.get('barrida') is not None
+                        score            = score_nueva
+                    else:
+                        print(f"  PRE-ZONA: candidata no reemplaza zona guardada (no es mas cercana, no es_util, o coincide).")
+                else:
+                    print(f"  PRE-ZONA: no se encontro candidata valida, manteniendo zona guardada.")
+
+            # ------------------------------------------------------------------
+            # POST-ZONA: bloquear zona guardada (EN_ZONA / PROFIT)
+            # ------------------------------------------------------------------
+            elif estado_previo in ESTADOS_POST_ZONA:
+                # Log ZONE_LOCKED_AFTER_EN_ZONA (obligatorio)
+                print(f"\n=== ZONE_LOCKED_AFTER_EN_ZONA ===")
+                print(f"  symbol: {symbol}")
+                print(f"  estado_previo: {estado_previo}")
+                print(f"  entrada: {entrada}")
+                print(f"  stoploss: {stoploss}")
+                print(f"=================================\n")
 
             # EN_ZONA tiene prioridad absoluta en MODO SEGUIMIENTO
             en_zona_seguimiento = (
