@@ -1232,6 +1232,9 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame, d
 
         # Estados no terminales que activan MODO SEGUIMIENTO
         ESTADOS_SEGUIMIENTO = {'ACTIVA', 'ESPERANDO_ENTRADA', 'LLEGANDO_A_ZONA', 'EN_ZONA', 'PROFIT'}
+        # Sub-clasificación para la lógica de zona en MODO SEGUIMIENTO
+        ESTADOS_PRE_ZONA  = {'ACTIVA', 'ESPERANDO_ENTRADA', 'LLEGANDO_A_ZONA'}
+        ESTADOS_POST_ZONA = {'EN_ZONA', 'PROFIT'}
 
         setup_activo = None
         if supabase_service:
@@ -1262,9 +1265,6 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame, d
             #   POST-ZONA (EN_ZONA/PROFIT):
             #     - bloquear zona guardada sin recalcular
             # ---------------------------------------------------------------
-
-            ESTADOS_PRE_ZONA  = {'ACTIVA', 'ESPERANDO_ENTRADA', 'LLEGANDO_A_ZONA'}
-            ESTADOS_POST_ZONA = {'EN_ZONA', 'PROFIT'}
 
             # Inferir direccion_operativa desde el simbolo
             direccion_operativa = direccion_operativa_por_indice(symbol)
@@ -1336,10 +1336,16 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame, d
                     print(f"  distancia_a_entrada: {dist_nueva}")
                     print(f"==========================\n")
 
-                    # Reemplazar si la zona candidata es distinta (diferente entrada o stoploss)
+                    # Reemplazar si la zona candidata es es_util, distinta y más cercana al precio actual.
+                    # crear_zona_m15 itera eventos en reversa, por lo que la candidata ya es la más reciente.
+                    dist_actual = abs(precio_actual - entrada)
                     zona_cambio = (
-                        round(entrada_nueva, 2) != round(entrada, 2) or
-                        round(stoploss_nueva, 2) != round(stoploss, 2)
+                        es_util_nueva and
+                        (
+                            round(entrada_nueva, 2) != round(entrada, 2) or
+                            round(stoploss_nueva, 2) != round(stoploss, 2)
+                        ) and
+                        dist_nueva <= dist_actual
                     )
                     if zona_cambio:
                         # Log ZONE_REPLACED_BEFORE_TOUCH (obligatorio)
@@ -1364,7 +1370,7 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame, d
                         has_barrida      = zona_candidata.get('barrida') is not None
                         score            = score_nueva
                     else:
-                        print(f"  PRE-ZONA: candidata coincide con zona guardada, sin cambio.")
+                        print(f"  PRE-ZONA: candidata no reemplaza zona guardada (no es mas cercana, no es_util, o coincide).")
                 else:
                     print(f"  PRE-ZONA: no se encontro candidata valida, manteniendo zona guardada.")
 
