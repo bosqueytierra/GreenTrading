@@ -6,6 +6,7 @@ Servicio de comunicación con Supabase para persistencia de setups
 """
 
 import os
+import inspect
 import traceback
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
@@ -33,6 +34,7 @@ SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
 
 # Global Supabase client
 _supabase_client: Optional[Client] = None
+_supabase_proxy_patch_applied = False
 
 
 def _mask_supabase_key(key: Optional[str]) -> str:
@@ -42,6 +44,62 @@ def _mask_supabase_key(key: Optional[str]) -> str:
     if len(key) <= 12:
         return "(CONFIGURADA)"
     return f"{key[:8]}...{key[-4:]}"
+
+
+def _apply_supabase_proxy_compatibility_patch() -> None:
+    """Patch gotrue/httpx proxy arg mismatch for older httpx versions."""
+    global _supabase_proxy_patch_applied
+
+    if _supabase_proxy_patch_applied:
+        return
+
+    try:
+        import httpx
+        from gotrue._sync import gotrue_base_api
+    except ImportError:
+        return
+
+    httpx_client_params = inspect.signature(httpx.Client.__init__).parameters
+
+    if "proxy" in httpx_client_params or "proxies" not in httpx_client_params:
+        _supabase_proxy_patch_applied = True
+        return
+
+    if getattr(gotrue_base_api.SyncGoTrueBaseAPI, "_greentrading_proxy_compat", False):
+        _supabase_proxy_patch_applied = True
+        return
+
+    def _compat_init(
+        self,
+        *,
+        url: str,
+        headers: Dict[str, str],
+        http_client: Optional["httpx.Client"],
+        verify: bool = True,
+        proxy: Optional[str] = None,
+    ):
+        self._url = url
+        self._headers = headers
+
+        if http_client is not None:
+            self._http_client = http_client
+            return
+
+        client_kwargs = {
+            "verify": bool(verify),
+            "follow_redirects": True,
+            "http2": True,
+        }
+
+        if proxy is not None:
+            client_kwargs["proxies"] = proxy
+
+        self._http_client = httpx.Client(**client_kwargs)
+
+    gotrue_base_api.SyncGoTrueBaseAPI.__init__ = _compat_init
+    gotrue_base_api.SyncGoTrueBaseAPI._greentrading_proxy_compat = True
+    _supabase_proxy_patch_applied = True
+    print("SUPABASE OK: Applied httpx proxy compatibility patch")
 
 
 def init_supabase() -> Optional[Client]:
@@ -69,6 +127,7 @@ def init_supabase() -> Optional[Client]:
         return None
     
     try:
+        _apply_supabase_proxy_compatibility_patch()
         # Initialize Supabase client - compatible with version 2.3.0
         # Note: Do NOT pass proxy/proxies parameters as they're not supported
         _supabase_client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
