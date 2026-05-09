@@ -132,23 +132,29 @@ async function loadHistorialData(fullRebuild = false) {
         const response = await fetch(url);
         const result = await response.json();
         
+        console.log("HISTORIAL RESPONSE RAW: success=" + result.success + " count=" + (result.count || (result.setups || result.data || []).length));
+        
         if (!result.success) {
-            throw new Error(result.error || 'Failed to load historial data');
+            throw new Error(result.error || result.detail || 'Failed to load historial data');
         }
         
-        const newData = result.data || [];
-        console.log(`✅ Loaded ${newData.length} setups from historial`);
+        // Support both "setups" (new) and "data" (legacy) keys
+        const newData = result.setups || result.data || [];
+        console.log("HISTORIAL SETUPS COUNT:", newData.length);
+        console.log(`Loaded ${newData.length} setups from historial`);
         
         if (fullRebuild) {
             // First load or filter change: rebuild table
-            console.log('📝 Full table rebuild');
+            console.log('HISTORIAL RENDER START (full rebuild)');
             buildTable(newData);
             currentData = newData;
+            console.log('HISTORIAL RENDER DONE (full rebuild)');
         } else {
             // Incremental update: only update changed cells
-            console.log('🔄 Incremental silent update');
+            console.log('HISTORIAL RENDER START (incremental)');
             updateTableIncremental(newData);
             currentData = newData;
+            console.log('HISTORIAL RENDER DONE (incremental)');
         }
         
         // Update statistics
@@ -161,7 +167,7 @@ async function loadHistorialData(fullRebuild = false) {
         updateLiveIndicator(true);
         
     } catch (error) {
-        console.error('❌ Error loading historial data:', error);
+        console.error('HISTORIAL RENDER ERROR:', error.message, error);
         updateLiveIndicator(false);
         showError(error.message);
     }
@@ -367,6 +373,7 @@ function getEstadoBadgeClass(estado) {
     if (!estado) return '';
     
     const estadoMap = {
+        'ACTIVA': 'badge-blue',
         'SIN_SETUP': 'badge-gray',
         'ESPERANDO_ENTRADA': 'badge-blue',
         'LLEGANDO_A_ZONA': 'badge-yellow',
@@ -507,11 +514,20 @@ function updateLiveIndicator(isConnected) {
 }
 
 /**
- * Show error message
+ * Show error message in the table body
  */
 function showError(message) {
     console.error('Error:', message);
-    // TODO: Implement toast notification
+    const tbody = document.getElementById('historialTableBody');
+    if (tbody) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="12" style="text-align: center; padding: 40px; color: #ef4444;">
+                    Error cargando historial: ${message}
+                </td>
+            </tr>
+        `;
+    }
 }
 
 /**
