@@ -8,16 +8,17 @@ Verifica que las transiciones de estado sean correctas
 import sys
 sys.path.insert(0, '/home/runner/work/GreenTrading/GreenTrading/GreenTrading-Desktop/backend')
 
+import pandas as pd
 from smc_m15_service import calcular_transicion_estado, calcular_estado_dashboard
 
 
-def test_dashboard(name, precio_actual, entrada, zona_desde, zona_hasta, direccion, expected):
+def test_dashboard(name, precio_actual, entrada, zona_desde, zona_hasta, direccion, expected, df_m1=None):
     """Prueba calcular_estado_dashboard directamente"""
     print(f"\n{'='*60}")
     print(f"TEST DASHBOARD: {name}")
     print(f"{'='*60}")
     print(f"  precio={precio_actual}, zona=[{zona_desde},{zona_hasta}], dir={direccion}")
-    resultado = calcular_estado_dashboard(precio_actual, entrada, zona_desde, zona_hasta, direccion)
+    resultado = calcular_estado_dashboard(precio_actual, entrada, zona_desde, zona_hasta, direccion, df_m1=df_m1)
     ok = resultado == expected
     mark = "PASS" if ok else "FAIL"
     print(f"  Esperado: {expected}  Obtenido: {resultado}  -> {mark}")
@@ -81,11 +82,11 @@ def main():
     ):
         tests_passed += 1
 
-    # Crash precio cerca de zona (<=50 puntos) -> LLEGANDO_A_ZONA
+    # Crash precio cerca de zona, sin M1 -> ACTIVA (sin M1 no se puede determinar LLEGANDO_A_ZONA)
     tests_total += 1
     if test_dashboard(
-        "Crash precio cerca de zona (LLEGANDO_A_ZONA)",
-        18410.0, 18440.0, 18440.0, 18473.0, "BAJISTA", "LLEGANDO_A_ZONA"
+        "Crash precio cerca de zona sin M1 (ACTIVA - sin datos M1)",
+        18410.0, 18440.0, 18440.0, 18473.0, "BAJISTA", "ACTIVA"
     ):
         tests_passed += 1
 
@@ -105,7 +106,7 @@ def main():
     ):
         tests_passed += 1
 
-    # Boom precio muy arriba de la zona (>50 puntos) -> ACTIVA
+    # Boom precio muy arriba de la zona -> ACTIVA
     tests_total += 1
     if test_dashboard(
         "Boom precio muy sobre zona (ACTIVA)",
@@ -113,11 +114,11 @@ def main():
     ):
         tests_passed += 1
 
-    # Boom precio cerca de zona (<=50 puntos) -> LLEGANDO_A_ZONA
+    # Boom precio cerca de zona, sin M1 -> ACTIVA (sin M1 no se puede determinar LLEGANDO_A_ZONA)
     tests_total += 1
     if test_dashboard(
-        "Boom precio cerca de zona (LLEGANDO_A_ZONA)",
-        18480.0, 18450.0, 18400.0, 18450.0, "ALCISTA", "LLEGANDO_A_ZONA"
+        "Boom precio cerca de zona sin M1 (ACTIVA - sin datos M1)",
+        18480.0, 18450.0, 18400.0, 18450.0, "ALCISTA", "ACTIVA"
     ):
         tests_passed += 1
 
@@ -134,6 +135,32 @@ def main():
     if test_dashboard(
         "Boom precio bajo stoploss (SIN_SETUP)",
         18380.0, 18450.0, 18400.0, 18450.0, "ALCISTA", "SIN_SETUP"
+    ):
+        tests_passed += 1
+
+    # Boom con M1 bajistas rapidos: precio podria llegar en < 5 min -> LLEGANDO_A_ZONA
+    tests_total += 1
+    df_boom_m1_fast = pd.DataFrame({
+        'open': [5855.0] * 15,
+        'close': [5850.0] * 15,  # 5pts bajistas cada vela = 5 pts/min
+    })
+    if test_dashboard(
+        "Boom con M1 rapidos (LLEGANDO_A_ZONA velocity-based)",
+        5852.74, 5829.79, 5814.93, 5829.79, "ALCISTA", "LLEGANDO_A_ZONA",
+        df_m1=df_boom_m1_fast
+    ):
+        tests_passed += 1
+
+    # Boom con M1 bajistas lentos: precio tardaria > 5 min -> ACTIVA
+    tests_total += 1
+    df_boom_m1_slow = pd.DataFrame({
+        'open': [5854.0] * 15,
+        'close': [5852.0] * 15,  # 2pts bajistas cada vela = 2 pts/min
+    })
+    if test_dashboard(
+        "Boom con M1 lentos (ACTIVA velocity-based)",
+        5852.74, 5829.79, 5814.93, 5829.79, "ALCISTA", "ACTIVA",
+        df_m1=df_boom_m1_slow
     ):
         tests_passed += 1
 

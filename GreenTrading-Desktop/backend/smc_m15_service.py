@@ -696,7 +696,65 @@ def calcular_niveles_operativos(zona: dict, direccion_operativa: str) -> dict:
     }
 
 
-def calcular_estado_dashboard(precio_actual: float, entrada: float, zona_desde: float, zona_hasta: float, direccion: str) -> str:
+def calcular_velocidad_m1_hacia_zona(df_m1, entrada, direccion, min_velas=3, lookback=None):
+    """
+    Calcula la velocidad promedio (puntos/minuto) de las velas M1 que avanzan hacia la zona.
+
+    Para BOOM (ALCISTA): velas bajistas (close < open) empujan el precio hacia la entrada (abajo).
+    Para CRASH (BAJISTA): velas alcistas (close > open) empujan el precio hacia la entrada (arriba).
+
+    Args:
+        df_m1: DataFrame de velas M1 (columnas: open, close, high, low)
+        entrada: Precio de entrada de la zona
+        direccion: "ALCISTA" o "BAJISTA"
+        min_velas: Minimo de velas direccionales requeridas (defecto 3)
+        lookback: Cuantas velas M1 recientes analizar (defecto M1_VELAS_ZONA)
+
+    Returns:
+        dict con:
+            cantidad_velas: int  -- velas que avanzan hacia la zona
+            velocidad: float     -- puntos por minuto promedio
+            suficientes: bool    -- True si hay al menos min_velas
+    """
+    if lookback is None:
+        lookback = M1_VELAS_ZONA
+
+    if df_m1 is None or len(df_m1) == 0:
+        return {"cantidad_velas": 0, "velocidad": 0.0, "suficientes": False}
+
+    df_recent = df_m1.tail(lookback)
+    movimientos = []
+
+    for i in range(len(df_recent)):
+        o = float(df_recent["open"].iloc[i])
+        c = float(df_recent["close"].iloc[i])
+
+        if direccion == "ALCISTA":
+            # BOOM: precio debe bajar hacia la entrada
+            if c < o:
+                movimientos.append(o - c)
+        else:
+            # CRASH: precio debe subir hacia la entrada
+            if c > o:
+                movimientos.append(c - o)
+
+    cantidad = len(movimientos)
+    if cantidad < min_velas:
+        return {"cantidad_velas": cantidad, "velocidad": 0.0, "suficientes": False}
+
+    velocidad = sum(movimientos) / cantidad
+    return {"cantidad_velas": cantidad, "velocidad": velocidad, "suficientes": True}
+
+
+def calcular_estado_dashboard(
+    precio_actual: float,
+    entrada: float,
+    zona_desde: float,
+    zona_hasta: float,
+    direccion: str,
+    df_m1=None,
+    symbol: str = ""
+) -> str:
     """
     Calcula el estado del dashboard segun la posicion del precio.
 
@@ -707,7 +765,7 @@ def calcular_estado_dashboard(precio_actual: float, entrada: float, zona_desde: 
         - El precio debe venir desde ABAJO para buscar la zona
         - Si precio > zona_hasta: SIN_SETUP (precio sobre stoploss, zona invalida)
         - Si zona_desde <= precio <= zona_hasta: EN_ZONA
-        - Si precio < zona_desde: ACTIVA (dist > 50) o LLEGANDO_A_ZONA (dist <= 50)
+        - Si precio < zona_desde: ACTIVA o LLEGANDO_A_ZONA segun velocidad M1
         - PROFIT: calculado solo por la maquina de estados (requiere haber pasado por EN_ZONA)
 
     ALCISTA (Boom):
@@ -715,8 +773,12 @@ def calcular_estado_dashboard(precio_actual: float, entrada: float, zona_desde: 
         - El precio debe venir desde ARRIBA para buscar la zona
         - Si precio < zona_desde: SIN_SETUP (precio bajo stoploss, zona invalida)
         - Si zona_desde <= precio <= zona_hasta: EN_ZONA
-        - Si precio > zona_hasta: ACTIVA (dist > 50) o LLEGANDO_A_ZONA (dist <= 50)
+        - Si precio > zona_hasta: ACTIVA o LLEGANDO_A_ZONA segun velocidad M1
         - PROFIT: calculado solo por la maquina de estados (requiere haber pasado por EN_ZONA)
+
+    LLEGANDO_A_ZONA: se determina por velocidad M1 hacia la zona.
+        distancia_a_entrada / velocidad_m1_hacia_zona <= 5 minutos => LLEGANDO_A_ZONA
+        Si no hay suficientes velas M1 direccionales => ACTIVA (no inventar LLEGANDO_A_ZONA)
 
     Args:
         precio_actual: Precio actual
@@ -724,6 +786,8 @@ def calcular_estado_dashboard(precio_actual: float, entrada: float, zona_desde: 
         zona_desde: Limite inferior de zona
         zona_hasta: Limite superior de zona
         direccion: "ALCISTA" o "BAJISTA"
+        df_m1: DataFrame de velas M1 recientes (opcional)
+        symbol: Nombre del simbolo para logs (opcional)
 
     Returns:
         Estado dashboard: SIN_SETUP | EN_ZONA | ACTIVA | LLEGANDO_A_ZONA
@@ -739,6 +803,7 @@ def calcular_estado_dashboard(precio_actual: float, entrada: float, zona_desde: 
             return "SIN_SETUP"
         # precio_actual > zona_hasta: acercandose desde arriba
         distancia = precio_actual - zona_hasta
+        stoploss_log = zona_desde
     else:
         # BAJISTA (Crash): precio se acerca desde ABAJO.
         # Si esta por encima del stoploss (zona_hasta), la zona es invalida.
@@ -746,12 +811,38 @@ def calcular_estado_dashboard(precio_actual: float, entrada: float, zona_desde: 
             return "SIN_SETUP"
         # precio_actual < zona_desde: acercandose desde abajo
         distancia = zona_desde - precio_actual
+        stoploss_log = zona_hasta
 
-    # Clasificar por distancia a la zona
-    if distancia > 50:
-        return "ACTIVA"
+    # Clasificar usando velocidad M1 hacia la zona
+    vel_result = calcular_velocidad_m1_hacia_zona(df_m1, entrada, direccion)
+    cantidad_velas = vel_result["cantidad_velas"]
+    velocidad = vel_result["velocidad"]
+    suficientes = vel_result["suficientes"]
+
+    if suficientes and velocidad > 0:
+        tiempo_estimado = distancia / velocidad
+        estado_resultado = "LLEGANDO_A_ZONA" if tiempo_estimado <= 5.0 else "ACTIVA"
     else:
-        return "LLEGANDO_A_ZONA"
+        tiempo_estimado = None
+        estado_resultado = "ACTIVA"
+
+    # Log requerido por especificacion
+    sym_label = symbol if symbol else "?"
+    print(f"\n--- LLEGANDO_A_ZONA EVAL [{sym_label}] ---")
+    print(f"  precio_actual: {precio_actual}")
+    print(f"  entrada: {entrada}")
+    print(f"  stoploss: {stoploss_log}")
+    print(f"  distancia_a_entrada: {round(distancia, 4)}")
+    print(f"  cantidad_velas_m1_hacia_zona: {cantidad_velas}")
+    print(f"  velocidad_m1_hacia_zona: {round(velocidad, 4)} pts/min")
+    if tiempo_estimado is not None:
+        print(f"  tiempo_estimado_min: {round(tiempo_estimado, 2)}")
+    else:
+        print(f"  tiempo_estimado_min: N/A (sin velas suficientes)")
+    print(f"  estado_dashboard: {estado_resultado}")
+    print(f"---------------------------------------------")
+
+    return estado_resultado
 
 
 def calcular_transicion_estado(
@@ -983,7 +1074,7 @@ def calcular_estado_historial(
 # MAIN ANALYSIS FUNCTION
 # =========================
 
-def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -> dict:
+def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame, df_m1: pd.DataFrame = None) -> dict:
     """
     Analyze a symbol using direct SMC implementation.
     
@@ -1000,6 +1091,7 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
         symbol: Symbol name
         df_h1: H1 candles DataFrame
         df_m15: M15 candles DataFrame
+        df_m1: M1 candles DataFrame (opcional, para calcular velocidad LLEGANDO_A_ZONA)
     
     Returns:
         dict with SMC analysis results
@@ -1129,13 +1221,15 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
         print(f"    - StopLoss: {stoploss}")
         print(f"    - TP 1:1: {tp_1_1}")
         
-        # Calculate dashboard state (distancia/posición)
+        # Calculate dashboard state (velocidad M1 o posicion si no hay M1)
         estado_dashboard = calcular_estado_dashboard(
             precio_actual,
             entrada,
             zona['zona_desde'],
             zona['zona_hasta'],
-            direccion_operativa
+            direccion_operativa,
+            df_m1=df_m1,
+            symbol=symbol
         )
         print(f"  Estado Dashboard (calculado): {estado_dashboard}")
         

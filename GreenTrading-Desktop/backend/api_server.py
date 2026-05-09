@@ -462,9 +462,10 @@ async def get_smc_m15_pro_snapshot():
                 # master_bot.py uses: H1=500, M15=800, M1=600
                 df_h1 = read_candles_dataframe(symbol, 'H1', count=500)
                 df_m15 = read_candles_dataframe(symbol, 'M15', count=800)
+                df_m1 = read_candles_dataframe(symbol, 'M1', count=30)
                 
                 # Analyze symbol with SMC engine
-                smc_result = analyze_symbol_smc(symbol, df_h1, df_m15)
+                smc_result = analyze_symbol_smc(symbol, df_h1, df_m15, df_m1)
                 
                 # If no price yet, get it from M1
                 if smc_result['price'] is None:
