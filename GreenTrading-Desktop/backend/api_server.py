@@ -13,6 +13,7 @@ Architecture:
 
 import sys
 import os
+import traceback
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -454,29 +455,57 @@ async def get_smc_m15_pro_snapshot():
     
     snapshots = []
     
-    for symbol in DASHBOARD_SYMBOLS:
-        try:
-            # Read candles for H1 and M15 (matching master_bot.py)
-            # master_bot.py uses: H1=500, M15=800, M1=600
-            df_h1 = read_candles_dataframe(symbol, 'H1', count=500)
-            df_m15 = read_candles_dataframe(symbol, 'M15', count=800)
-            
-            # Analyze symbol with SMC engine
-            smc_result = analyze_symbol_smc(symbol, df_h1, df_m15)
-            
-            # If no price yet, get it from M1
-            if smc_result['price'] is None:
-                m1_candle = read_candle_data(symbol, 'M1')
-                smc_result['price'] = m1_candle.get('close') if m1_candle else None
-            
-            snapshots.append(smc_result)
-            
-        except Exception as e:
-            print(f"Error analyzing {symbol}: {e}")
-            # Add SIN SETUP response for failed symbol
-            m1_candle = read_candle_data(symbol, 'M1')
-            price = m1_candle.get('close') if m1_candle else None
-            snapshots.append(create_sin_setup_response(symbol, price))
+    try:
+        for symbol in DASHBOARD_SYMBOLS:
+            try:
+                # Read candles for H1 and M15 (matching master_bot.py)
+                # master_bot.py uses: H1=500, M15=800, M1=600
+                df_h1 = read_candles_dataframe(symbol, 'H1', count=500)
+                df_m15 = read_candles_dataframe(symbol, 'M15', count=800)
+                
+                # Analyze symbol with SMC engine
+                smc_result = analyze_symbol_smc(symbol, df_h1, df_m15)
+                
+                # If no price yet, get it from M1
+                if smc_result['price'] is None:
+                    m1_candle = read_candle_data(symbol, 'M1')
+                    smc_result['price'] = m1_candle.get('close') if m1_candle else None
+                
+                snapshots.append(smc_result)
+                
+            except Exception as e:
+                print(f"Error analyzing {symbol}: {e}")
+                traceback.print_exc()
+                # Add SIN SETUP response for failed symbol
+                try:
+                    m1_candle = read_candle_data(symbol, 'M1')
+                    price = m1_candle.get('close') if m1_candle else None
+                    snapshots.append(create_sin_setup_response(symbol, price))
+                except Exception as fallback_e:
+                    print(f"Error creating fallback for {symbol}: {fallback_e}")
+                    snapshots.append({
+                        "symbol": symbol,
+                        "price": None,
+                        "tendencia_h1": "--",
+                        "tendencia_m15": "--",
+                        "ultimo_evento_m15": "ERROR",
+                        "zona_madre_m15": {"desde": 0, "hasta": 0},
+                        "entrada": None,
+                        "stoploss": None,
+                        "tp_1_1": None,
+                        "score": 0,
+                        "ob": "NO",
+                        "fvg": "NO",
+                        "barrida": "NO",
+                        "estado": "SIN SETUP",
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    })
+    except Exception as outer_e:
+        print(f"CRITICAL ERROR in snapshot loop: {outer_e}")
+        traceback.print_exc()
+        # Return whatever snapshots we collected so far rather than closing socket
+        if not snapshots:
+            return []
     
     print(f"SMC snapshot complete: {len(snapshots)} symbols analyzed")
     return snapshots
@@ -616,9 +645,11 @@ async def get_setup_history_endpoint(
             to_date=to_date,
             limit=limit
         )
-        return {"success": True, "data": result}
+        print(f"HISTORIAL OK: returned {len(result)} setups from Supabase")
+        return {"success": True, "setups": result, "count": len(result), "data": result}
     except Exception as e:
-        print(f"Error in get_setup_history: {e}")
+        print(f"HISTORIAL ERROR: Error in get_setup_history: {e}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 
