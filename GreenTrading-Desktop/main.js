@@ -365,6 +365,7 @@ ipcMain.handle('get-smc-m15-pro-snapshot', async () => {
     }
     
     const data = await response.json();
+    clearTimeout(timeoutId);
     console.log(`SNAPSHOT FETCH OK (main process) - ${Array.isArray(data) ? data.length : '?'} rows`);
     return { success: true, data };
   } catch (error) {
