@@ -1,4 +1,4 @@
-console.log("DASHBOARD_JS_VERSION: DEBUG_MAPPING_V2");
+console.log("DASHBOARD_JS_VERSION: FIX_LIVE_STATE_SEPARATION_V1");
 
 /**
  * GreenTrading Desktop - Dashboard JavaScript
@@ -140,14 +140,20 @@ function createTableRow(snapshot) {
         fvg,
         barrida,
         estado,
-        estado_final,      // NEW: Use validated final state
-        estado_historial,  // NEW: Use validated historial state
+        estado_dashboard,  // Operational live state (never SL/TP)
+        estado_final,
+        estado_historial,
         updated_at
     } = snapshot;
     
-    // FIXED: BUG 3 - Use estado_final (validated) or estado_historial (validated) or fallback to estado
-    const estadoToDisplay = estado_final || estado_historial || estado;
-    console.log("DEBUG ESTADO TO DISPLAY:", estadoToDisplay);
+    // Dashboard live: prefer estado_dashboard (operational state, never SL/TP/DESCARTADA/PAUSADA).
+    // Fall back to other fields only when estado_dashboard is absent (e.g. SIN SETUP rows).
+    // If the resolved candidate is a terminal/historical-only state, show SIN_SETUP instead.
+    const DASHBOARD_BLOCKED = new Set(['SL', 'TP', 'DESCARTADA', 'PAUSADA']);
+    const estadoCandidate = estado_dashboard || estado_final || estado_historial || estado;
+    const estadoNorm = estadoCandidate ? estadoCandidate.toUpperCase().replace(/ /g, '_') : '';
+    const estadoToDisplay = (!estadoNorm || DASHBOARD_BLOCKED.has(estadoNorm)) ? 'SIN_SETUP' : estadoCandidate;
+    console.log("DEBUG ESTADO TO DISPLAY:", estadoToDisplay, "(raw candidate:", estadoCandidate, ")");
     
     // Format symbol (shorter name)
     const symbolShort = symbol.replace(' Index', '');
@@ -158,7 +164,7 @@ function createTableRow(snapshot) {
     // Format zona madre M15 with ENTRADA/STOPLOSS + copy button
     const zonaCell = formatZonaMadre(zona_madre_m15, entrada, stoploss, symbolShort);
     
-    // Format estado badge with validated state
+    // Format estado badge using the live dashboard state
     const estadoBadge = formatEstadoBadge(estadoToDisplay);
     
     // Format score badge
@@ -167,8 +173,10 @@ function createTableRow(snapshot) {
     // Format update time
     const timeStr = formatTime(updated_at);
     
-    // Apply row color based on estado
-    const rowClass = estadoToDisplay === 'ACTIVA' ? 'row-activa' : 'row-sin-setup';
+    // Apply row color based on estado — any active/operational state gets row-activa.
+    // Use estadoNorm (already uppercased + underscored) for reliable Set lookup.
+    const ACTIVE_ESTADOS = new Set(['ACTIVA', 'ESPERANDO_ENTRADA', 'LLEGANDO_A_ZONA', 'EN_ZONA', 'PROFIT']);
+    const rowClass = ACTIVE_ESTADOS.has(estadoNorm) ? 'row-activa' : 'row-sin-setup';
     
     return `
         <tr class="${rowClass}">
@@ -293,8 +301,8 @@ function formatZone(zona) {
 }
 
 /**
- * Format estado badge
- * FIXED: BUG 3 - Support all estado types, not just ACTIVA
+ * Format estado badge for the live dashboard.
+ * Only operational states are expected here (SL/TP are filtered upstream).
  */
 function formatEstadoBadge(estado) {
     // Normalize estado - handle both 'SIN SETUP' and 'SIN_SETUP'
