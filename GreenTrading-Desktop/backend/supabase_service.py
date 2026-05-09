@@ -74,7 +74,7 @@ def _apply_supabase_proxy_compatibility_patch() -> None:
         *,
         url: str,
         headers: Dict[str, str],
-        http_client,
+        http_client: Optional["httpx.Client"],
         verify: bool = True,
         proxy: Optional[str] = None,
     ):
