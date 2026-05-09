@@ -617,7 +617,6 @@ body {
     display: inline-flex;
     flex-direction: column;
     gap: 3px;
-    padding-right: 28px;
 }
 
 .zona-linea {
@@ -647,14 +646,14 @@ body {
 }
 
 .copy-zona-btn {
-    position: absolute;
-    top: 50%;
-    right: 0;
-    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: none;
     border: 1px solid var(--border-color);
     border-radius: 4px;
-    padding: 2px 5px;
+    padding: 2px 4px;
+    margin-left: 2px;
     font-size: 13px;
     cursor: pointer;
     color: var(--text-tertiary);
@@ -672,7 +671,5 @@ body {
     background: var(--accent-green-light);
     color: var(--accent-green);
     border-color: var(--accent-green);
-    font-size: 10px;
     font-weight: 700;
-    padding: 2px 4px;
 }

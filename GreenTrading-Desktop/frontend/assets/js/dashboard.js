@@ -208,7 +208,7 @@ function createTableRow(snapshot) {
 }
 
 /**
- * Format zona madre M15 as ENTRADA / STOPLOSS with copy button
+ * Format zona madre M15 as ENTRADA / STOPLOSS with per-line copy buttons
  */
 function formatZonaMadre(zona, entrada, stoploss, symbolShort) {
     const hasZona = zona && (zona.desde !== 0 || zona.hasta !== 0);
@@ -221,21 +221,29 @@ function formatZonaMadre(zona, entrada, stoploss, symbolShort) {
 
     const entradaStr = hasEntrada ? Number(entrada).toFixed(2) : '--';
     const slStr = hasSL ? Number(stoploss).toFixed(2) : '--';
-    const symbolAttr = escapeHtmlAttr(symbolShort);
     const entradaAttr = escapeHtmlAttr(entradaStr);
     const slAttr = escapeHtmlAttr(slStr);
 
     return `
         <div class="zona-madre-cell">
-            <div class="zona-linea"><span class="zona-label">ENTRADA:</span> <span class="zona-valor">${entradaStr}</span></div>
-            <div class="zona-linea"><span class="zona-label">STOPLOSS:</span> <span class="zona-valor zona-sl">${slStr}</span></div>
-            <button class="copy-zona-btn"
-                data-symbol="${symbolAttr}"
-                data-entrada="${entradaAttr}"
-                data-stoploss="${slAttr}"
-                onclick="copyZoneInfo(this)"
-                aria-label="Copiar informacion de zona"
-                title="Copiar zona">&#x2398;</button>
+            <div class="zona-linea">
+                <span class="zona-label">ENTRADA:</span>
+                <span class="zona-valor">${entradaStr}</span>
+                <button class="copy-zona-btn"
+                    data-value="${entradaAttr}"
+                    onclick="copyZoneValue(this)"
+                    aria-label="Copiar ENTRADA"
+                    title="Copiar ENTRADA">&#x2398;</button>
+            </div>
+            <div class="zona-linea">
+                <span class="zona-label">STOPLOSS:</span>
+                <span class="zona-valor zona-sl">${slStr}</span>
+                <button class="copy-zona-btn"
+                    data-value="${slAttr}"
+                    onclick="copyZoneValue(this)"
+                    aria-label="Copiar STOPLOSS"
+                    title="Copiar STOPLOSS">&#x2398;</button>
+            </div>
         </div>
     `;
 }
@@ -250,29 +258,26 @@ function escapeHtmlAttr(value) {
 }
 
 /**
- * Copy zone info to clipboard with visual feedback
+ * Copy a single zone value to clipboard with visual feedback
  */
-function copyZoneInfo(btn) {
-    const symbol = btn.dataset.symbol || '';
-    const entrada = btn.dataset.entrada || '--';
-    const stoploss = btn.dataset.stoploss || '--';
-    const text = `${symbol}\nENTRADA: ${entrada}\nSTOPLOSS: ${stoploss}`;
+function copyZoneValue(btn) {
+    const text = btn.dataset.value || '--';
     const handleSuccess = () => {
-        const original = btn.innerHTML;
-        btn.innerHTML = 'Copiado';
+        const original = btn.textContent;
+        btn.textContent = '✓';
         btn.classList.add('copy-zona-btn--copiado');
         setTimeout(() => {
-            btn.innerHTML = original;
+            btn.textContent = original;
             btn.classList.remove('copy-zona-btn--copiado');
         }, 1500);
     };
 
     const handleError = (err) => {
         console.error('Error copiando al portapapeles:', err);
-        const original = btn.innerHTML;
-        btn.innerHTML = 'Error';
+        const original = btn.textContent;
+        btn.textContent = '!';
         setTimeout(() => {
-            btn.innerHTML = original;
+            btn.textContent = original;
         }, 1500);
     };
 
