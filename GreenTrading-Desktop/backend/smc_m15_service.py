@@ -644,17 +644,21 @@ def crear_zona_m15(df_m15, eventos_m15, fvgs_m15, symbol, precio_actual):
         zona["motivo"] = motivo
         zona["direccion_operativa"] = direccion_op
 
-        # CRITICAL FIX: Don't discard zones just because price hasn't reached them yet!
-        # es_util is informative (for scoring/distance) but NOT a rejection criterion.
-        # A valid zone with OB/FVG/barrida should be shown even if price is far away.
-        # The estado (ESPERANDO_ENTRADA, LLEGANDO_A_ZONA, EN_ZONA) handles distance logic.
-        
-        print(f"  ZONA VÁLIDA CREADA para {symbol}:")
-        print(f"    - es_util: {es_util}")
-        print(f"    - motivo: {motivo}")
-        print(f"    - score: {score}")
-        print(f"    - Returning zona (es_util no longer blocks valid zones)")
-        
+        print("\nEVALUATING ZONE:")
+        print(f"  symbol: {symbol}")
+        print(f"  zona_desde: {zona_desde}")
+        print(f"  zona_hasta: {zona_hasta}")
+        print(f"  precio_actual: {precio_actual}")
+        print(f"  direccion: {direccion}")
+        print(f"  es_util: {es_util}")
+        print(f"  motivo: {motivo}")
+
+        if not es_util:
+            print("ZONE REJECTED: es_util=False")
+            continue
+
+        print("ZONE ACCEPTED: es_util=True")
+        print(f"  score: {score}")
         return zona
 
     return None
