@@ -173,9 +173,10 @@ function createTableRow(snapshot) {
     // Format update time
     const timeStr = formatTime(updated_at);
     
-    // Apply row color based on estado — any active/operational state gets row-activa
+    // Apply row color based on estado — any active/operational state gets row-activa.
+    // Use estadoNorm (already uppercased + underscored) for reliable Set lookup.
     const ACTIVE_ESTADOS = new Set(['ACTIVA', 'ESPERANDO_ENTRADA', 'LLEGANDO_A_ZONA', 'EN_ZONA', 'PROFIT']);
-    const rowClass = ACTIVE_ESTADOS.has(estadoToDisplay) ? 'row-activa' : 'row-sin-setup';
+    const rowClass = ACTIVE_ESTADOS.has(estadoNorm) ? 'row-activa' : 'row-sin-setup';
     
     return `
         <tr class="${rowClass}">
