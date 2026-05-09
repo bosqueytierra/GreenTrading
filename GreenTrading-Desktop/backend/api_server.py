@@ -476,27 +476,17 @@ async def get_smc_m15_pro_snapshot():
             except Exception as e:
                 print(f"Error analyzing {symbol}: {e}")
                 traceback.print_exc()
-                # Add SIN SETUP response for failed symbol
+                # Add SIN SETUP response for failed symbol - try service first, then minimal safe fallback
                 try:
                     m1_candle = read_candle_data(symbol, 'M1')
                     price = m1_candle.get('close') if m1_candle else None
                     snapshots.append(create_sin_setup_response(symbol, price))
                 except Exception as fallback_e:
                     print(f"Error creating fallback for {symbol}: {fallback_e}")
+                    # Emergency minimal response - keeps socket alive, frontend handles missing fields
                     snapshots.append({
                         "symbol": symbol,
                         "price": None,
-                        "tendencia_h1": "--",
-                        "tendencia_m15": "--",
-                        "ultimo_evento_m15": "ERROR",
-                        "zona_madre_m15": {"desde": 0, "hasta": 0},
-                        "entrada": None,
-                        "stoploss": None,
-                        "tp_1_1": None,
-                        "score": 0,
-                        "ob": "NO",
-                        "fvg": "NO",
-                        "barrida": "NO",
                         "estado": "SIN SETUP",
                         "updated_at": datetime.now(timezone.utc).isoformat()
                     })

@@ -132,7 +132,7 @@ async function loadHistorialData(fullRebuild = false) {
         const response = await fetch(url);
         const result = await response.json();
         
-        console.log("HISTORIAL RESPONSE RAW:", JSON.stringify(result).substring(0, 500));
+        console.log("HISTORIAL RESPONSE RAW: success=" + result.success + " count=" + (result.count || (result.setups || result.data || []).length));
         
         if (!result.success) {
             throw new Error(result.error || result.detail || 'Failed to load historial data');
