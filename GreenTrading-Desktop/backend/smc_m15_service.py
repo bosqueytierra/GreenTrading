@@ -1139,14 +1139,163 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame, d
         print(f"    - Precio actual: {precio_actual}")
         
         # ===================================================================
-        # NIVEL B: SETUP/ZONA (OPCIONAL)
+        # NIVEL B: SETUP/ZONA
+        # Dos modos:
+        #   MODO SEGUIMIENTO - hay setup activo no terminal en Supabase:
+        #     usar zona guardada, NO llamar crear_zona_m15
+        #   MODO BUSQUEDA - no hay setup activo:
+        #     llamar crear_zona_m15 para encontrar zona nueva
         # ===================================================================
-        print(f"  Attempting zone creation...")
-        
+
+        # Estados no terminales que activan MODO SEGUIMIENTO
+        ESTADOS_SEGUIMIENTO = {'ACTIVA', 'ESPERANDO_ENTRADA', 'LLEGANDO_A_ZONA', 'EN_ZONA', 'PROFIT'}
+
+        setup_activo = None
+        if supabase_service:
+            setup_activo = supabase_service.get_active_setup_by_symbol('SMC_M15_PRO', symbol)
+
+        if setup_activo and setup_activo.get('estado') in ESTADOS_SEGUIMIENTO:
+            # ---------------------------------------------------------------
+            # MODO SEGUIMIENTO: usar zona guardada en Supabase
+            # ---------------------------------------------------------------
+            estado_previo = setup_activo.get('estado')
+            entrada = setup_activo.get('entrada')
+            stoploss = setup_activo.get('stoploss')
+            tp_1_1 = setup_activo.get('tp_1_1')
+
+            # Validar que la zona guardada tiene datos suficientes
+            if entrada is None or stoploss is None or tp_1_1 is None:
+                print(f"  WARNING MODO SEGUIMIENTO: datos incompletos en setup guardado ({symbol})")
+                print(f"    entrada={entrada}, stoploss={stoploss}, tp_1_1={tp_1_1}")
+                print(f"    Forzando MODO BUSQUEDA")
+                setup_activo = None
+
+        if setup_activo and setup_activo.get('estado') in ESTADOS_SEGUIMIENTO:
+            estado_previo = setup_activo.get('estado')
+            entrada = setup_activo.get('entrada')
+            stoploss = setup_activo.get('stoploss')
+            tp_1_1 = setup_activo.get('tp_1_1')
+
+            # Inferir direccion_operativa desde el simbolo
+            direccion_operativa = direccion_operativa_por_indice(symbol)
+            if not direccion_operativa:
+                # Fallback: inferir por entrada vs stoploss
+                direccion_operativa = "ALCISTA" if entrada > stoploss else "BAJISTA"
+
+            # Reconstruir zona_desde/zona_hasta (inverso de calcular_niveles_operativos)
+            if direccion_operativa == "ALCISTA":
+                # entrada = zona_hasta, stoploss = zona_desde
+                zona_desde = stoploss
+                zona_hasta = entrada
+            else:
+                # entrada = zona_desde, stoploss = zona_hasta
+                zona_desde = entrada
+                zona_hasta = stoploss
+
+            # Recuperar ob/fvg/barrida/score almacenados (pueden ser bool o string)
+            _ob_stored = setup_activo.get('ob', False)
+            _fvg_stored = setup_activo.get('fvg', False)
+            _barrida_stored = setup_activo.get('barrida', False)
+            score = setup_activo.get('score', 0) or 0
+
+            has_ob = bool(_ob_stored)
+            has_fvg = bool(_fvg_stored)
+            has_barrida = bool(_barrida_stored)
+
+            print(f"  MODO SEGUIMIENTO: usando zona guardada para {symbol}")
+            print(f"    estado_previo: {estado_previo}")
+            print(f"    entrada: {entrada}, stoploss: {stoploss}, tp_1_1: {tp_1_1}")
+            print(f"    zona_desde: {zona_desde}, zona_hasta: {zona_hasta}")
+            print(f"    direccion_operativa: {direccion_operativa}")
+
+            # Calcular estado dashboard con la zona guardada
+            estado_dashboard = calcular_estado_dashboard(
+                precio_actual,
+                entrada,
+                zona_desde,
+                zona_hasta,
+                direccion_operativa,
+                df_m1=df_m1,
+                symbol=symbol
+            )
+            print(f"  Estado Dashboard (calculado, MODO SEGUIMIENTO): {estado_dashboard}")
+
+            # Calcular estado historial con maquina de estados
+            estado_historial, motivo_transicion = calcular_estado_historial(
+                symbol,
+                estado_dashboard,
+                precio_actual,
+                entrada,
+                stoploss,
+                tp_1_1,
+                zona_desde,
+                zona_hasta,
+                estado_previo
+            )
+            print(f"  Estado Historial (validado, MODO SEGUIMIENTO): {estado_historial}")
+            print(f"  Motivo transicion: {motivo_transicion}")
+
+            # LOG transicion
+            print(f"\n=== LOG TRANSICION ESTADO {symbol} (MODO SEGUIMIENTO) ===")
+            print(f"  symbol: {symbol}")
+            print(f"  estado_previo: {estado_previo}")
+            print(f"  estado_calculado: {estado_dashboard}")
+            print(f"  estado_validado: {estado_historial}")
+            print(f"  precio_actual: {precio_actual}")
+            print(f"  zona_desde: {zona_desde}")
+            print(f"  zona_hasta: {zona_hasta}")
+            print(f"  entrada: {entrada}")
+            print(f"  stoploss: {stoploss}")
+            print(f"  tp_1_1: {tp_1_1}")
+            print(f"  motivo_transicion: {motivo_transicion}")
+            print(f"======================================================\n")
+
+            print(f"\n=== RESUMEN SETUP {symbol} (MODO SEGUIMIENTO) ===")
+            print(f"  zona_madre_m15: desde={zona_desde}, hasta={zona_hasta}")
+            print(f"  score: {score}")
+            print(f"  ob: {'SI' if has_ob else 'NO'}")
+            print(f"  fvg: {'SI' if has_fvg else 'NO'}")
+            print(f"  barrida: {'SI' if has_barrida else 'NO'}")
+            print(f"  estado_final: {estado_historial}")
+            print(f"  guardado_historial: SI (MODO SEGUIMIENTO, zona activa)")
+            print(f"=================================================\n")
+
+            result = {
+                "symbol": symbol,
+                "price": precio_actual,
+                "tendencia_h1": format_trend(tendencia_h1),
+                "tendencia_m15": format_trend(tendencia_m15),
+                "ultimo_evento_m15": ultimo_evento_m15,
+                "zona_madre_m15": {
+                    "desde": float(zona_desde),
+                    "hasta": float(zona_hasta)
+                },
+                "entrada": entrada,
+                "stoploss": stoploss,
+                "tp_1_1": tp_1_1,
+                "estado_dashboard": estado_dashboard,
+                "estado_historial": estado_historial,
+                "estado_final": estado_historial,
+                "score": score,
+                "ob": "SÍ" if has_ob else "NO",
+                "fvg": "SÍ" if has_fvg else "NO",
+                "barrida": "SÍ" if has_barrida else "NO",
+                "estado": estado_historial,
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }
+            print_result_summary(result)
+            sync_setup_to_supabase(result)
+            return result
+
+        # ---------------------------------------------------------------
+        # MODO BUSQUEDA: no hay setup activo, buscar zona nueva
+        # ---------------------------------------------------------------
+        print(f"  MODO BUSQUEDA: buscando zona nueva para {symbol}...")
+
         # Detect FVGs
         fvgs_m15 = detectar_fvg(df_m15)
         print(f"    - FVGs M15: {len(fvgs_m15)}")
-        
+
         # Try to create zone
         zona = crear_zona_m15(df_m15, eventos_m15, fvgs_m15, symbol, precio_actual)
         

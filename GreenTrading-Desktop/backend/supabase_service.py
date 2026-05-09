@@ -292,6 +292,61 @@ def get_active_setup(strategy_id: str, symbol: str, entrada: float, stoploss: fl
         return None
 
 
+def get_active_setup_by_symbol(strategy_id: str, symbol: str) -> Optional[Dict[str, Any]]:
+    """
+    Find any active (non-terminal) setup for a symbol, regardless of entrada/stoploss.
+
+    Used for MODO SEGUIMIENTO: once a zone is active, track it until TP or SL
+    without requiring the caller to know the exact entrada/stoploss values.
+
+    Active setup = estado not in ('TP', 'SL', 'DESCARTADA')
+
+    Args:
+        strategy_id: Strategy ID (e.g., "SMC_M15_PRO")
+        symbol: Symbol name
+
+    Returns:
+        Most recent non-terminal setup dict, or None if not found
+    """
+    client = get_client()
+    if not client:
+        print(f"SUPABASE ERROR: Cannot query active setup by symbol - client not initialized")
+        return None
+
+    try:
+        print(f"SUPABASE: Querying active setup by symbol for {symbol}")
+        print(f"  strategy_id: {strategy_id}")
+
+        result = (
+            client.table("green_trading_setups")
+            .select("*")
+            .eq("strategy_id", strategy_id)
+            .eq("symbol", symbol)
+            .not_.in_("estado", ["TP", "SL", "DESCARTADA"])
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+
+        if result.data:
+            setup = result.data[0]
+            estado_previo = setup.get('estado')
+            print(f"SUPABASE OK: setup activo encontrado para {symbol}")
+            print(f"  estado: {estado_previo}")
+            print(f"  setup_id: {setup.get('id')}")
+            print(f"  entrada: {setup.get('entrada')}")
+            print(f"  stoploss: {setup.get('stoploss')}")
+            print(f"  tp_1_1: {setup.get('tp_1_1')}")
+            return setup
+        else:
+            print(f"SUPABASE: No hay setup activo para {symbol} (MODO BUSQUEDA)")
+            return None
+    except Exception as e:
+        print(f"SUPABASE ERROR: Error getting active setup by symbol for {symbol}: {e}")
+        traceback.print_exc()
+        return None
+
+
 def get_setup_history(
     symbol: Optional[str] = None,
     estado: Optional[str] = None,
