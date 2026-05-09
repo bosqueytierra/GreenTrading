@@ -41,8 +41,12 @@ print(f"   - Tendencia M15: {result['tendencia_m15']}")
 print(f"   - Entrada: {result['entrada']}")
 print(f"   - StopLoss: {result['stoploss']}")
 
-if result['entrada'] is not None or result['stoploss'] is not None:
-    print("ERROR: SIN SETUP response should expose entrada/stoploss as None")
+if result['entrada'] is not None:
+    print(f"ERROR: Expected entrada=None for SIN SETUP, got {result['entrada']}")
+    sys.exit(1)
+
+if result['stoploss'] is not None:
+    print(f"ERROR: Expected stoploss=None for SIN SETUP, got {result['stoploss']}")
     sys.exit(1)
 
 print("\nOK: All tests passed!")
