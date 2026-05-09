@@ -21,7 +21,7 @@ print(f"OK: SIN SETUP response created: {result['symbol']}")
 # Verify structure
 expected_keys = [
     'symbol', 'price', 'tendencia_h1', 'tendencia_m15', 
-    'ultimo_evento_m15', 'zona_madre_m15', 'score', 
+    'ultimo_evento_m15', 'zona_madre_m15', 'entrada', 'stoploss', 'tp_1_1', 'score', 
     'ob', 'fvg', 'barrida', 'estado', 'updated_at'
 ]
 
@@ -38,5 +38,15 @@ print(f"   - Estado: {result['estado']}")
 print(f"   - Score: {result['score']}")
 print(f"   - Tendencia H1: {result['tendencia_h1']}")
 print(f"   - Tendencia M15: {result['tendencia_m15']}")
+print(f"   - Entrada: {result['entrada']}")
+print(f"   - StopLoss: {result['stoploss']}")
+
+if result['entrada'] is not None:
+    print(f"ERROR: Expected entrada=None for SIN SETUP, got {result['entrada']}")
+    sys.exit(1)
+
+if result['stoploss'] is not None:
+    print(f"ERROR: Expected stoploss=None for SIN SETUP, got {result['stoploss']}")
+    sys.exit(1)
 
 print("\nOK: All tests passed!")

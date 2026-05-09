@@ -189,14 +189,20 @@ def sync_setup_to_supabase(analysis_result: dict) -> None:
             'estado_dashboard': setup_data['estado_dashboard'],
             'precio_actual': setup_data['precio_actual']
         }
+        print(f"  SUPABASE SYNC: UPDATE intent para {symbol}, id={setup_id}, estado={setup_data['estado']}")
         result = supabase_service.update_setup(setup_id, updates)
         if result:
             print(f"SUPABASE SYNC: Updated {symbol}")
+        else:
+            print(f"SUPABASE SYNC WARNING: update_setup devolvio None para {symbol}")
     else:
         # Create nuevo
+        print(f"  SUPABASE SYNC: INSERT intent para {symbol} (nuevo setup)")
         result = supabase_service.create_setup(setup_data)
         if result:
             print(f"SUPABASE SYNC: Created {symbol}")
+        else:
+            print(f"SUPABASE SYNC WARNING: create_setup devolvio None para {symbol}")
 
 
 # =========================
@@ -1057,6 +1063,9 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame) -
                 "tendencia_m15": format_trend(tendencia_m15),
                 "ultimo_evento_m15": ultimo_evento_m15,
                 "zona_madre_m15": {"desde": 0, "hasta": 0},
+                "entrada": None,
+                "stoploss": None,
+                "tp_1_1": None,
                 "score": 0,
                 "ob": "NO",
                 "fvg": "NO",
@@ -1237,6 +1246,9 @@ def create_sin_setup_response(symbol: str, price: float = None) -> dict:
         "tendencia_m15": "--",
         "ultimo_evento_m15": "--",
         "zona_madre_m15": {"desde": 0, "hasta": 0},
+        "entrada": None,
+        "stoploss": None,
+        "tp_1_1": None,
         "score": 0,
         "ob": "NO",
         "fvg": "NO",

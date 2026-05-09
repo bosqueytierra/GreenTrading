@@ -133,6 +133,8 @@ function createTableRow(snapshot) {
         tendencia_m15,
         ultimo_evento_m15,
         zona_madre_m15,
+        entrada,
+        stoploss,
         score,
         ob,
         fvg,
@@ -153,8 +155,8 @@ function createTableRow(snapshot) {
     // Format price
     const priceStr = price !== null ? formatPrice(price) : '--';
     
-    // Format zone
-    const zoneStr = formatZone(zona_madre_m15);
+    // Format zona madre M15 with ENTRADA/STOPLOSS + copy button
+    const zonaCell = formatZonaMadre(zona_madre_m15, entrada, stoploss, symbolShort);
     
     // Format estado badge with validated state
     const estadoBadge = formatEstadoBadge(estadoToDisplay);
@@ -174,7 +176,7 @@ function createTableRow(snapshot) {
             <td><span class="trend-badge">${tendencia_h1}</span></td>
             <td><span class="trend-badge">${tendencia_m15}</span></td>
             <td><span class="event-label">${ultimo_evento_m15}</span></td>
-            <td><span class="zone-range">${zoneStr}</span></td>
+            <td>${zonaCell}</td>
             <td>${scoreBadge}</td>
             <td><span class="indicator-badge">${ob}</span></td>
             <td><span class="indicator-badge">${fvg}</span></td>
@@ -187,7 +189,101 @@ function createTableRow(snapshot) {
 }
 
 /**
- * Format zone range
+ * Format zona madre M15 as ENTRADA / STOPLOSS with copy button
+ */
+function formatZonaMadre(zona, entrada, stoploss, symbolShort) {
+    const hasZona = zona && (zona.desde !== 0 || zona.hasta !== 0);
+    const hasEntrada = entrada !== null && entrada !== undefined && entrada !== 0;
+    const hasSL = stoploss !== null && stoploss !== undefined && stoploss !== 0;
+
+    if (!hasZona && !hasEntrada) {
+        return '<span class="zone-range">--</span>';
+    }
+
+    const entradaStr = hasEntrada ? Number(entrada).toFixed(2) : '--';
+    const slStr = hasSL ? Number(stoploss).toFixed(2) : '--';
+    const symbolAttr = escapeHtmlAttr(symbolShort);
+    const entradaAttr = escapeHtmlAttr(entradaStr);
+    const slAttr = escapeHtmlAttr(slStr);
+
+    return `
+        <div class="zona-madre-cell">
+            <div class="zona-linea"><span class="zona-label">ENTRADA:</span> <span class="zona-valor">${entradaStr}</span></div>
+            <div class="zona-linea"><span class="zona-label">STOPLOSS:</span> <span class="zona-valor zona-sl">${slStr}</span></div>
+            <button class="copy-zona-btn"
+                data-symbol="${symbolAttr}"
+                data-entrada="${entradaAttr}"
+                data-stoploss="${slAttr}"
+                onclick="copyZoneInfo(this)"
+                aria-label="Copiar informacion de zona"
+                title="Copiar zona">&#x2398;</button>
+        </div>
+    `;
+}
+
+function escapeHtmlAttr(value) {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+/**
+ * Copy zone info to clipboard with visual feedback
+ */
+function copyZoneInfo(btn) {
+    const symbol = btn.dataset.symbol || '';
+    const entrada = btn.dataset.entrada || '--';
+    const stoploss = btn.dataset.stoploss || '--';
+    const text = `${symbol}\nENTRADA: ${entrada}\nSTOPLOSS: ${stoploss}`;
+    const handleSuccess = () => {
+        const original = btn.innerHTML;
+        btn.innerHTML = 'Copiado';
+        btn.classList.add('copy-zona-btn--copiado');
+        setTimeout(() => {
+            btn.innerHTML = original;
+            btn.classList.remove('copy-zona-btn--copiado');
+        }, 1500);
+    };
+
+    const handleError = (err) => {
+        console.error('Error copiando al portapapeles:', err);
+        const original = btn.innerHTML;
+        btn.innerHTML = 'Error';
+        setTimeout(() => {
+            btn.innerHTML = original;
+        }, 1500);
+    };
+
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        navigator.clipboard.writeText(text).then(handleSuccess).catch(handleError);
+        return;
+    }
+
+    try {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.setAttribute('readonly', '');
+        textArea.style.position = 'absolute';
+        textArea.style.left = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.select();
+        const copied = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        if (copied) {
+            handleSuccess();
+        } else {
+            handleError(new Error('document.execCommand(copy) returned false'));
+        }
+    } catch (err) {
+        handleError(err);
+    }
+}
+
+/**
+ * @deprecated Use formatZonaMadre instead
  */
 function formatZone(zona) {
     if (!zona || zona.desde === 0 || zona.hasta === 0) {

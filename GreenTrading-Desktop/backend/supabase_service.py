@@ -6,12 +6,20 @@ Servicio de comunicación con Supabase para persistencia de setups
 """
 
 import os
+import traceback
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+# Load environment variables from .env relative to this file, not CWD
+_env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
+if os.path.exists(_env_path):
+    load_dotenv(dotenv_path=_env_path)
+    print(f"ENV LOAD: .env encontrado en {_env_path}")
+else:
+    # Fallback: search upward from this file
+    load_dotenv()
+    print(f"ENV LOAD: .env no encontrado en {_env_path}, usando busqueda automatica")
 
 try:
     from supabase import create_client, Client
@@ -27,6 +35,15 @@ SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
 _supabase_client: Optional[Client] = None
 
 
+def _mask_supabase_key(key: Optional[str]) -> str:
+    """Mask Supabase key for logs without exposing the full value."""
+    if not key:
+        return "(NO CONFIGURADA)"
+    if len(key) <= 12:
+        return "(CONFIGURADA)"
+    return f"{key[:8]}...{key[-4:]}"
+
+
 def init_supabase() -> Optional[Client]:
     """
     Initialize Supabase client with environment variables.
@@ -40,6 +57,12 @@ def init_supabase() -> Optional[Client]:
         print("SUPABASE OK: Using existing client instance")
         return _supabase_client
     
+    # Log env values for diagnostics (mask key)
+    url_diag = SUPABASE_URL if SUPABASE_URL else "(NO CONFIGURADA)"
+    key_diag = _mask_supabase_key(SUPABASE_ANON_KEY)
+    print(f"ENV CHECK: SUPABASE_URL = {url_diag}")
+    print(f"ENV CHECK: SUPABASE_ANON_KEY = {key_diag}")
+
     if not SUPABASE_URL or not SUPABASE_ANON_KEY:
         print("SUPABASE ERROR: Credentials not configured")
         print("  Set SUPABASE_URL and SUPABASE_ANON_KEY in .env file")
@@ -61,7 +84,6 @@ def init_supabase() -> Optional[Client]:
         return None
     except Exception as e:
         print(f"SUPABASE ERROR: Error initializing Supabase client: {e}")
-        import traceback
         traceback.print_exc()
         return None
 
@@ -98,14 +120,25 @@ def create_setup(setup_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         if "updated_at" not in setup_data:
             setup_data["updated_at"] = datetime.now(timezone.utc).isoformat()
         
+        print(f"SUPABASE INSERT INTENT: tabla=green_trading_setups")
+        print(f"  symbol: {setup_data.get('symbol')}")
+        print(f"  strategy_id: {setup_data.get('strategy_id')}")
+        print(f"  estado: {setup_data.get('estado')}")
+        print(f"  entrada: {setup_data.get('entrada')}")
+        print(f"  stoploss: {setup_data.get('stoploss')}")
+        print(f"  payload completo: {setup_data}")
+        
         result = client.table("green_trading_setups").insert(setup_data).execute()
         
         if result.data:
-            print(f"Setup created: {setup_data.get('symbol')} - {setup_data.get('strategy_id')}")
+            print(f"SUPABASE OK: Setup creado - {setup_data.get('symbol')} / {setup_data.get('strategy_id')} / id={result.data[0].get('id')}")
             return result.data[0]
-        return None
+        else:
+            print(f"SUPABASE WARNING: insert ejecutado pero sin data retornada. result={result}")
+            return None
     except Exception as e:
-        print(f"ERROR: Error creating setup: {e}")
+        print(f"SUPABASE ERROR: Error creando setup: {e}")
+        traceback.print_exc()
         return None
 
 
@@ -128,14 +161,20 @@ def update_setup(setup_id: int, updates: Dict[str, Any]) -> Optional[Dict[str, A
         # Always update timestamp
         updates["updated_at"] = datetime.now(timezone.utc).isoformat()
         
+        print(f"SUPABASE UPDATE INTENT: tabla=green_trading_setups, id={setup_id}")
+        print(f"  updates: {updates}")
+        
         result = client.table("green_trading_setups").update(updates).eq("id", setup_id).execute()
         
         if result.data:
-            print(f"Setup updated: ID {setup_id}")
+            print(f"SUPABASE OK: Setup actualizado - ID {setup_id}")
             return result.data[0]
-        return None
+        else:
+            print(f"SUPABASE WARNING: update ejecutado pero sin data retornada. result={result}")
+            return None
     except Exception as e:
-        print(f"ERROR: Error updating setup: {e}")
+        print(f"SUPABASE ERROR: Error actualizando setup ID {setup_id}: {e}")
+        traceback.print_exc()
         return None
 
 
@@ -190,7 +229,6 @@ def get_active_setup(strategy_id: str, symbol: str, entrada: float, stoploss: fl
             return None
     except Exception as e:
         print(f"SUPABASE ERROR: Error getting active setup for {symbol}: {e}")
-        import traceback
         traceback.print_exc()
         return None
 

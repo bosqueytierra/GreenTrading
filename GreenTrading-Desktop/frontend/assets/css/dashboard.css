@@ -607,3 +607,72 @@ body {
     font-size: 11px;
     color: var(--text-tertiary);
 }
+
+/* ========================================
+   ZONA MADRE M15 - ENTRADA / STOPLOSS
+   ======================================== */
+
+.zona-madre-cell {
+    position: relative;
+    display: inline-flex;
+    flex-direction: column;
+    gap: 3px;
+    padding-right: 28px;
+}
+
+.zona-linea {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.zona-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    letter-spacing: 0.3px;
+}
+
+.zona-valor {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.zona-sl {
+    color: var(--accent-red);
+}
+
+.copy-zona-btn {
+    position: absolute;
+    top: 50%;
+    right: 0;
+    transform: translateY(-50%);
+    background: none;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 2px 5px;
+    font-size: 13px;
+    cursor: pointer;
+    color: var(--text-tertiary);
+    line-height: 1;
+    transition: all 0.15s;
+}
+
+.copy-zona-btn:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border-color: var(--text-tertiary);
+}
+
+.copy-zona-btn--copiado {
+    background: var(--accent-green-light);
+    color: var(--accent-green);
+    border-color: var(--accent-green);
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 4px;
+}
