@@ -8,7 +8,20 @@ Verifica que las transiciones de estado sean correctas
 import sys
 sys.path.insert(0, '/home/runner/work/GreenTrading/GreenTrading/GreenTrading-Desktop/backend')
 
-from smc_m15_service import calcular_transicion_estado
+from smc_m15_service import calcular_transicion_estado, calcular_estado_dashboard
+
+
+def test_dashboard(name, precio_actual, entrada, zona_desde, zona_hasta, direccion, expected):
+    """Prueba calcular_estado_dashboard directamente"""
+    print(f"\n{'='*60}")
+    print(f"TEST DASHBOARD: {name}")
+    print(f"{'='*60}")
+    print(f"  precio={precio_actual}, zona=[{zona_desde},{zona_hasta}], dir={direccion}")
+    resultado = calcular_estado_dashboard(precio_actual, entrada, zona_desde, zona_hasta, direccion)
+    ok = resultado == expected
+    mark = "PASS" if ok else "FAIL"
+    print(f"  Esperado: {expected}  Obtenido: {resultado}  -> {mark}")
+    return ok
 
 def test_case(name, symbol, estado_previo, estado_calculado, precio_actual, entrada, stoploss, tp, zona_desde, zona_hasta, expected_estado, expected_motivo_keyword):
     """Ejecuta un test case y muestra resultado"""
@@ -54,8 +67,80 @@ def main():
     
     tests_passed = 0
     tests_total = 0
-    
-    # Test 1: Nueva zona detectada lejos de precio - debe quedar ESPERANDO_ENTRADA
+
+    # ----------------------------------------------------------------
+    # TESTS: calcular_estado_dashboard (logica de posicion de precio)
+    # ----------------------------------------------------------------
+    print("\n--- Tests: calcular_estado_dashboard ---")
+
+    # Crash precio muy abajo de la zona (>50 puntos) -> ACTIVA
+    tests_total += 1
+    if test_dashboard(
+        "Crash precio muy bajo zona (ACTIVA)",
+        18380.0, 18440.0, 18440.0, 18473.0, "BAJISTA", "ACTIVA"
+    ):
+        tests_passed += 1
+
+    # Crash precio cerca de zona (<=50 puntos) -> LLEGANDO_A_ZONA
+    tests_total += 1
+    if test_dashboard(
+        "Crash precio cerca de zona (LLEGANDO_A_ZONA)",
+        18410.0, 18440.0, 18440.0, 18473.0, "BAJISTA", "LLEGANDO_A_ZONA"
+    ):
+        tests_passed += 1
+
+    # Crash precio dentro de zona -> EN_ZONA
+    tests_total += 1
+    if test_dashboard(
+        "Crash precio dentro de zona (EN_ZONA)",
+        18450.0, 18440.0, 18440.0, 18473.0, "BAJISTA", "EN_ZONA"
+    ):
+        tests_passed += 1
+
+    # Crash precio sobre stoploss -> SIN_SETUP  (caso del bug Crash 900)
+    tests_total += 1
+    if test_dashboard(
+        "Crash precio sobre stoploss (SIN_SETUP) [BUG Crash 900]",
+        18486.91, 18439.61, 18439.61, 18473.38, "BAJISTA", "SIN_SETUP"
+    ):
+        tests_passed += 1
+
+    # Boom precio muy arriba de la zona (>50 puntos) -> ACTIVA
+    tests_total += 1
+    if test_dashboard(
+        "Boom precio muy sobre zona (ACTIVA)",
+        18530.0, 18450.0, 18400.0, 18450.0, "ALCISTA", "ACTIVA"
+    ):
+        tests_passed += 1
+
+    # Boom precio cerca de zona (<=50 puntos) -> LLEGANDO_A_ZONA
+    tests_total += 1
+    if test_dashboard(
+        "Boom precio cerca de zona (LLEGANDO_A_ZONA)",
+        18480.0, 18450.0, 18400.0, 18450.0, "ALCISTA", "LLEGANDO_A_ZONA"
+    ):
+        tests_passed += 1
+
+    # Boom precio dentro de zona -> EN_ZONA
+    tests_total += 1
+    if test_dashboard(
+        "Boom precio dentro de zona (EN_ZONA)",
+        18420.0, 18450.0, 18400.0, 18450.0, "ALCISTA", "EN_ZONA"
+    ):
+        tests_passed += 1
+
+    # Boom precio bajo stoploss -> SIN_SETUP
+    tests_total += 1
+    if test_dashboard(
+        "Boom precio bajo stoploss (SIN_SETUP)",
+        18380.0, 18450.0, 18400.0, 18450.0, "ALCISTA", "SIN_SETUP"
+    ):
+        tests_passed += 1
+
+    # ----------------------------------------------------------------
+    # TESTS: calcular_transicion_estado (maquina de estados)
+    # ----------------------------------------------------------------
+    print("\n--- Tests: calcular_transicion_estado ---")
     tests_total += 1
     if test_case(
         "Nueva zona lejos del precio",
@@ -127,6 +212,24 @@ def main():
     ):
         tests_passed += 1
     
+    # Test 3b: Nueva zona con precio sobre stoploss (Crash) - debe quedar SIN_SETUP
+    tests_total += 1
+    if test_case(
+        "Nueva zona Crash con precio sobre stoploss (SIN_SETUP)",
+        "Crash 900 Index",
+        None,
+        "SIN_SETUP",
+        18486.91,  # precio sobre stoploss
+        18439.61,  # entrada (zona_desde para Crash)
+        18473.38,  # stoploss (zona_hasta para Crash)
+        18406.00,  # TP
+        18439.61,  # zona_desde
+        18473.38,  # zona_hasta
+        "SIN_SETUP",
+        "invalida"
+    ):
+        tests_passed += 1
+
     # Test 4: Transición válida ACTIVA → EN_ZONA
     tests_total += 1
     if test_case(
@@ -177,10 +280,29 @@ def main():
         1040.0,
         1050.0,
         "PROFIT",
-        "dirección favorable"
+        "salio en direccion favorable"
     ):
         tests_passed += 1
     
+    # Test 6b: EN_ZONA -> PROFIT via posicion de precio (calcular_estado_dashboard devuelve LLEGANDO_A_ZONA)
+    # Crash: precio bajo zona_desde tras haber estado EN_ZONA = PROFIT
+    tests_total += 1
+    if test_case(
+        "EN_ZONA a PROFIT via posicion precio (Crash)",
+        "Crash 900 Index",
+        "EN_ZONA",
+        "LLEGANDO_A_ZONA",  # calcular_estado_dashboard ahora devuelve esto
+        18410.0,  # precio bajo zona_desde (18440) = lado profit para Crash
+        18440.0,  # entrada = zona_desde
+        18473.0,  # stoploss = zona_hasta
+        18406.0,  # TP
+        18440.0,
+        18473.0,
+        "PROFIT",
+        "salio en direccion favorable"
+    ):
+        tests_passed += 1
+
     # Test 7: Transición válida EN_ZONA → TP
     tests_total += 1
     if test_case(
