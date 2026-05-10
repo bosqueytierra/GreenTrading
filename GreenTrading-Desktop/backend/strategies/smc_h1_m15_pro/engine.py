@@ -394,9 +394,13 @@ def analyze_symbol_smc_h1m15_engine(
             # ----------------------------------------------------------
             # PRE-ZONA: comparar zona guardada vs zona fresca
             # ----------------------------------------------------------
-            # estado_h1_m15 para la respuesta final de MODO SEGUIMIENTO:
-            #   "ALINEADO"    — PRE-ZONA y contexto H1+M15 sigue cumpliendo
-            #   "SEGUIMIENTO" — POST-ZONA (no se revalida por diseño)
+            # _estado_h1m15_seg drives the estado_h1_m15 field in the
+            # payload built at the common MODO SEGUIMIENTO exit below.
+            # It must be initialized here (before the if/elif branches)
+            # because the common exit is also reached from POST-ZONA,
+            # where no re-validation happens and "SEGUIMIENTO" is correct.
+            #   "ALINEADO"    — PRE-ZONA, context confirmed this cycle
+            #   "SEGUIMIENTO" — POST-ZONA (not re-validated by design)
             _estado_h1m15_seg = "SEGUIMIENTO"
 
             if estado_previo in ESTADOS_PRE_ZONA:

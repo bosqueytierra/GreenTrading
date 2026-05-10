@@ -724,8 +724,9 @@ def test_seguimiento_pre_zona_invalida_crash():
     _setup_cache_h1m15.clear()
 
     try:
-        # build_aligned_boom_data() → H1=ALCISTA, price=105.5
-        # Crash requires H1=BAJISTA → context check fails → NO_CUMPLE
+        # build_aligned_boom_data() → H1=ALCISTA, price=105.5.
+        # This is intentionally used here for the Crash symbol: Crash requires
+        # H1=BAJISTA, so H1=ALCISTA triggers the context invalidation check.
         df_h1, df_m15 = build_aligned_boom_data()
 
         captured = io.StringIO()
