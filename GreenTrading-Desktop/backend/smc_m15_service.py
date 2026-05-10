@@ -1866,7 +1866,7 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame, d
         print(f"  fvg: {'SI' if has_fvg else 'NO'}")
         print(f"  barrida: {'SI' if has_barrida else 'NO'}")
         print(f"  es_util: {es_util}")
-        print(f"  estado_final: {estado_dashboard}")
+        print(f"  estado_final: {estado_historial}")
         print(f"  guardado_historial: SI (zona valida con score={score})")
         print(f"===============================\n")
         
