@@ -585,9 +585,9 @@ def log_tracked_supabase_zone(
 
 def analyze_symbol_smc_engine(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame, df_m1: pd.DataFrame = None, **kwargs) -> dict:
     """
-    Analyze a symbol using direct SMC implementation.
+    Analyze a symbol using SMC_M15_PRO strategic orchestration.
     
-    FASE 3 CORRECCIÓN: NO usa analyze_smc - implementa directamente la lógica.
+    FASE 2B: lógica estratégica movida al engine.
     
     Flujo:
     1. Calcular SIEMPRE swings y estructura para H1 y M15
