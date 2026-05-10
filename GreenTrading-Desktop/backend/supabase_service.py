@@ -35,6 +35,7 @@ SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
 # Global Supabase client
 _supabase_client: Optional[Client] = None
 _supabase_proxy_patch_applied = False
+LEVEL_MATCH_TOLERANCE = 0.005  # ±0.005 equivale a tolerancia por redondeo a 2 decimales
 
 
 def _mask_supabase_key(key: Optional[str]) -> str:
@@ -367,7 +368,7 @@ def get_closed_setup_by_levels(
         entrada_2 = round(float(entrada), 2)
         stoploss_2 = round(float(stoploss), 2)
         tp_1_1_2 = round(float(tp_1_1), 2)
-        tolerance = 0.005
+        tolerance = LEVEL_MATCH_TOLERANCE
 
         print(f"SUPABASE: Querying closed setup by levels for {symbol}")
         print(f"  strategy_id: {strategy_id}")

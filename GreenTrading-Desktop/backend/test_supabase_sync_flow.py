@@ -174,6 +174,7 @@ def main():
             "tendencia_m15": "ALCISTA",
             "ultimo_evento_m15": "CHOCH ALCISTA",
             "zona_madre_m15": {"desde": 5968.0, "hasta": 5974.0},
+            # Deliberately use extra decimals to validate 2-decimal matching tolerance.
             "entrada": 5973.0101,
             "stoploss": 5966.9399,
             "tp_1_1": 5979.0701,
