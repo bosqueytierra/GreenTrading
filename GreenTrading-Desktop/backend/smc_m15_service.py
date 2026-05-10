@@ -1056,6 +1056,69 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame, d
                     sync_setup_to_supabase(result)
                     return result
 
+                # ---------------------------------------------------------------
+                # VALIDACION DIRECCIONAL ZONA GUARDADA (PRE-ZONA)
+                # Antes de mantener la zona guardada, verificar que siga
+                # cumpliendo la regla direccional base (igual que master_bot):
+                #   BOOM / ALCISTA : zona_hasta <= precio_actual
+                #   CRASH / BAJISTA: zona_desde >= precio_actual
+                # Si ya no cumple: marcar DESCARTADA y devolver SIN_SETUP.
+                # ---------------------------------------------------------------
+                zona_guardada_es_util, motivo_dir_val, _ = validar_zona_operativa(
+                    symbol,
+                    {"zona_desde": zona_desde, "zona_hasta": zona_hasta},
+                    precio_actual
+                )
+                tipo_indice_log = "BOOM" if direccion_operativa == "ALCISTA" else "CRASH"
+                print(f"\n=== TRACKED_ZONE_DIRECTIONAL_VALIDATION ===")
+                print(f"  symbol: {symbol}")
+                print(f"  estado_previo: {estado_previo}")
+                print(f"  tipo_indice: {tipo_indice_log}")
+                print(f"  precio_actual: {precio_actual}")
+                print(f"  zona_desde: {zona_desde}")
+                print(f"  zona_hasta: {zona_hasta}")
+                print(f"  entrada: {entrada}")
+                print(f"  stoploss: {stoploss}")
+                print(f"  direccion_operativa: {direccion_operativa}")
+                print(f"  zona_guardada_es_util: {zona_guardada_es_util}")
+                print(f"  motivo: {motivo_dir_val}")
+                print(f"===========================================\n")
+
+                if not zona_guardada_es_util:
+                    print(f"\n=== TRACKED_ZONE_INVALIDATED_PRE_TOUCH ===")
+                    print(f"  symbol: {symbol}")
+                    print(f"  estado_previo: {estado_previo}")
+                    print(f"  nuevo_estado: DESCARTADA")
+                    print(f"  motivo: zona guardada ya no cumple regla direccional base")
+                    print(f"==========================================\n")
+
+                    if supabase_service and setup_activo and setup_activo.get('id'):
+                        print(f"  SUPABASE SYNC: marcando setup como DESCARTADA (id={setup_activo.get('id')})")
+                        supabase_service.update_setup(setup_activo.get('id'), {'estado': 'DESCARTADA'})
+
+                    result = {
+                        "symbol": symbol,
+                        "price": precio_actual,
+                        "tendencia_h1": format_trend(tendencia_h1),
+                        "tendencia_m15": format_trend(tendencia_m15),
+                        "ultimo_evento_m15": ultimo_evento_m15,
+                        "zona_madre_m15": {"desde": 0, "hasta": 0},
+                        "entrada": None,
+                        "stoploss": None,
+                        "tp_1_1": None,
+                        "score": 0,
+                        "ob": "NO",
+                        "fvg": "NO",
+                        "barrida": "NO",
+                        "estado_dashboard": "SIN_SETUP",
+                        "estado_historial": "SIN_SETUP",
+                        "estado_final": "SIN_SETUP",
+                        "estado": "SIN SETUP",
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    }
+                    print_result_summary(result)
+                    return result
+
                 # NO toco la zona guardada: ahora si comparar con zona fresca.
                 if zona_fresca_master:
                     dir_cand = zona_fresca_master.get('direccion_operativa', zona_fresca_master.get('direccion', direccion_operativa))
