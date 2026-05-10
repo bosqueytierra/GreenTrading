@@ -157,11 +157,11 @@ function createTableRow(snapshot) {
         updated_at
     } = snapshot;
     
-    // Dashboard live: prefer estado_dashboard (operational state, never SL/TP/DESCARTADA/PAUSADA).
-    // Fall back to other fields only when estado_dashboard is absent (e.g. SIN SETUP rows).
+    // Dashboard live: always use the state-machine validated state (estado_final / estado_historial).
+    // estado_dashboard is the raw calculated value kept only for debugging — never use it for display.
     // If the resolved candidate is a terminal/historical-only state, show SIN_SETUP instead.
     const DASHBOARD_BLOCKED = new Set(['SL', 'TP', 'DESCARTADA', 'PAUSADA']);
-    const estadoCandidate = estado_dashboard || estado_final || estado_historial || estado;
+    const estadoCandidate = estado_final || estado_historial || estado;
     const estadoNorm = estadoCandidate ? estadoCandidate.toUpperCase().replace(/ /g, '_') : '';
     const estadoToDisplay = (!estadoNorm || DASHBOARD_BLOCKED.has(estadoNorm)) ? 'SIN_SETUP' : estadoCandidate;
     console.log("DEBUG ESTADO TO DISPLAY:", estadoToDisplay, "(raw candidate:", estadoCandidate, ")");
