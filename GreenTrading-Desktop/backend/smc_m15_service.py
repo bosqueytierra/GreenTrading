@@ -1118,6 +1118,8 @@ def calcular_transicion_estado(
     if estado_previo == 'EN_ZONA':
         if toco_sl:
             return finalizar("SL", "Stop Loss alcanzado")
+        if toco_tp:
+            return finalizar("TP", "Take Profit alcanzado")
         if salio_a_favor:
             return finalizar("PROFIT", "Precio salio en direccion favorable")
         if en_zona_operativa:
@@ -1142,7 +1144,7 @@ def calcular_transicion_estado(
         elif estado_calculado == 'PROFIT':
             return finalizar(estado_previo, f"Mantiene {estado_previo} (no puede saltar a PROFIT sin pasar por EN_ZONA)")
         elif toco_sl:
-            return finalizar("SL", "Stop Loss alcanzado")
+            return finalizar(estado_previo, f"Mantiene {estado_previo} (sin cierre por SL antes de EN_ZONA)")
         else:
             return finalizar(estado_calculado, f"Transición desde {estado_previo}")
 

@@ -330,21 +330,21 @@ def main():
     ):
         tests_passed += 1
 
-    # Test 7: EN_ZONA no salta directo a TP (primero pasa por PROFIT)
+    # Test 7: EN_ZONA puede cerrar en TP si precio ya tocó 1:1
     tests_total += 1
     if test_case(
-        "EN_ZONA no salta directo a TP",
+        "EN_ZONA cierra en TP cuando precio toca 1:1",
         "Boom 1000 Index",
         "EN_ZONA",
-        "PROFIT",
+        "TP",
         1061.0,  # Precio alcanzó TP
         1050.0,
         1040.0,
         1060.0,
         1040.0,
         1050.0,
-        "PROFIT",
-        "salio en direccion favorable"
+        "TP",
+        "Take Profit"
     ):
         tests_passed += 1
     
@@ -366,21 +366,21 @@ def main():
     ):
         tests_passed += 1
     
-    # Test 9: Transición válida ACTIVA → SL
+    # Test 9: ACTIVA no cierra en SL sin pasar por EN_ZONA
     tests_total += 1
     if test_case(
-        "Transición válida ACTIVA a SL",
+        "ACTIVA no cierra en SL sin pasar por EN_ZONA",
         "Boom 1000 Index",
         "ACTIVA",
-        "SL",
+        "ACTIVA",
         1039.0,  # Precio tocó SL (abajo)
         1050.0,
         1040.0,
         1060.0,
         1040.0,
         1050.0,
-        "SL",
-        "Stop Loss"
+        "ACTIVA",
+        "sin cierre por SL antes de EN_ZONA"
     ):
         tests_passed += 1
     
