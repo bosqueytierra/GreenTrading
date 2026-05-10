@@ -1122,60 +1122,76 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame, d
                     return result
 
                 # NO toco la zona guardada: ahora si comparar con zona fresca.
+                zona_guardada_size = abs(float(zona_hasta) - float(zona_desde))
+                decision_pre_zone = "NO_FRESH_ZONE"
+                misma_zona = False
+
                 if zona_fresca_master:
                     dir_cand = zona_fresca_master.get('direccion_operativa', zona_fresca_master.get('direccion', direccion_operativa))
                     niv_cand = calcular_niveles_operativos(zona_fresca_master, dir_cand)
-                    entrada_nueva   = niv_cand["entrada"]
-                    stoploss_nueva  = niv_cand["stoploss"]
-                    tp_nueva        = niv_cand["tp_1_1"]
-                    z_desde_nueva   = float(zona_fresca_master.get('zona_desde', 0))
-                    z_hasta_nueva   = float(zona_fresca_master.get('zona_hasta', 0))
-                    es_util_nueva   = bool(zona_fresca_master.get('es_util', False))
-                    score_nueva     = zona_fresca_master.get('score', 0)
+                    entrada_nueva = niv_cand["entrada"]
+                    stoploss_nueva = niv_cand["stoploss"]
+                    tp_nueva = niv_cand["tp_1_1"]
+                    z_desde_nueva = float(zona_fresca_master.get('zona_desde', 0))
+                    z_hasta_nueva = float(zona_fresca_master.get('zona_hasta', 0))
+                    zona_fresca_size = abs(z_hasta_nueva - z_desde_nueva)
+                    score_nueva = zona_fresca_master.get('score', 0)
 
-                    # Log NEW_CANDIDATE_ZONE (obligatorio)
-                    print(f"\n=== NEW_CANDIDATE_ZONE ===")
-                    print(f"  symbol: {symbol}")
-                    print(f"  entrada_nueva: {entrada_nueva}")
-                    print(f"  stoploss_nueva: {stoploss_nueva}")
-                    print(f"  zona_desde_nueva: {z_desde_nueva}")
-                    print(f"  zona_hasta_nueva: {z_hasta_nueva}")
-                    print(f"  es_util: {es_util_nueva}")
-                    print(f"  score: {score_nueva}")
-                    print(f"==========================\n")
-
-                    # Reemplazar si la zona fresca (estilo master_bot) es útil y distinta.
-                    zona_cambio = (
-                        es_util_nueva and
-                        (
-                            round(entrada_nueva, 2) != round(entrada, 2) or
-                            round(stoploss_nueva, 2) != round(stoploss, 2) or
-                            round(z_desde_nueva, 2) != round(zona_desde, 2) or
-                            round(z_hasta_nueva, 2) != round(zona_hasta, 2)
-                        )
+                    # Revalidar regla direccional base para la zona fresca
+                    es_util_direccional_fresca, _, _ = validar_zona_operativa(
+                        symbol,
+                        {"zona_desde": z_desde_nueva, "zona_hasta": z_hasta_nueva},
+                        precio_actual
                     )
+                    zona_fresca_es_util = bool(zona_fresca_master.get('es_util', False)) and es_util_direccional_fresca
+
+                    misma_zona = (
+                        round(entrada_nueva, 2) == round(entrada, 2) and
+                        round(stoploss_nueva, 2) == round(stoploss, 2) and
+                        round(z_desde_nueva, 2) == round(zona_desde, 2) and
+                        round(z_hasta_nueva, 2) == round(zona_hasta, 2)
+                    )
+
+                    # Reemplazar solo si la zona fresca es util y distinta.
+                    zona_cambio = zona_fresca_es_util and not misma_zona
+                    decision_pre_zone = "REPLACE_WITH_FRESH" if zona_cambio else "KEEP_STORED"
+
+                    print(f"\n=== PRE_ZONE_FRESH_ZONE_COMPARISON ===")
+                    print(f"  symbol: {symbol}")
+                    print(f"  estado_previo: {estado_previo}")
+                    print(f"  precio_actual: {precio_actual}")
+                    print(f"  zona_guardada_desde: {zona_desde}")
+                    print(f"  zona_guardada_hasta: {zona_hasta}")
+                    print(f"  zona_guardada_size: {zona_guardada_size}")
+                    print(f"  zona_fresca_desde: {z_desde_nueva}")
+                    print(f"  zona_fresca_hasta: {z_hasta_nueva}")
+                    print(f"  zona_fresca_size: {zona_fresca_size}")
+                    print(f"  zona_fresca_es_util: {zona_fresca_es_util}")
+                    print(f"  misma_zona: {misma_zona}")
+                    print(f"  decision: {decision_pre_zone}")
+                    print(f"======================================\n")
+
                     if zona_cambio:
-                        # Log ZONE_REPLACED_BEFORE_TOUCH (obligatorio)
-                        print(f"\n=== ZONE_REPLACED_BEFORE_TOUCH ===")
+                        print(f"\n=== PRE_ZONE_REPLACED_WITH_FRESH ===")
                         print(f"  symbol: {symbol}")
-                        print(f"  motivo: nueva_zona_mas_reciente_es_util")
-                        print(f"  entrada_anterior: {entrada}")
-                        print(f"  entrada_nueva: {entrada_nueva}")
-                        print(f"  stoploss_anterior: {stoploss}")
-                        print(f"  stoploss_nueva: {stoploss_nueva}")
-                        print(f"==================================\n")
+                        print(f"  old_entrada: {entrada}")
+                        print(f"  old_stoploss: {stoploss}")
+                        print(f"  new_entrada: {entrada_nueva}")
+                        print(f"  new_stoploss: {stoploss_nueva}")
+                        print(f"  motivo: fresh_zone_es_util_and_distinta_en_pre_zona")
+                        print(f"====================================\n")
 
                         # Reemplazar variables de zona
-                        entrada          = entrada_nueva
-                        stoploss         = stoploss_nueva
-                        tp_1_1           = tp_nueva
-                        zona_desde       = z_desde_nueva
-                        zona_hasta       = z_hasta_nueva
+                        entrada = entrada_nueva
+                        stoploss = stoploss_nueva
+                        tp_1_1 = tp_nueva
+                        zona_desde = z_desde_nueva
+                        zona_hasta = z_hasta_nueva
                         direccion_operativa = dir_cand
-                        has_ob           = zona_fresca_master.get('ob') is not None
-                        has_fvg          = zona_fresca_master.get('fvg') is not None
-                        has_barrida      = zona_fresca_master.get('barrida') is not None
-                        score            = score_nueva
+                        has_ob = zona_fresca_master.get('ob') is not None
+                        has_fvg = zona_fresca_master.get('fvg') is not None
+                        has_barrida = zona_fresca_master.get('barrida') is not None
+                        score = score_nueva
 
                         # Actualizar setup activo en Supabase con la zona fresca elegida
                         if supabase_service and setup_activo and setup_activo.get('id'):
@@ -1191,8 +1207,22 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame, d
                             print(f"  SUPABASE SYNC: actualizando setup activo con zona fresca (id={setup_activo.get('id')})")
                             supabase_service.update_setup(setup_activo.get('id'), updates_zona_fresca)
                     else:
-                        print(f"  PRE-ZONA: zona guardada se mantiene (zona fresca coincide o no es_util).")
+                        print(f"  PRE-ZONA: zona guardada se mantiene.")
                 else:
+                    print(f"\n=== PRE_ZONE_FRESH_ZONE_COMPARISON ===")
+                    print(f"  symbol: {symbol}")
+                    print(f"  estado_previo: {estado_previo}")
+                    print(f"  precio_actual: {precio_actual}")
+                    print(f"  zona_guardada_desde: {zona_desde}")
+                    print(f"  zona_guardada_hasta: {zona_hasta}")
+                    print(f"  zona_guardada_size: {zona_guardada_size}")
+                    print(f"  zona_fresca_desde: None")
+                    print(f"  zona_fresca_hasta: None")
+                    print(f"  zona_fresca_size: None")
+                    print(f"  zona_fresca_es_util: False")
+                    print(f"  misma_zona: {misma_zona}")
+                    print(f"  decision: {decision_pre_zone}")
+                    print(f"======================================\n")
                     print(f"  PRE-ZONA: no se encontro zona fresca valida, manteniendo zona guardada.")
 
             # ------------------------------------------------------------------
