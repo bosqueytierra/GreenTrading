@@ -40,6 +40,14 @@ except ImportError:
     analyze_symbol_smc = None
     create_sin_setup_response = None
 
+# Import SMC H1+M15 PRO service
+try:
+    from smc_h1m15_service import analyze_symbol_smc_h1m15, create_sin_setup_h1m15_response
+except ImportError:
+    print("WARNING: SMC H1+M15 PRO service not available")
+    analyze_symbol_smc_h1m15 = None
+    create_sin_setup_h1m15_response = None
+
 # Import Supabase service
 try:
     import supabase_service
@@ -512,6 +520,95 @@ async def get_smc_m15_pro_snapshot():
     return snapshots
 
 
+@app.get("/api/smc/h1-m15-pro/snapshot")
+async def get_smc_h1_m15_pro_snapshot():
+    """
+    FASE 3A: Get SMC H1 + M15 PRO snapshot for all dashboard symbols.
+
+    Estrategia dual-temporalidad:
+    - H1: filtro direccional obligatorio
+    - M15: núcleo operativo (BOS/CHOCH/OB/FVG/Barrida)
+    - TP ratio 1:2
+    - strategy_id = SMC_H1_M15_PRO (completamente aislado de SMC_M15_PRO)
+
+    Returns:
+        list: Array of SMC H1+M15 PRO snapshots — mismo shape que /api/smc/m15-pro/snapshot
+              con campos adicionales: tp_ratio, alineacion_h1, estado_h1_m15
+    """
+    print("H1M15 SNAPSHOT ENDPOINT HIT")
+
+    if not mt5_initialized:
+        if not init_mt5():
+            raise HTTPException(
+                status_code=503,
+                detail="MT5 not connected. Please ensure MT5 is running."
+            )
+
+    def _h1m15_minimal_snapshot(symbol, price=None):
+        """Return a minimal SIN SETUP dict when the h1m15 response function is unavailable."""
+        return {
+            "symbol": symbol,
+            "price": price,
+            "estado": "SIN SETUP",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    if analyze_symbol_smc_h1m15 is None or create_sin_setup_h1m15_response is None:
+        print("WARNING: SMC H1+M15 PRO service not available, returning placeholder data")
+        snapshots = []
+        for symbol in DASHBOARD_SYMBOLS:
+            m1_candle = read_candle_data(symbol, 'M1')
+            price = m1_candle.get('close') if m1_candle else None
+            snapshots.append(
+                create_sin_setup_h1m15_response(symbol, price)
+                if create_sin_setup_h1m15_response
+                else _h1m15_minimal_snapshot(symbol, price)
+            )
+        return snapshots
+
+    snapshots = []
+    snapshot_start = time.time()
+
+    try:
+        for symbol in DASHBOARD_SYMBOLS:
+            symbol_start = time.time()
+            print(f"H1M15 SYMBOL START: {symbol}")
+            try:
+                df_h1 = read_candles_dataframe(symbol, 'H1', count=500)
+                df_m15 = read_candles_dataframe(symbol, 'M15', count=800)
+
+                smc_result = analyze_symbol_smc_h1m15(symbol, df_h1, df_m15)
+
+                if smc_result.get('price') is None:
+                    m1_candle = read_candle_data(symbol, 'M1')
+                    smc_result['price'] = m1_candle.get('close') if m1_candle else None
+
+                snapshots.append(smc_result)
+                symbol_ms = int((time.time() - symbol_start) * 1000)
+                print(f"H1M15 SYMBOL DONE: {symbol} {symbol_ms}ms")
+
+            except Exception as e:
+                symbol_ms = int((time.time() - symbol_start) * 1000)
+                print(f"H1M15 SYMBOL ERROR: {symbol} {symbol_ms}ms - {e}")
+                traceback.print_exc()
+                try:
+                    m1_candle = read_candle_data(symbol, 'M1')
+                    price = m1_candle.get('close') if m1_candle else None
+                    snapshots.append(create_sin_setup_h1m15_response(symbol, price))
+                except Exception as fallback_e:
+                    print(f"H1M15 Error creating fallback for {symbol}: {fallback_e}")
+                    snapshots.append(_h1m15_minimal_snapshot(symbol))
+    except Exception as outer_e:
+        print(f"H1M15 CRITICAL ERROR in snapshot loop: {outer_e}")
+        traceback.print_exc()
+        if not snapshots:
+            return []
+
+    total_ms = int((time.time() - snapshot_start) * 1000)
+    print(f"H1M15 SNAPSHOT TOTAL: {total_ms}ms, {len(snapshots)} rows")
+    return snapshots
+
+
 # =========================
 # SUPABASE ENDPOINTS
 # =========================
@@ -620,7 +717,8 @@ async def get_setup_history_endpoint(
     estado: Optional[str] = None,
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
-    limit: int = 100
+    limit: int = 100,
+    strategy_id: Optional[str] = None
 ):
     """
     Get setup history with optional filters.
@@ -631,6 +729,7 @@ async def get_setup_history_endpoint(
         - from_date: Filter from date ISO format (optional)
         - to_date: Filter to date ISO format (optional)
         - limit: Max results (default 100)
+        - strategy_id: Filter by strategy ID (optional, e.g. "SMC_M15_PRO" or "SMC_H1_M15_PRO")
     
     Returns:
         List of setups
@@ -645,9 +744,10 @@ async def get_setup_history_endpoint(
             from_date=from_date,
             to_date=to_date,
             limit=limit,
-            terminal_only=True
+            terminal_only=True,
+            strategy_id=strategy_id
         )
-        print(f"HISTORIAL OK: returned {len(result)} setups from Supabase")
+        print(f"HISTORIAL OK: returned {len(result)} setups from Supabase (strategy_id={strategy_id})")
         return {"success": True, "setups": result, "count": len(result), "data": result}
     except Exception as e:
         print(f"HISTORIAL ERROR: Error in get_setup_history: {e}")
@@ -656,10 +756,13 @@ async def get_setup_history_endpoint(
 
 
 @app.get("/api/setups/summary")
-async def get_tp_sl_summary_endpoint():
+async def get_tp_sl_summary_endpoint(strategy_id: Optional[str] = None):
     """
     Get TP/SL summary grouped by symbol.
     
+    Query parameters:
+        - strategy_id: Filter by strategy ID (optional, e.g. "SMC_M15_PRO" or "SMC_H1_M15_PRO")
+
     Returns:
         Dict with structure: {symbol: {tp: count, sl: count}}
     """
@@ -667,7 +770,7 @@ async def get_tp_sl_summary_endpoint():
         raise HTTPException(status_code=503, detail="Supabase service not available")
     
     try:
-        result = supabase_service.get_tp_sl_summary()
+        result = supabase_service.get_tp_sl_summary(strategy_id=strategy_id)
         return {"success": True, "data": result}
     except Exception as e:
         print(f"Error in get_tp_sl_summary: {e}")

@@ -414,7 +414,8 @@ def get_setup_history(
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
     limit: int = 100,
-    terminal_only: bool = True
+    terminal_only: bool = True,
+    strategy_id: Optional[str] = None
 ) -> List[Dict[str, Any]]:
     """
     Get setup history with optional filters.
@@ -426,6 +427,7 @@ def get_setup_history(
         to_date: Filter to date (ISO format, optional)
         limit: Max results (default 100)
         terminal_only: If True, only return closed setups (TP/SL). Defaults to True.
+        strategy_id: Filter by strategy ID (optional). If None, returns all strategies.
     
     Returns:
         List of setups
@@ -441,6 +443,9 @@ def get_setup_history(
         if terminal_only:
             query = query.in_("estado", ["TP", "SL"])
         
+        if strategy_id:
+            query = query.eq("strategy_id", strategy_id)
+
         if symbol:
             query = query.eq("symbol", symbol)
         
@@ -461,10 +466,13 @@ def get_setup_history(
         return []
 
 
-def get_tp_sl_summary() -> Dict[str, Dict[str, int]]:
+def get_tp_sl_summary(strategy_id: Optional[str] = None) -> Dict[str, Dict[str, int]]:
     """
     Get TP/SL summary grouped by symbol.
     
+    Args:
+        strategy_id: Filter by strategy ID (optional). If None, returns all strategies.
+
     Returns:
         Dict with structure: {symbol: {tp: count, sl: count}}
     """
@@ -474,12 +482,16 @@ def get_tp_sl_summary() -> Dict[str, Dict[str, int]]:
     
     try:
         # Get all TP/SL setups
-        result = (
+        query = (
             client.table("green_trading_setups")
             .select("symbol, estado")
             .in_("estado", ["TP", "SL"])
-            .execute()
         )
+
+        if strategy_id:
+            query = query.eq("strategy_id", strategy_id)
+
+        result = query.execute()
         
         if not result.data:
             return {}
