@@ -140,25 +140,29 @@ async function loadHistorialData(fullRebuild = false) {
         
         // Support both "setups" (new) and "data" (legacy) keys
         const newData = result.setups || result.data || [];
-        console.log("HISTORIAL SETUPS COUNT:", newData.length);
-        console.log(`Loaded ${newData.length} setups from historial`);
+        const closedData = newData.filter(setup => setup && (setup.estado === 'TP' || setup.estado === 'SL'));
+        if (closedData.length !== newData.length) {
+            console.log(`HISTORIAL FILTER: descartados ${newData.length - closedData.length} setups no cerrados`);
+        }
+        console.log("HISTORIAL SETUPS COUNT:", closedData.length);
+        console.log(`Loaded ${closedData.length} closed setups from historial`);
         
         if (fullRebuild) {
             // First load or filter change: rebuild table
             console.log('HISTORIAL RENDER START (full rebuild)');
-            buildTable(newData);
-            currentData = newData;
+            buildTable(closedData);
+            currentData = closedData;
             console.log('HISTORIAL RENDER DONE (full rebuild)');
         } else {
             // Incremental update: only update changed cells
             console.log('HISTORIAL RENDER START (incremental)');
-            updateTableIncremental(newData);
-            currentData = newData;
+            updateTableIncremental(closedData);
+            currentData = closedData;
             console.log('HISTORIAL RENDER DONE (incremental)');
         }
         
         // Update statistics
-        updateStatistics(newData);
+        updateStatistics(closedData);
         
         // Update timestamp
         updateLastUpdateTime();

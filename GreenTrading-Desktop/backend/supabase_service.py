@@ -352,7 +352,8 @@ def get_setup_history(
     estado: Optional[str] = None,
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
-    limit: int = 100
+    limit: int = 100,
+    terminal_only: bool = True
 ) -> List[Dict[str, Any]]:
     """
     Get setup history with optional filters.
@@ -363,6 +364,7 @@ def get_setup_history(
         from_date: Filter from date (ISO format, optional)
         to_date: Filter to date (ISO format, optional)
         limit: Max results (default 100)
+        terminal_only: If True, only return closed setups (TP/SL). Defaults to True.
     
     Returns:
         List of setups
@@ -373,6 +375,10 @@ def get_setup_history(
     
     try:
         query = client.table("green_trading_setups").select("*")
+
+        # Historial cerrado por defecto: solo operaciones finalizadas
+        if terminal_only:
+            query = query.in_("estado", ["TP", "SL"])
         
         if symbol:
             query = query.eq("symbol", symbol)

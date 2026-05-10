@@ -644,7 +644,8 @@ async def get_setup_history_endpoint(
             estado=estado,
             from_date=from_date,
             to_date=to_date,
-            limit=limit
+            limit=limit,
+            terminal_only=True
         )
         print(f"HISTORIAL OK: returned {len(result)} setups from Supabase")
         return {"success": True, "setups": result, "count": len(result), "data": result}
