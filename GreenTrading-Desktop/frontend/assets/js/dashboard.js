@@ -274,6 +274,8 @@ function renderTable(tableBodyId, data, strategy, showEstrategia) {
         return;
     }
 
+    // Column count for colspan in empty/loading rows
+    // m15pro: 12 cols, h1m15pro: 14 cols (adds TP RATIO + ALIN. H1), all: 13 (adds ESTRATEGIA)
     const colCount = showEstrategia ? 13 : (strategy === 'h1m15pro' ? 14 : 12);
 
     if (data.length === 0) {
@@ -346,10 +348,10 @@ function createTableRow(snapshot, strategy, showEstrategia) {
     // Columnas extra H1+M15
     let extraH1M15Cols = '';
     if (strategy === 'h1m15pro') {
-        const tpRatioStr = tp_ratio ? `TP ${tp_ratio}` : '--';
+        const tpRatioDisplay = tp_ratio ? `TP ${tp_ratio}` : '--';
         const alinStr = alineacion_h1 || '--';
         extraH1M15Cols = `
-            <td><span class="tp-ratio-badge">${tpRatioStr}</span></td>
+            <td><span class="tp-ratio-badge">${tpRatioDisplay}</span></td>
             <td><span class="h1-badge">${alinStr}</span></td>
         `;
     }

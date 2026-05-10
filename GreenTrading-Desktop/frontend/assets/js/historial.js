@@ -20,6 +20,9 @@ console.log("HISTORIAL_JS_VERSION: FASE3B_MULTI_STRATEGY_V1");
 const AUTO_REFRESH_INTERVAL = 5000;
 let refreshIntervalId = null;
 
+// Backend base URL — matches PYTHON_BACKEND config in main.js
+const BACKEND_BASE_URL = 'http://127.0.0.1:8765';
+
 // Current data cache (para diff detection)
 let currentData = [];
 
@@ -141,7 +144,7 @@ async function loadHistorialData(fullRebuild = false) {
         params.append('limit', '200');
         
         // Call API through exposed window.api
-        const url = `http://127.0.0.1:8765/api/setups/history?${params.toString()}`;
+        const url = `${BACKEND_BASE_URL}/api/setups/history?${params.toString()}`;
         console.log(`📊 Loading historial data: ${url}`);
         
         const response = await fetch(url);
@@ -478,7 +481,7 @@ async function updateTPSLSummary(data) {
         if (currentFilters.strategy !== 'all') {
             params.append('strategy_id', currentFilters.strategy);
         }
-        const url = `http://127.0.0.1:8765/api/setups/summary?${params.toString()}`;
+        const url = `${BACKEND_BASE_URL}/api/setups/summary?${params.toString()}`;
         const response = await fetch(url);
         const result = await response.json();
 
