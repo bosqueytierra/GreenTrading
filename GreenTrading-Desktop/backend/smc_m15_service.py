@@ -1094,7 +1094,9 @@ def analyze_symbol_smc(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame, d
 
                     if supabase_service and setup_activo and setup_activo.get('id'):
                         print(f"  SUPABASE SYNC: marcando setup como DESCARTADA (id={setup_activo.get('id')})")
-                        supabase_service.update_setup(setup_activo.get('id'), {'estado': 'DESCARTADA'})
+                        update_result = supabase_service.update_setup(setup_activo.get('id'), {'estado': 'DESCARTADA'})
+                        if not update_result:
+                            print(f"  SUPABASE WARNING: no se pudo marcar DESCARTADA para {symbol} (id={setup_activo.get('id')})")
 
                     result = {
                         "symbol": symbol,
