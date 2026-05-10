@@ -12,6 +12,11 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
+from core.state_machine import (
+    log_price_entered_zone_check,
+    calcular_estado_dashboard,
+    calcular_estado_historial,
+)
 from strategies.base_strategy import BaseStrategy
 
 
