@@ -180,8 +180,8 @@ def main():
         1070.0,  # TP (arriba)
         1040.0,  # Zona desde
         1050.0,  # Zona hasta
-        "ESPERANDO_ENTRADA",
-        "Nueva zona"
+        "EN_ZONA",
+        "dentro de zona"
     ):
         tests_passed += 1
     
@@ -216,8 +216,8 @@ def main():
         1070.0,
         1040.0,
         1050.0,
-        "ACTIVA",  # Debe corregir a ACTIVA
-        "sin historial previo"
+        "EN_ZONA",  # Con regla operativa stoploss<=precio<=entrada, entra en zona
+        "dentro de zona"
     ):
         tests_passed += 1
     
@@ -330,21 +330,21 @@ def main():
     ):
         tests_passed += 1
 
-    # Test 7: Transición válida EN_ZONA → TP
+    # Test 7: EN_ZONA no salta directo a TP (primero pasa por PROFIT)
     tests_total += 1
     if test_case(
-        "Transición válida EN_ZONA a TP",
+        "EN_ZONA no salta directo a TP",
         "Boom 1000 Index",
         "EN_ZONA",
-        "TP",
+        "PROFIT",
         1061.0,  # Precio alcanzó TP
         1050.0,
         1040.0,
         1060.0,
         1040.0,
         1050.0,
-        "TP",
-        "Take Profit"
+        "PROFIT",
+        "salio en direccion favorable"
     ):
         tests_passed += 1
     
@@ -399,6 +399,183 @@ def main():
         1050.0,
         "TP",  # Debe mantener TP
         "terminal"
+    ):
+        tests_passed += 1
+
+    # ----------------------------------------------------------------
+    # TESTS OBLIGATORIOS: BOOM / CRASH EN_ZONA -> PROFIT -> TP/SL
+    # ----------------------------------------------------------------
+    print("\n--- Tests obligatorios BOOM/CRASH ---")
+
+    # BOOM
+    tests_total += 1
+    if test_case(
+        "BOOM: ACTIVA -> EN_ZONA al entrar en rango",
+        "Boom 1000 Index",
+        "ACTIVA",
+        "EN_ZONA",
+        1045.0,
+        1050.0,
+        1040.0,
+        1060.0,
+        1040.0,
+        1050.0,
+        "EN_ZONA",
+        "tocó la zona"
+    ):
+        tests_passed += 1
+
+    tests_total += 1
+    if test_case(
+        "BOOM: EN_ZONA -> PROFIT cuando precio > entrada",
+        "Boom 1000 Index",
+        "EN_ZONA",
+        "LLEGANDO_A_ZONA",
+        1051.0,
+        1050.0,
+        1040.0,
+        1060.0,
+        1040.0,
+        1050.0,
+        "PROFIT",
+        "salio en direccion favorable"
+    ):
+        tests_passed += 1
+
+    tests_total += 1
+    if test_case(
+        "BOOM: PROFIT -> TP cuando precio >= tp_1_1",
+        "Boom 1000 Index",
+        "PROFIT",
+        "ACTIVA",
+        1060.0,
+        1050.0,
+        1040.0,
+        1060.0,
+        1040.0,
+        1050.0,
+        "TP",
+        "Take Profit"
+    ):
+        tests_passed += 1
+
+    tests_total += 1
+    if test_case(
+        "BOOM: EN_ZONA/PROFIT -> SL cuando precio <= stoploss",
+        "Boom 1000 Index",
+        "PROFIT",
+        "ACTIVA",
+        1040.0,
+        1050.0,
+        1040.0,
+        1060.0,
+        1040.0,
+        1050.0,
+        "SL",
+        "Stop Loss"
+    ):
+        tests_passed += 1
+
+    tests_total += 1
+    if test_case(
+        "BOOM: EN_ZONA no vuelve a ACTIVA/LLEGANDO",
+        "Boom 1000 Index",
+        "EN_ZONA",
+        "ACTIVA",
+        1048.0,
+        1050.0,
+        1040.0,
+        1060.0,
+        1040.0,
+        1050.0,
+        "EN_ZONA",
+        "Precio sigue en zona"
+    ):
+        tests_passed += 1
+
+    # CRASH
+    tests_total += 1
+    if test_case(
+        "CRASH: ACTIVA -> EN_ZONA al entrar en rango",
+        "Crash 900 Index",
+        "ACTIVA",
+        "EN_ZONA",
+        18450.0,
+        18440.0,
+        18473.0,
+        18406.0,
+        18440.0,
+        18473.0,
+        "EN_ZONA",
+        "tocó la zona"
+    ):
+        tests_passed += 1
+
+    tests_total += 1
+    if test_case(
+        "CRASH: EN_ZONA -> PROFIT cuando precio < entrada",
+        "Crash 900 Index",
+        "EN_ZONA",
+        "ACTIVA",
+        18439.0,
+        18440.0,
+        18473.0,
+        18406.0,
+        18440.0,
+        18473.0,
+        "PROFIT",
+        "salio en direccion favorable"
+    ):
+        tests_passed += 1
+
+    tests_total += 1
+    if test_case(
+        "CRASH: PROFIT -> TP cuando precio <= tp_1_1",
+        "Crash 900 Index",
+        "PROFIT",
+        "ACTIVA",
+        18406.0,
+        18440.0,
+        18473.0,
+        18406.0,
+        18440.0,
+        18473.0,
+        "TP",
+        "Take Profit"
+    ):
+        tests_passed += 1
+
+    tests_total += 1
+    if test_case(
+        "CRASH: EN_ZONA/PROFIT -> SL cuando precio >= stoploss",
+        "Crash 900 Index",
+        "PROFIT",
+        "ACTIVA",
+        18473.0,
+        18440.0,
+        18473.0,
+        18406.0,
+        18440.0,
+        18473.0,
+        "SL",
+        "Stop Loss"
+    ):
+        tests_passed += 1
+
+    tests_total += 1
+    if test_case(
+        "CRASH: EN_ZONA no vuelve a ACTIVA/LLEGANDO",
+        "Crash 900 Index",
+        "EN_ZONA",
+        "ACTIVA",
+        18455.0,
+        18440.0,
+        18473.0,
+        18406.0,
+        18440.0,
+        18473.0,
+        "EN_ZONA",
+        "Precio sigue en zona"
     ):
         tests_passed += 1
     
