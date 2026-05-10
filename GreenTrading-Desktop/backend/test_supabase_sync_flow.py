@@ -59,6 +59,16 @@ class FakeSupabaseService:
         self.records = []
         self.next_id = 1
 
+    def get_active_setup_by_symbol(self, strategy_id, symbol):
+        for record in reversed(self.records):
+            if (
+                record["strategy_id"] == strategy_id
+                and record["symbol"] == symbol
+                and record.get("estado") not in ["TP", "SL", "DESCARTADA"]
+            ):
+                return record
+        return None
+
     def get_active_setup(self, strategy_id, symbol, entrada, stoploss):
         for record in reversed(self.records):
             if (
