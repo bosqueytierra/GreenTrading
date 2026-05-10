@@ -35,6 +35,7 @@ SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
 # Global Supabase client
 _supabase_client: Optional[Client] = None
 _supabase_proxy_patch_applied = False
+LEVEL_MATCH_TOLERANCE = 0.005  # ±0.005 equivale a tolerancia por redondeo a 2 decimales
 
 
 def _mask_supabase_key(key: Optional[str]) -> str:
@@ -343,6 +344,66 @@ def get_active_setup_by_symbol(strategy_id: str, symbol: str) -> Optional[Dict[s
             return None
     except Exception as e:
         print(f"SUPABASE ERROR: Error getting active setup by symbol for {symbol}: {e}")
+        traceback.print_exc()
+        return None
+
+
+def get_closed_setup_by_levels(
+    strategy_id: str,
+    symbol: str,
+    entrada: float,
+    stoploss: float,
+    tp_1_1: float
+) -> Optional[Dict[str, Any]]:
+    """
+    Find the most recent closed setup (TP/SL) matching exact zone levels
+    with 2-decimal tolerance.
+    """
+    client = get_client()
+    if not client:
+        print(f"SUPABASE ERROR: Cannot query closed setup by levels - client not initialized")
+        return None
+
+    try:
+        entrada_2 = round(float(entrada), 2)
+        stoploss_2 = round(float(stoploss), 2)
+        tp_1_1_2 = round(float(tp_1_1), 2)
+        tolerance = LEVEL_MATCH_TOLERANCE
+
+        print(f"SUPABASE: Querying closed setup by levels for {symbol}")
+        print(f"  strategy_id: {strategy_id}")
+        print(f"  entrada(2d): {entrada_2}")
+        print(f"  stoploss(2d): {stoploss_2}")
+        print(f"  tp_1_1(2d): {tp_1_1_2}")
+
+        result = (
+            client.table("green_trading_setups")
+            .select("*")
+            .eq("strategy_id", strategy_id)
+            .eq("symbol", symbol)
+            .in_("estado", ["TP", "SL"])
+            .gte("entrada", entrada_2 - tolerance)
+            .lte("entrada", entrada_2 + tolerance)
+            .gte("stoploss", stoploss_2 - tolerance)
+            .lte("stoploss", stoploss_2 + tolerance)
+            .gte("tp_1_1", tp_1_1_2 - tolerance)
+            .lte("tp_1_1", tp_1_1_2 + tolerance)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+
+        if result.data:
+            setup = result.data[0]
+            print(f"SUPABASE OK: closed setup matching levels found")
+            print(f"  setup_id: {setup.get('id')}")
+            print(f"  estado: {setup.get('estado')}")
+            return setup
+
+        print(f"SUPABASE: No closed setup found for same levels")
+        return None
+    except Exception as e:
+        print(f"SUPABASE ERROR: Error getting closed setup by levels for {symbol}: {e}")
         traceback.print_exc()
         return None
 

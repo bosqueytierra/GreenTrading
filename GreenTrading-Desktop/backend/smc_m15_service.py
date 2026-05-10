@@ -273,6 +273,57 @@ def sync_setup_to_supabase(analysis_result: dict) -> None:
         else:
             print(f"SUPABASE SYNC WARNING: update_setup devolvio None para {symbol}")
     else:
+        closed_setup = None
+        if (
+            hasattr(supabase_service, "get_closed_setup_by_levels")
+            and setup_data.get('tp_1_1') is not None
+        ):
+            closed_setup = supabase_service.get_closed_setup_by_levels(
+                setup_data['strategy_id'],
+                setup_data['symbol'],
+                setup_data['entrada'],
+                setup_data['stoploss'],
+                setup_data['tp_1_1']
+            )
+
+        decision = "SKIP_ALREADY_CLOSED" if closed_setup else "CREATE_NEW"
+        print(f"\nDUPLICATE_CLOSED_ZONE_CHECK:")
+        print(f"  symbol: {setup_data['symbol']}")
+        print(f"  strategy_id: {setup_data['strategy_id']}")
+        print(f"  entrada: {setup_data['entrada']}")
+        print(f"  stoploss: {setup_data['stoploss']}")
+        print(f"  tp_1_1: {setup_data['tp_1_1']}")
+        print(f"  found_closed_setup: {bool(closed_setup)}")
+        print(f"  closed_estado: {closed_setup.get('estado') if closed_setup else None}")
+        print(f"  closed_id: {closed_setup.get('id') if closed_setup else None}")
+        print(f"  decision: {decision}")
+
+        if closed_setup:
+            analysis_result["zona_madre_m15"] = {"desde": 0, "hasta": 0}
+            analysis_result["entrada"] = None
+            analysis_result["stoploss"] = None
+            analysis_result["tp_1_1"] = None
+            analysis_result["score"] = 0
+            analysis_result["ob"] = "NO"
+            analysis_result["fvg"] = "NO"
+            analysis_result["barrida"] = "NO"
+            analysis_result["estado_dashboard"] = "SIN_SETUP"
+            analysis_result["estado_historial"] = "SIN_SETUP"
+            analysis_result["estado_final"] = "SIN_SETUP"
+            analysis_result["estado"] = "SIN SETUP"
+            _setup_cache[symbol] = {
+                'estado': 'SIN_SETUP',
+                'entrada': None,
+                'stoploss': None,
+                'tp_1_1': None,
+                'score': 0,
+                'zona_desde': 0,
+                'zona_hasta': 0,
+                'precio_actual': analysis_result.get('price')
+            }
+            print(f"  SUPABASE SYNC: SKIP create_setup para {symbol} - zona ya cerrada (TP/SL)")
+            return
+
         # Create nuevo
         print(f"  SUPABASE SYNC: INSERT intent para {symbol} (nuevo setup)")
         result = supabase_service.create_setup(setup_data)

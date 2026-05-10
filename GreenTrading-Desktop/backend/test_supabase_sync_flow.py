@@ -101,6 +101,25 @@ class FakeSupabaseService:
     def get_setup_history(self, **kwargs):
         return list(reversed(self.records))
 
+    def get_closed_setup_by_levels(self, strategy_id, symbol, entrada, stoploss, tp_1_1):
+        target_entrada = round(float(entrada), 2)
+        target_stoploss = round(float(stoploss), 2)
+        target_tp = round(float(tp_1_1), 2)
+
+        for record in reversed(self.records):
+            if record.get("strategy_id") != strategy_id or record.get("symbol") != symbol:
+                continue
+            if record.get("estado") not in ["TP", "SL"]:
+                continue
+            if round(float(record.get("entrada", 0)), 2) != target_entrada:
+                continue
+            if round(float(record.get("stoploss", 0)), 2) != target_stoploss:
+                continue
+            if round(float(record.get("tp_1_1", 0)), 2) != target_tp:
+                continue
+            return record
+        return None
+
 
 def main():
     original_service = smc_m15_service.supabase_service
@@ -136,11 +155,57 @@ def main():
         assert "entrada" in sin_setup and sin_setup["entrada"] is None, "SIN SETUP should include entrada=None"
         assert "stoploss" in sin_setup and sin_setup["stoploss"] is None, "SIN SETUP should include stoploss=None"
 
+        # Duplicate closed zone must be skipped (no re-create)
+        fake_service.records.append({
+            "id": fake_service.next_id,
+            "strategy_id": "SMC_M15_PRO",
+            "symbol": "Boom 600 Index",
+            "entrada": 5973.01,
+            "stoploss": 5966.94,
+            "tp_1_1": 5979.07,
+            "estado": "TP",
+        })
+        fake_service.next_id += 1
+
+        duplicate_candidate = {
+            "symbol": "Boom 600 Index",
+            "price": 5975.0,
+            "tendencia_h1": "ALCISTA",
+            "tendencia_m15": "ALCISTA",
+            "ultimo_evento_m15": "CHOCH ALCISTA",
+            "zona_madre_m15": {"desde": 5968.0, "hasta": 5974.0},
+            # Deliberately use extra decimals to validate 2-decimal matching tolerance.
+            "entrada": 5973.0101,
+            "stoploss": 5966.9399,
+            "tp_1_1": 5979.0701,
+            "score": 3,
+            "ob": "SI",
+            "fvg": "SI",
+            "barrida": "SI",
+            "estado_dashboard": "ESPERANDO_ENTRADA",
+            "estado_historial": "ESPERANDO_ENTRADA",
+            "estado_final": "ESPERANDO_ENTRADA",
+            "estado": "ESPERANDO_ENTRADA",
+        }
+
+        before_count = len(fake_service.records)
+        captured_duplicate = io.StringIO()
+        with redirect_stdout(captured_duplicate):
+            smc_m15_service.sync_setup_to_supabase(duplicate_candidate)
+        duplicate_output = captured_duplicate.getvalue()
+
+        after_count = len(fake_service.records)
+        assert after_count == before_count, "duplicate closed zone must not create new setup"
+        assert "DUPLICATE_CLOSED_ZONE_CHECK" in duplicate_output, "duplicate check log must be present"
+        assert "decision: SKIP_ALREADY_CLOSED" in duplicate_output, "duplicate check must skip already closed zone"
+        assert duplicate_candidate["estado"] == "SIN SETUP", "duplicate closed zone should return SIN SETUP for dashboard"
+
         print("OK: analysis result includes entrada/stoploss")
         print("OK: sync flow emits SUPABASE INSERT INTENT")
         print("OK: fake Supabase insert succeeds")
         print("OK: stored record is visible in history")
         print("OK: SIN SETUP fallback exposes entrada/stoploss=None")
+        print("OK: duplicate closed zone is skipped and returned as SIN SETUP")
         print("NOTE: live Supabase table verification requires a real .env and reachable project")
 
     finally:
