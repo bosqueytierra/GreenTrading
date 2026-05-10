@@ -1,11 +1,12 @@
-console.log("HISTORIAL_JS_VERSION: SILENT_INCREMENTAL_UPDATE_V1");
+console.log("HISTORIAL_JS_VERSION: FASE3B_MULTI_STRATEGY_V1");
 
 /**
  * GreenTrading Desktop - Historial JavaScript
- * Actualización incremental silenciosa tipo terminal trading profesional
- * 
+ * FASE 3B: Multi-strategy filter support (SMC_M15_PRO + SMC_H1_M15_PRO)
+ *
  * Características:
  * - Auto-refresh cada 5 segundos
+ * - Filtro por estrategia (Todas / SMC M15 PRO / SMC H1+M15 PRO)
  * - Diff-based updates (solo celdas que cambiaron)
  * - NO reconstrucción completa del DOM
  * - Preserva scroll position
@@ -19,11 +20,15 @@ console.log("HISTORIAL_JS_VERSION: SILENT_INCREMENTAL_UPDATE_V1");
 const AUTO_REFRESH_INTERVAL = 5000;
 let refreshIntervalId = null;
 
+// Backend base URL — matches PYTHON_BACKEND config in main.js
+const BACKEND_BASE_URL = 'http://127.0.0.1:8765';
+
 // Current data cache (para diff detection)
 let currentData = [];
 
 // Current filters
 let currentFilters = {
+    strategy: 'all',
     symbol: 'all',
     estado: 'all',
     fromDate: null,
@@ -58,6 +63,16 @@ function setupEventListeners() {
         refreshBtn.addEventListener('click', async () => {
             console.log('Manual refresh triggered');
             await loadHistorialData(false); // Incremental update
+        });
+    }
+
+    // Filter: Strategy
+    const strategyFilter = document.getElementById('strategyFilter');
+    if (strategyFilter) {
+        strategyFilter.addEventListener('change', async (e) => {
+            currentFilters.strategy = e.target.value;
+            console.log('Strategy filter changed:', currentFilters.strategy);
+            await loadHistorialData(true);
         });
     }
     
@@ -111,6 +126,9 @@ async function loadHistorialData(fullRebuild = false) {
     try {
         // Build query parameters
         const params = new URLSearchParams();
+        if (currentFilters.strategy !== 'all') {
+            params.append('strategy_id', currentFilters.strategy);
+        }
         if (currentFilters.symbol !== 'all') {
             params.append('symbol', currentFilters.symbol);
         }
@@ -126,7 +144,7 @@ async function loadHistorialData(fullRebuild = false) {
         params.append('limit', '200');
         
         // Call API through exposed window.api
-        const url = `http://127.0.0.1:8765/api/setups/history?${params.toString()}`;
+        const url = `${BACKEND_BASE_URL}/api/setups/history?${params.toString()}`;
         console.log(`📊 Loading historial data: ${url}`);
         
         const response = await fetch(url);
@@ -163,6 +181,8 @@ async function loadHistorialData(fullRebuild = false) {
         
         // Update statistics
         updateStatistics(closedData);
+        // Update TP/SL summary (async, uses strategy filter)
+        updateTPSLSummary(closedData);
         
         // Update timestamp
         updateLastUpdateTime();
@@ -446,52 +466,86 @@ function updateStatistics(data) {
             element.textContent = estadoCounts[estado] || 0;
         }
     });
-    
-    // TP/SL summary by symbol
-    updateTPSLSummary(data);
 }
 
+
 /**
- * Update TP/SL summary by symbol
+ * Update TP/SL summary by symbol — uses /api/setups/summary?strategy_id=...
  */
-function updateTPSLSummary(data) {
-    // Group by symbol
-    const symbolStats = data.reduce((acc, setup) => {
-        const symbol = setup.symbol || 'Unknown';
-        if (!acc[symbol]) {
-            acc[symbol] = { tp: 0, sl: 0 };
-        }
-        if (setup.estado === 'TP') {
-            acc[symbol].tp++;
-        } else if (setup.estado === 'SL') {
-            acc[symbol].sl++;
-        }
-        return acc;
-    }, {});
-    
-    // Update summary container
+async function updateTPSLSummary(data) {
     const summaryContainer = document.getElementById('tpslSummary');
-    if (summaryContainer) {
+    if (!summaryContainer) return;
+
+    try {
+        const params = new URLSearchParams();
+        if (currentFilters.strategy !== 'all') {
+            params.append('strategy_id', currentFilters.strategy);
+        }
+        const url = `${BACKEND_BASE_URL}/api/setups/summary?${params.toString()}`;
+        const response = await fetch(url);
+        const result = await response.json();
+
+        if (!result.success) throw new Error(result.error || 'Summary error');
+
+        const symbolStats = result.data || {};
+
         let html = '<div class="summary-grid">';
-        
         Object.keys(symbolStats).sort().forEach(symbol => {
             const stats = symbolStats[symbol];
             if (stats.tp > 0 || stats.sl > 0) {
+                const total = stats.tp + stats.sl;
+                const winrate = total > 0 ? Math.round((stats.tp / total) * 100) : 0;
                 html += `
                     <div class="summary-item">
                         <div class="summary-symbol">${symbol}</div>
                         <div class="summary-stats">
                             <span class="tp-count">TP: ${stats.tp}</span>
                             <span class="sl-count">SL: ${stats.sl}</span>
+                            <span class="winrate-count">Win: ${winrate}%</span>
                         </div>
                     </div>
                 `;
             }
         });
-        
         html += '</div>';
         summaryContainer.innerHTML = html;
+
+    } catch (err) {
+        console.error('SUMMARY ERROR:', err.message);
+        // Fallback: calcular localmente desde data
+        _updateTPSLSummaryLocal(data, summaryContainer);
     }
+}
+
+function _updateTPSLSummaryLocal(data, summaryContainer) {
+    const symbolStats = data.reduce((acc, setup) => {
+        const symbol = setup.symbol || 'Unknown';
+        if (!acc[symbol]) acc[symbol] = { tp: 0, sl: 0 };
+        if (setup.estado === 'TP') acc[symbol].tp++;
+        else if (setup.estado === 'SL') acc[symbol].sl++;
+        return acc;
+    }, {});
+
+    let html = '<div class="summary-grid">';
+    Object.keys(symbolStats).sort().forEach(symbol => {
+        const stats = symbolStats[symbol];
+        if (stats.tp > 0 || stats.sl > 0) {
+            const total = stats.tp + stats.sl;
+            const winrate = total > 0 ? Math.round((stats.tp / total) * 100) : 0;
+            html += `
+                <div class="summary-item">
+                    <div class="summary-symbol">${symbol}</div>
+                    <div class="summary-stats">
+                        <span class="tp-count">TP: ${stats.tp}</span>
+                        <span class="sl-count">SL: ${stats.sl}</span>
+                        <span class="winrate-count">Win: ${winrate}%</span>
+                    </div>
+                </div>
+            `;
+        }
+    });
+    html += '</div>';
+    summaryContainer.innerHTML = html;
 }
 
 /**

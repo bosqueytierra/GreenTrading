@@ -609,8 +609,101 @@ body {
 }
 
 /* ========================================
-   ZONA MADRE M15 - ENTRADA / STOPLOSS
+   FASE 3B - STRATEGY TABS
    ======================================== */
+
+.strategy-tabs-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    padding: 12px 16px;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-sm);
+}
+
+.strategy-tabs {
+    display: flex;
+    gap: 8px;
+}
+
+.strategy-tab {
+    padding: 8px 18px;
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.3px;
+}
+
+.strategy-tab:hover {
+    background: var(--accent-green-light);
+    color: var(--accent-green);
+    border-color: var(--accent-green);
+}
+
+.strategy-tab.active {
+    background: var(--accent-green);
+    color: #fff;
+    border-color: var(--accent-green);
+    box-shadow: 0 2px 6px rgba(34, 197, 94, 0.25);
+}
+
+.strategy-tab-status {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    font-weight: 500;
+}
+
+/* H1+M15 extra fields badge */
+.h1-badge {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    background: #e0e7ff;
+    color: #4338ca;
+    margin-left: 4px;
+}
+
+.tp-ratio-badge {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    background: #d1fae5;
+    color: #065f46;
+    margin-left: 4px;
+}
+
+.estrategia-badge {
+    display: inline-block;
+    padding: 3px 9px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.estrategia-m15pro {
+    background: #fef9c3;
+    color: #713f12;
+}
+
+.estrategia-h1m15 {
+    background: #e0e7ff;
+    color: #3730a3;
+}
+
+
 
 .zona-madre-cell {
     position: relative;
