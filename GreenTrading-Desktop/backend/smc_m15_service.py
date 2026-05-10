@@ -1014,13 +1014,13 @@ def calcular_transicion_estado(
     
     PROFIT -> TP (alcanza 1:1)
     PROFIT -> SL (retrocede a stoploss)
+    PROFIT -> EN_ZONA (precio vuelve a la zona)
     PROFIT -> PROFIT (se mantiene)
     
     TP, SL, DESCARTADA = terminales (no cambian)
     
     REGLA CLAVE:
     - Una vez EN_ZONA, NUNCA vuelve a: ESPERANDO_ENTRADA, LLEGANDO_A_ZONA, ACTIVA
-    - Una vez PROFIT, NUNCA vuelve a: EN_ZONA, ESPERANDO_ENTRADA, LLEGANDO_A_ZONA, ACTIVA
     
     Args:
         symbol: Symbol name
@@ -1113,6 +1113,8 @@ def calcular_transicion_estado(
             return finalizar("TP", "Take Profit alcanzado")
         if toco_sl:
             return finalizar("SL", "Stop Loss alcanzado")
+        if en_zona_operativa:
+            return finalizar("EN_ZONA", "Precio volvio a la zona")
         return finalizar("PROFIT", "Mantiene profit (esperando TP o SL)")
 
     if estado_previo == 'EN_ZONA':
