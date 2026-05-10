@@ -1,17 +1,16 @@
 /* ==========================================================================
    GreenTrading Desktop - Historial CSS
-   Estilos para pantalla de historial con UX tipo terminal trading profesional
+   Estilos minimalistas alineados con el dashboard principal
    ========================================================================== */
 
 /* =========================
    ANIMATIONS & TRANSITIONS
    ========================= */
 
-/* Fade in for new rows */
 @keyframes fadeIn {
     from {
         opacity: 0;
-        transform: translateY(-5px);
+        transform: translateY(-4px);
     }
     to {
         opacity: 1;
@@ -19,7 +18,6 @@
     }
 }
 
-/* Fade out for removed rows */
 @keyframes fadeOut {
     from {
         opacity: 1;
@@ -27,29 +25,27 @@
     }
     to {
         opacity: 0;
-        transform: translateX(-10px);
+        transform: translateX(-8px);
     }
 }
 
-/* Cell update highlight */
 @keyframes cellHighlight {
     0% {
-        background-color: rgba(59, 130, 246, 0.2);
+        background-color: rgba(59, 130, 246, 0.12);
     }
     100% {
         background-color: transparent;
     }
 }
 
-/* Live indicator pulse */
 @keyframes livePulse {
     0%, 100% {
         opacity: 1;
         transform: scale(1);
     }
     50% {
-        opacity: 0.6;
-        transform: scale(1.1);
+        opacity: 0.5;
+        transform: scale(1.15);
     }
 }
 
@@ -62,55 +58,57 @@
     height: 100vh;
     display: flex;
     flex-direction: column;
-    background-color: #0f172a;
-    color: #e2e8f0;
+    background-color: #f1f5f9;
+    color: #1e293b;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     overflow: hidden;
 }
 
 .historial-header {
-    padding: 20px 30px;
-    border-bottom: 1px solid #1e293b;
-    background-color: #0f172a;
+    padding: 20px 30px 16px;
+    border-bottom: 1px solid #e2e8f0;
+    background-color: #ffffff;
     flex-shrink: 0;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
 }
 
 .header-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 15px;
+    margin-bottom: 14px;
 }
 
 .historial-title {
-    font-size: 24px;
-    font-weight: 600;
-    color: #f1f5f9;
+    font-size: 22px;
+    font-weight: 700;
+    color: #0f172a;
     margin: 0;
+    letter-spacing: -0.3px;
 }
 
 .header-actions {
     display: flex;
-    gap: 15px;
+    gap: 12px;
     align-items: center;
 }
 
 /* =========================
-   LIVE INDICATOR (Discrete)
+   LIVE INDICATOR
    ========================= */
 
 .live-indicator {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background-color: #6b7280;
+    background-color: #cbd5e1;
     transition: all 0.3s ease;
+    flex-shrink: 0;
 }
 
 .live-indicator-active {
-    background-color: #10b981;
+    background-color: #22c55e;
     animation: livePulse 2s ease-in-out infinite;
-    box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
 }
 
 .live-indicator-error {
@@ -119,7 +117,7 @@
 }
 
 .status-text {
-    font-size: 13px;
+    font-size: 12px;
     color: #94a3b8;
     margin-left: 8px;
 }
@@ -130,64 +128,65 @@
 
 .filters-bar {
     display: flex;
-    gap: 15px;
-    align-items: center;
+    gap: 14px;
+    align-items: flex-end;
     flex-wrap: wrap;
 }
 
 .filter-group {
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    gap: 4px;
 }
 
 .filter-label {
-    font-size: 12px;
+    font-size: 11px;
     color: #94a3b8;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.6px;
+    font-weight: 600;
 }
 
 .filter-select,
 .filter-input {
-    padding: 8px 12px;
-    background-color: #1e293b;
-    border: 1px solid #334155;
-    border-radius: 6px;
-    color: #e2e8f0;
-    font-size: 14px;
+    padding: 7px 11px;
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    color: #1e293b;
+    font-size: 13px;
     outline: none;
-    transition: all 0.2s ease;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .filter-select:hover,
 .filter-input:hover {
-    border-color: #475569;
+    border-color: #cbd5e1;
 }
 
 .filter-select:focus,
 .filter-input:focus {
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    border-color: #94a3b8;
+    box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.15);
 }
 
 .btn-refresh {
-    padding: 8px 16px;
-    background-color: #3b82f6;
+    padding: 7px 15px;
+    background-color: #1e293b;
     border: none;
-    border-radius: 6px;
-    color: white;
-    font-size: 14px;
+    border-radius: 8px;
+    color: #f8fafc;
+    font-size: 13px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: background-color 0.2s ease, transform 0.15s ease;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
 }
 
 .btn-refresh:hover {
-    background-color: #2563eb;
+    background-color: #334155;
     transform: translateY(-1px);
 }
 
@@ -201,43 +200,45 @@
 
 .stats-panel {
     display: flex;
-    gap: 15px;
-    margin-bottom: 15px;
+    gap: 12px;
+    margin-bottom: 14px;
     flex-wrap: wrap;
 }
 
 .stat-card {
-    background-color: #1e293b;
-    border-radius: 8px;
+    background-color: #ffffff;
+    border-radius: 12px;
     padding: 12px 18px;
-    min-width: 120px;
-    border: 1px solid #334155;
+    min-width: 110px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .stat-label {
-    font-size: 12px;
+    font-size: 11px;
     color: #94a3b8;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 5px;
+    letter-spacing: 0.6px;
+    font-weight: 600;
+    margin-bottom: 4px;
 }
 
 .stat-value {
-    font-size: 24px;
-    font-weight: 600;
-    color: #f1f5f9;
+    font-size: 22px;
+    font-weight: 700;
+    color: #0f172a;
 }
 
 .stat-tp {
-    color: #10b981;
+    color: #16a34a;
 }
 
 .stat-sl {
-    color: #ef4444;
+    color: #dc2626;
 }
 
 .stat-profit {
-    color: #3b82f6;
+    color: #0f172a;
 }
 
 /* =========================
@@ -256,29 +257,31 @@
     flex: 1;
     overflow-y: auto;
     overflow-x: auto;
-    background-color: #1e293b;
-    border-radius: 8px;
-    border: 1px solid #334155;
+    background-color: #ffffff;
+    border-radius: 14px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
-/* Custom scrollbar (professional look) */
+/* Custom scrollbar */
 .table-container::-webkit-scrollbar {
-    width: 12px;
-    height: 12px;
+    width: 10px;
+    height: 10px;
 }
 
 .table-container::-webkit-scrollbar-track {
-    background: #1e293b;
+    background: #f8fafc;
+    border-radius: 8px;
 }
 
 .table-container::-webkit-scrollbar-thumb {
-    background: #475569;
+    background: #cbd5e1;
     border-radius: 6px;
-    border: 2px solid #1e293b;
+    border: 2px solid #f8fafc;
 }
 
 .table-container::-webkit-scrollbar-thumb:hover {
-    background: #64748b;
+    background: #94a3b8;
 }
 
 /* =========================
@@ -296,34 +299,64 @@
     position: sticky;
     top: 0;
     z-index: 10;
-    background-color: #0f172a;
+    background-color: #f8fafc;
 }
 
 .historial-table thead th {
-    padding: 12px 16px;
+    padding: 13px 16px;
     text-align: left;
     font-weight: 600;
-    color: #94a3b8;
+    color: #64748b;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     font-size: 11px;
-    border-bottom: 2px solid #334155;
-    background-color: #0f172a;
+    border-bottom: 1px solid #e2e8f0;
+    background-color: #f8fafc;
 }
 
 .historial-table tbody tr {
-    background-color: #1e293b;
-    border-bottom: 1px solid #334155;
+    background-color: #ffffff;
+    border-bottom: 1px solid #f1f5f9;
     transition: background-color 0.15s ease;
 }
 
 .historial-table tbody tr:hover {
-    background-color: #334155;
+    background-color: #f8fafc;
+}
+
+/* Boom rows: green very soft */
+.historial-table tbody tr[data-type="boom"] {
+    background-color: rgba(34, 197, 94, 0.06);
+}
+
+.historial-table tbody tr[data-type="boom"]:hover {
+    background-color: rgba(34, 197, 94, 0.10);
+}
+
+/* Crash rows: red very soft */
+.historial-table tbody tr[data-type="crash"] {
+    background-color: rgba(239, 68, 68, 0.06);
+}
+
+.historial-table tbody tr[data-type="crash"]:hover {
+    background-color: rgba(239, 68, 68, 0.10);
 }
 
 .historial-table tbody td {
-    padding: 12px 16px;
-    color: #e2e8f0;
+    padding: 14px 16px;
+    color: #1e293b;
+    vertical-align: middle;
+}
+
+/* StopLoss slight muted color */
+.historial-table tbody td.stoploss-cell {
+    color: #64748b;
+}
+
+/* Contexto single-line */
+.historial-table tbody td.contexto-cell {
+    color: #374151;
+    white-space: nowrap;
 }
 
 /* Row animations */
@@ -346,48 +379,47 @@
 
 .estado-badge {
     display: inline-block;
-    padding: 4px 10px;
-    border-radius: 4px;
-    font-size: 11px;
+    padding: 3px 9px;
+    border-radius: 6px;
+    font-size: 10px;
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.3px;
-    transition: all 0.2s ease;
+    letter-spacing: 0.4px;
 }
 
 .badge-gray {
-    background-color: #374151;
-    color: #9ca3af;
+    background-color: #f1f5f9;
+    color: #64748b;
 }
 
 .badge-blue {
-    background-color: rgba(59, 130, 246, 0.15);
-    color: #60a5fa;
+    background-color: rgba(59, 130, 246, 0.10);
+    color: #2563eb;
 }
 
 .badge-yellow {
-    background-color: rgba(251, 191, 36, 0.15);
-    color: #fbbf24;
+    background-color: rgba(245, 158, 11, 0.12);
+    color: #b45309;
 }
 
 .badge-purple {
-    background-color: rgba(168, 85, 247, 0.15);
-    color: #c084fc;
+    background-color: rgba(139, 92, 246, 0.10);
+    color: #7c3aed;
 }
 
 .badge-green {
-    background-color: rgba(16, 185, 129, 0.15);
-    color: #34d399;
+    background-color: rgba(34, 197, 94, 0.12);
+    color: #16a34a;
 }
 
 .badge-green-solid {
-    background-color: #10b981;
-    color: white;
+    background-color: rgba(34, 197, 94, 0.15);
+    color: #15803d;
 }
 
 .badge-red {
-    background-color: rgba(239, 68, 68, 0.15);
-    color: #f87171;
+    background-color: rgba(239, 68, 68, 0.12);
+    color: #dc2626;
 }
 
 /* =========================
@@ -395,52 +427,13 @@
    ========================= */
 
 .resultado-positive {
-    color: #10b981;
+    color: #16a34a;
     font-weight: 600;
 }
 
 .resultado-negative {
-    color: #ef4444;
+    color: #dc2626;
     font-weight: 600;
-}
-
-/* =========================
-   TP/SL SUMMARY
-   ========================= */
-
-.summary-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 10px;
-    margin-top: 10px;
-}
-
-.summary-item {
-    background-color: #1e293b;
-    border-radius: 6px;
-    padding: 10px 14px;
-    border: 1px solid #334155;
-}
-
-.summary-symbol {
-    font-size: 12px;
-    color: #94a3b8;
-    margin-bottom: 5px;
-}
-
-.summary-stats {
-    display: flex;
-    gap: 15px;
-    font-size: 13px;
-    font-weight: 600;
-}
-
-.tp-count {
-    color: #10b981;
-}
-
-.sl-count {
-    color: #ef4444;
 }
 
 /* =========================
@@ -471,19 +464,19 @@
 
 @media (max-width: 1024px) {
     .historial-header {
-        padding: 15px 20px;
+        padding: 14px 16px 12px;
     }
-    
+
     .content-wrapper {
-        padding: 15px 20px;
+        padding: 14px 16px;
     }
-    
+
     .historial-table {
         font-size: 12px;
     }
-    
+
     .historial-table thead th,
     .historial-table tbody td {
-        padding: 10px 12px;
+        padding: 11px 12px;
     }
 }

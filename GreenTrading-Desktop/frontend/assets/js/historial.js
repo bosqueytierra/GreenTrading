@@ -197,7 +197,7 @@ function buildTable(data) {
     if (data.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="12" style="text-align: center; padding: 20px; color: #6b7280;">
+                <td colspan="10" style="text-align: center; padding: 20px; color: #6b7280;">
                     No hay setups en el historial
                 </td>
             </tr>
@@ -263,7 +263,6 @@ function updateTableIncremental(newData) {
         }
         
         // Compare fields and update only changed cells
-        updateCellIfChanged(row, 'precio-actual', oldSetup.precio_actual, newSetup.precio_actual);
         updateCellIfChanged(row, 'estado-dashboard', oldSetup.estado_dashboard, newSetup.estado_dashboard, (cell, value) => {
             cell.textContent = value || '--';
             cell.className = 'estado-badge ' + getEstadoBadgeClass(value);
@@ -275,10 +274,7 @@ function updateTableIncremental(newData) {
         updateCellIfChanged(row, 'resultado-puntos', oldSetup.resultado_puntos, newSetup.resultado_puntos, (cell, value) => {
             const formatted = value != null ? (value > 0 ? `+${value}` : value) : '--';
             cell.textContent = formatted;
-            cell.className = value > 0 ? 'resultado-positive' : value < 0 ? 'resultado-negative' : '';
-        });
-        updateCellIfChanged(row, 'updated-at', oldSetup.updated_at, newSetup.updated_at, (cell, value) => {
-            cell.textContent = formatTimestamp(value);
+            cell.className = 'resultado-puntos ' + (value > 0 ? 'resultado-positive' : value < 0 ? 'resultado-negative' : '');
         });
     });
     
@@ -340,6 +336,14 @@ function createTableRow(setup) {
     const tr = document.createElement('tr');
     tr.setAttribute('data-setup-id', setup.id);
     
+    // Determine row type for background tinting
+    const symbol = (setup.symbol || '').toLowerCase();
+    if (symbol.includes('boom')) {
+        tr.setAttribute('data-type', 'boom');
+    } else if (symbol.includes('crash')) {
+        tr.setAttribute('data-type', 'crash');
+    }
+    
     const estadoDashboardClass = getEstadoBadgeClass(setup.estado_dashboard);
     const estadoClass = getEstadoBadgeClass(setup.estado);
     
@@ -349,22 +353,23 @@ function createTableRow(setup) {
     const resultadoClass = setup.resultado_puntos > 0 ? 'resultado-positive' : 
                           setup.resultado_puntos < 0 ? 'resultado-negative' : '';
     
+    const contexto = [
+        setup.tendencia_h1 || '',
+        setup.tendencia_m15 || '',
+        setup.ultimo_evento_m15 || ''
+    ].filter(Boolean).join(' / ') || '--';
+    
     tr.innerHTML = `
         <td>${formatDate(setup.created_at)}</td>
         <td>${setup.symbol || '--'}</td>
         <td>${setup.strategy_name || '--'}</td>
         <td>${setup.entrada != null ? setup.entrada.toFixed(2) : '--'}</td>
-        <td>${setup.stoploss != null ? setup.stoploss.toFixed(2) : '--'}</td>
+        <td class="stoploss-cell">${setup.stoploss != null ? setup.stoploss.toFixed(2) : '--'}</td>
         <td>${setup.tp_1_1 != null ? setup.tp_1_1.toFixed(2) : '--'}</td>
-        <td class="precio-actual">${setup.precio_actual != null ? setup.precio_actual.toFixed(2) : '--'}</td>
         <td><span class="estado-badge ${estadoDashboardClass} estado-dashboard">${setup.estado_dashboard || '--'}</span></td>
         <td><span class="estado-badge ${estadoClass} estado">${setup.estado || '--'}</span></td>
         <td class="resultado-puntos ${resultadoClass}">${resultadoPuntos}</td>
-        <td>
-            ${setup.tendencia_h1 || '--'} / ${setup.tendencia_m15 || '--'}<br>
-            <small>${setup.ultimo_evento_m15 || '--'}</small>
-        </td>
-        <td class="updated-at">${formatTimestamp(setup.updated_at)}</td>
+        <td class="contexto-cell">${contexto}</td>
     `;
     
     return tr;
@@ -526,7 +531,7 @@ function showError(message) {
     if (tbody) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="12" style="text-align: center; padding: 40px; color: #ef4444;">
+                <td colspan="10" style="text-align: center; padding: 40px; color: #ef4444;">
                     Error cargando historial: ${message}
                 </td>
             </tr>
