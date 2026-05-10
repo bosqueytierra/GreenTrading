@@ -37,16 +37,28 @@ SWING_LOOKBACK = 3
 CLOSE_BREAK = True
 
 # State machine helpers (moved to backend/core/state_machine.py)
-from core.state_machine import (
-    M1_VELAS_ZONA,
-    LLEGANDO_A_ZONA_MINUTOS_UMBRAL,
-    log_price_entered_zone_check,
-    log_profit_transition_check,
-    calcular_velocidad_m1_hacia_zona,
-    calcular_estado_dashboard,
-    calcular_transicion_estado,
-    calcular_estado_historial,
-)
+try:
+    from core.state_machine import (
+        M1_VELAS_ZONA,
+        LLEGANDO_A_ZONA_MINUTOS_UMBRAL,
+        log_price_entered_zone_check,
+        log_profit_transition_check,
+        calcular_velocidad_m1_hacia_zona,
+        calcular_estado_dashboard,
+        calcular_transicion_estado,
+        calcular_estado_historial,
+    )
+except ImportError:
+    from backend.core.state_machine import (
+        M1_VELAS_ZONA,
+        LLEGANDO_A_ZONA_MINUTOS_UMBRAL,
+        log_price_entered_zone_check,
+        log_profit_transition_check,
+        calcular_velocidad_m1_hacia_zona,
+        calcular_estado_dashboard,
+        calcular_transicion_estado,
+        calcular_estado_historial,
+    )
 
 # =========================
 # SMART SYNC / DEBOUNCE
