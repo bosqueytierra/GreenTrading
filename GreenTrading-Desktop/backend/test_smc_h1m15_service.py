@@ -616,8 +616,160 @@ def test_sync_usa_strategy_id_correcto():
 
 
 # ==============================================================
-# MAIN
+# TEST 11: MODO SEGUIMIENTO PRE-ZONA invalida Boom por H1 BAJISTA
 # ==============================================================
+
+def test_seguimiento_pre_zona_invalida_boom():
+    print("\n" + "=" * 60)
+    print("TEST 11: MODO SEGUIMIENTO PRE-ZONA — Boom + H1 BAJISTA → NO_CUMPLE")
+    print("=" * 60)
+
+    fake = FakeSupabaseService()
+    # Pre-load Boom 500 Index ACTIVA setup.
+    # Zone [101, 104] is below the current price (105.5) so the spatial
+    # check passes; the H1+M15 context check is what should fire.
+    fake.records.append({
+        "id": 10,
+        "strategy_id": "SMC_H1_M15_PRO",
+        "symbol": "Boom 500 Index",
+        "entrada": 104.0,
+        "stoploss": 101.0,
+        "tp_1_1": 110.0,
+        "estado": "ACTIVA",
+        "ob": True, "fvg": False, "barrida": False, "score": 3,
+        "created_at": "2024-01-01T00:00:00Z",
+        "updated_at": "2024-01-01T00:00:00Z",
+    })
+    fake.next_id = 11
+
+    original_service = smc_h1m15_service.supabase_service
+    smc_h1m15_service.supabase_service = fake
+    _setup_cache_h1m15.clear()
+
+    try:
+        # build_misaligned_data() → H1=BAJISTA, M15 alcista, price=105.5
+        # Boom requires H1=ALCISTA → context check fails → NO_CUMPLE
+        df_h1, df_m15 = build_misaligned_data()
+
+        captured = io.StringIO()
+        with redirect_stdout(captured):
+            result = analyze_symbol_smc_h1m15("Boom 500 Index", df_h1, df_m15)
+        output = captured.getvalue()
+
+        assert result["estado"] in ("SIN SETUP", "SIN_SETUP"), (
+            f"Esperaba SIN SETUP en MODO SEGUIMIENTO invalido, got {result['estado']}"
+        )
+        assert result["estado_dashboard"] == "NO_CUMPLE_CONDICIONES_H1_M15", (
+            f"Esperaba NO_CUMPLE_CONDICIONES_H1_M15, got {result['estado_dashboard']}"
+        )
+        assert result["estado_h1_m15"] == "NO_CUMPLE", (
+            f"Esperaba estado_h1_m15=NO_CUMPLE, got {result['estado_h1_m15']}"
+        )
+        print(f"OK estado: {result['estado']}")
+        print(f"OK estado_dashboard: {result['estado_dashboard']}")
+        print(f"OK estado_h1_m15: {result['estado_h1_m15']}")
+
+        # Setup debe haber sido marcado DESCARTADA en fake Supabase
+        setup = fake.records[0]
+        assert setup["estado"] == "DESCARTADA", (
+            f"Setup debe estar DESCARTADA, got {setup['estado']}"
+        )
+        print(f"OK setup marcado DESCARTADA en Supabase")
+
+        assert "H1M15_TRACKED_CONTEXT_VALIDATION" in output, (
+            "Log H1M15_TRACKED_CONTEXT_VALIDATION debe estar presente"
+        )
+        assert "H1M15_TRACKED_CONTEXT_INVALIDATED_PRE_TOUCH" in output, (
+            "Log H1M15_TRACKED_CONTEXT_INVALIDATED_PRE_TOUCH debe estar presente"
+        )
+        print(f"OK logs de invalidación presentes")
+
+    finally:
+        smc_h1m15_service.supabase_service = original_service
+        _setup_cache_h1m15.clear()
+
+    print("PASSED: TEST 11")
+    return True
+
+
+# ==============================================================
+# TEST 12: MODO SEGUIMIENTO PRE-ZONA invalida Crash por H1 ALCISTA
+# ==============================================================
+
+def test_seguimiento_pre_zona_invalida_crash():
+    print("\n" + "=" * 60)
+    print("TEST 12: MODO SEGUIMIENTO PRE-ZONA — Crash + H1 ALCISTA → NO_CUMPLE")
+    print("=" * 60)
+
+    fake = FakeSupabaseService()
+    # Pre-load Crash 300 Index ACTIVA setup.
+    # Zone [108, 111] is above the current price (105.5 from aligned boom data)
+    # so the spatial check passes; H1+M15 context check fires.
+    fake.records.append({
+        "id": 20,
+        "strategy_id": "SMC_H1_M15_PRO",
+        "symbol": "Crash 300 Index",
+        "entrada": 108.0,
+        "stoploss": 111.0,
+        "tp_1_1": 102.0,
+        "estado": "ACTIVA",
+        "ob": True, "fvg": False, "barrida": False, "score": 3,
+        "created_at": "2024-01-01T00:00:00Z",
+        "updated_at": "2024-01-01T00:00:00Z",
+    })
+    fake.next_id = 21
+
+    original_service = smc_h1m15_service.supabase_service
+    smc_h1m15_service.supabase_service = fake
+    _setup_cache_h1m15.clear()
+
+    try:
+        # build_aligned_boom_data() → H1=ALCISTA, price=105.5
+        # Crash requires H1=BAJISTA → context check fails → NO_CUMPLE
+        df_h1, df_m15 = build_aligned_boom_data()
+
+        captured = io.StringIO()
+        with redirect_stdout(captured):
+            result = analyze_symbol_smc_h1m15("Crash 300 Index", df_h1, df_m15)
+        output = captured.getvalue()
+
+        assert result["estado"] in ("SIN SETUP", "SIN_SETUP"), (
+            f"Esperaba SIN SETUP en MODO SEGUIMIENTO invalido, got {result['estado']}"
+        )
+        assert result["estado_dashboard"] == "NO_CUMPLE_CONDICIONES_H1_M15", (
+            f"Esperaba NO_CUMPLE_CONDICIONES_H1_M15, got {result['estado_dashboard']}"
+        )
+        assert result["estado_h1_m15"] == "NO_CUMPLE", (
+            f"Esperaba estado_h1_m15=NO_CUMPLE, got {result['estado_h1_m15']}"
+        )
+        print(f"OK estado: {result['estado']}")
+        print(f"OK estado_dashboard: {result['estado_dashboard']}")
+        print(f"OK estado_h1_m15: {result['estado_h1_m15']}")
+
+        # Setup debe haber sido marcado DESCARTADA en fake Supabase
+        setup = fake.records[0]
+        assert setup["estado"] == "DESCARTADA", (
+            f"Setup debe estar DESCARTADA, got {setup['estado']}"
+        )
+        print(f"OK setup marcado DESCARTADA en Supabase")
+
+        assert "H1M15_TRACKED_CONTEXT_VALIDATION" in output, (
+            "Log H1M15_TRACKED_CONTEXT_VALIDATION debe estar presente"
+        )
+        assert "H1M15_TRACKED_CONTEXT_INVALIDATED_PRE_TOUCH" in output, (
+            "Log H1M15_TRACKED_CONTEXT_INVALIDATED_PRE_TOUCH debe estar presente"
+        )
+        print(f"OK logs de invalidación presentes")
+
+    finally:
+        smc_h1m15_service.supabase_service = original_service
+        _setup_cache_h1m15.clear()
+
+    print("PASSED: TEST 12")
+    return True
+
+
+
 
 def main():
     print("\n" + "=" * 70)
@@ -635,6 +787,8 @@ def main():
         ("Duplicate guard aislado", test_duplicate_guard_aislado),
         ("Regresión SMC_M15_PRO", test_regresion_smc_m15),
         ("Sync usa strategy_id correcto", test_sync_usa_strategy_id_correcto),
+        ("SEGUIMIENTO PRE-ZONA invalida Boom H1 BAJISTA", test_seguimiento_pre_zona_invalida_boom),
+        ("SEGUIMIENTO PRE-ZONA invalida Crash H1 ALCISTA", test_seguimiento_pre_zona_invalida_crash),
     ]
 
     passed = 0

@@ -394,6 +394,11 @@ def analyze_symbol_smc_h1m15_engine(
             # ----------------------------------------------------------
             # PRE-ZONA: comparar zona guardada vs zona fresca
             # ----------------------------------------------------------
+            # estado_h1_m15 para la respuesta final de MODO SEGUIMIENTO:
+            #   "ALINEADO"    — PRE-ZONA y contexto H1+M15 sigue cumpliendo
+            #   "SEGUIMIENTO" — POST-ZONA (no se revalida por diseño)
+            _estado_h1m15_seg = "SEGUIMIENTO"
+
             if estado_previo in ESTADOS_PRE_ZONA:
                 print(f"  MODO SEGUIMIENTO PRE-ZONA: comparando zonas para {symbol}...")
 
@@ -438,6 +443,50 @@ def analyze_symbol_smc_h1m15_engine(
                     )
                     _print_summary(result)
                     return result
+
+                # ----------------------------------------------------------
+                # H1+M15 context re-validation — every PRE-ZONA cycle
+                # Boom: H1 ALCISTA + ultimo_evento_m15 BOS/CHOCH_ALCISTA
+                # Crash: H1 BAJISTA + ultimo_evento_m15 BOS/CHOCH_BAJISTA
+                # If the context no longer holds, mark DESCARTADA and return
+                # NO_CUMPLE_CONDICIONES_H1_M15. EN_ZONA/PROFIT are never
+                # invalidated — the operation is already live.
+                # ----------------------------------------------------------
+                alineado_seg, motivo_alineacion_seg = verificar_alineacion_h1_m15(
+                    symbol, tendencia_h1, ultimo_evento_m15, precio_actual
+                )
+
+                print(f"\n=== H1M15_TRACKED_CONTEXT_VALIDATION ===")
+                print(f"  symbol: {symbol}")
+                print(f"  estado_previo: {estado_previo}")
+                print(f"  tendencia_h1: {tendencia_h1}")
+                print(f"  ultimo_evento_m15: {ultimo_evento_m15}")
+                print(f"  direccion_operativa: {direccion_operativa}")
+                print(f"  alineado: {alineado_seg}")
+                print(f"  motivo: {motivo_alineacion_seg}")
+                print(f"=========================================\n")
+
+                if not alineado_seg:
+                    print(f"\n=== H1M15_TRACKED_CONTEXT_INVALIDATED_PRE_TOUCH ===")
+                    print(f"  symbol: {symbol}")
+                    print(f"  estado_previo: {estado_previo}")
+                    print(f"  nuevo_estado: DESCARTADA")
+                    print(f"  motivo: contexto H1+M15 ya no cumple antes de tocar zona")
+                    print(f"====================================================\n")
+
+                    if supabase_service and setup_activo and setup_activo.get("id"):
+                        supabase_service.update_setup(setup_activo["id"], {"estado": "DESCARTADA"})
+
+                    result = _create_sin_setup(
+                        precio_actual, format_trend(tendencia_h1),
+                        format_trend(tendencia_m15), ultimo_evento_m15,
+                        "NO_CUMPLE_CONDICIONES_H1_M15",
+                    )
+                    _print_summary(result)
+                    return result
+
+                # Context confirmed — mark for payload
+                _estado_h1m15_seg = "ALINEADO"
 
                 # Validación direccional zona guardada (PRE-ZONA)
                 zona_guardada_es_util, motivo_dir_val, _ = validar_zona_operativa(
@@ -561,6 +610,7 @@ def analyze_symbol_smc_h1m15_engine(
                 symbol, precio_actual, tendencia_h1, tendencia_m15, ultimo_evento_m15,
                 zona_desde, zona_hasta, entrada, stoploss, tp_1_1,
                 estado_dashboard, estado_historial, score, has_ob, has_fvg, has_barrida,
+                estado_h1_m15_override=_estado_h1m15_seg,
             )
             _print_summary(result)
             return result
@@ -701,8 +751,13 @@ def _build_result(
     zona_desde, zona_hasta, entrada, stoploss, tp_1_1,
     estado_dashboard, estado_historial, score, has_ob, has_fvg, has_barrida,
     motivo_alineacion: str = "",
+    estado_h1_m15_override: str = None,
 ) -> dict:
     """Build canonical result dict for SMC_H1_M15_PRO analysis."""
+    if estado_h1_m15_override is not None:
+        estado_h1_m15 = estado_h1_m15_override
+    else:
+        estado_h1_m15 = "ALINEADO" if motivo_alineacion else "SEGUIMIENTO"
     return {
         "symbol": symbol,
         "price": precio_actual,
@@ -726,7 +781,7 @@ def _build_result(
         "estado_final": estado_historial,
         "estado": estado_historial,
         "alineacion_h1": format_trend(tendencia_h1),
-        "estado_h1_m15": "ALINEADO" if motivo_alineacion else "SEGUIMIENTO",
+        "estado_h1_m15": estado_h1_m15,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
 
