@@ -364,7 +364,7 @@ def get_setup_history(
         from_date: Filter from date (ISO format, optional)
         to_date: Filter to date (ISO format, optional)
         limit: Max results (default 100)
-        terminal_only: If True, only return closed setups (TP/SL)
+        terminal_only: If True, only return closed setups (TP/SL). Defaults to True.
     
     Returns:
         List of setups
