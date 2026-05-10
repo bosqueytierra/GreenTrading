@@ -1,12 +1,22 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-SMC M15 PRO strategy engine (FASE 2A).
+SMC M15 PRO strategy engine (FASE 2B).
 
-Contains only pure SMC analysis helpers moved/copied from smc_m15_service.py.
-No tracking mode, Supabase sync, endpoint logic, or state machine orchestration.
+Contains SMC_M15_PRO strategic orchestration and analysis flow.
+Service layer remains facade for compatibility and Supabase sync orchestration.
 """
 
+import traceback
+from datetime import datetime, timezone
+
+import pandas as pd
+
+from core.state_machine import (
+    log_price_entered_zone_check,
+    calcular_estado_dashboard,
+    calcular_estado_historial,
+)
 from strategies.base_strategy import BaseStrategy
 
 
@@ -508,19 +518,898 @@ def get_last_event(eventos: list) -> str:
     return "--"
 
 
-class SMCM15ProEngine(BaseStrategy):
+def log_fresh_master_style_zone(symbol: str, precio_actual: float, zona_fresca: dict) -> None:
     """
-    Strategy object placeholder for the new multi-strategy architecture.
+    Log obligatorio: zona fresca calculada al estilo master_bot.
+    """
+    zona_desde = None
+    zona_hasta = None
+    entrada = None
+    stoploss = None
+    evento = None
+    score = None
+    es_util = None
 
-    FASE 2A only exposes pure analysis helpers; full analyze flow remains in
-    smc_m15_service.py and will be moved in FASE 2B.
+    if zona_fresca:
+        zona_desde = zona_fresca.get('zona_desde')
+        zona_hasta = zona_fresca.get('zona_hasta')
+        direccion_fresca = zona_fresca.get(
+            'direccion_operativa',
+            zona_fresca.get('direccion', direccion_operativa_por_indice(symbol) or 'ALCISTA')
+        )
+        try:
+            niveles_frescos = calcular_niveles_operativos(zona_fresca, direccion_fresca)
+            entrada = niveles_frescos.get('entrada')
+            stoploss = niveles_frescos.get('stoploss')
+        except Exception:
+            entrada = None
+            stoploss = None
+        evento = zona_fresca.get('evento')
+        score = zona_fresca.get('score')
+        es_util = zona_fresca.get('es_util')
+
+    print(f"\nFRESH_MASTER_STYLE_ZONE:")
+    print(f"  symbol: {symbol}")
+    print(f"  precio_actual: {precio_actual}")
+    print(f"  zona_desde: {zona_desde}")
+    print(f"  zona_hasta: {zona_hasta}")
+    print(f"  entrada: {entrada}")
+    print(f"  stoploss: {stoploss}")
+    print(f"  evento: {evento}")
+    print(f"  score: {score}")
+    print(f"  es_util: {es_util}")
+
+
+def log_tracked_supabase_zone(
+    symbol: str,
+    estado_previo: str,
+    zona_desde: float,
+    zona_hasta: float,
+    entrada: float,
+    stoploss: float,
+    created_at: str,
+    updated_at: str
+) -> None:
     """
+    Log obligatorio: zona activa recuperada desde Supabase.
+    """
+    print(f"\nTRACKED_SUPABASE_ZONE:")
+    print(f"  symbol: {symbol}")
+    print(f"  estado_previo: {estado_previo}")
+    print(f"  zona_desde: {zona_desde}")
+    print(f"  zona_hasta: {zona_hasta}")
+    print(f"  entrada: {entrada}")
+    print(f"  stoploss: {stoploss}")
+    print(f"  created_at: {created_at}")
+    print(f"  updated_at: {updated_at}")
+
+def analyze_symbol_smc_engine(symbol: str, df_h1: pd.DataFrame, df_m15: pd.DataFrame, df_m1: pd.DataFrame = None, **kwargs) -> dict:
+    """
+    Analyze a symbol using SMC_M15_PRO strategic orchestration.
+    
+    FASE 2B: lógica estratégica movida al engine.
+    
+    Flujo:
+    1. Calcular SIEMPRE swings y estructura para H1 y M15
+    2. Obtener tendencia_h1, tendencia_m15, ultimo_evento_m15
+    3. Intentar crear zona (opcional)
+    4. Si NO hay zona: devolver estructura con SIN SETUP
+    5. Si hay zona: devolver estructura con zona y score
+    
+    Args:
+        symbol: Symbol name
+        df_h1: H1 candles DataFrame
+        df_m15: M15 candles DataFrame
+        df_m1: M1 candles DataFrame (opcional, para calcular velocidad LLEGANDO_A_ZONA)
+    
+    Returns:
+        dict with SMC analysis results
+    """
+
+    supabase_service = kwargs.get("supabase_service")
+    create_sin_setup_response_fn = kwargs.get("create_sin_setup_response")
+    print_result_summary_fn = kwargs.get("print_result_summary")
+
+    def _create_sin_setup_response(fallback_symbol: str, price: float = None) -> dict:
+        if callable(create_sin_setup_response_fn):
+            return create_sin_setup_response_fn(fallback_symbol, price)
+        return {
+            "symbol": fallback_symbol,
+            "price": price,
+            "tendencia_h1": "--",
+            "tendencia_m15": "--",
+            "ultimo_evento_m15": "--",
+            "zona_madre_m15": {"desde": 0, "hasta": 0},
+            "entrada": None,
+            "stoploss": None,
+            "tp_1_1": None,
+            "score": 0,
+            "ob": "NO",
+            "fvg": "NO",
+            "barrida": "NO",
+            "estado_dashboard": "SIN_SETUP",
+            "estado_historial": "SIN_SETUP",
+            "estado_final": "SIN_SETUP",
+            "estado": "SIN SETUP",
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }
+
+    def _print_result_summary(result: dict):
+        if callable(print_result_summary_fn):
+            print_result_summary_fn(result)
+
+    # Log symbol processing
+    print(f"\n{'='*60}")
+    print(f"Analyzing {symbol}")
+    print(f"{'='*60}")
+    
+    # If no data, return minimal response
+    if df_h1 is None or df_m15 is None or len(df_h1) == 0 or len(df_m15) == 0:
+        print(f"  ERROR No data available for {symbol}")
+        print(f"     H1 candles: {len(df_h1) if df_h1 is not None else 0}")
+        print(f"     M15 candles: {len(df_m15) if df_m15 is not None else 0}")
+        return _create_sin_setup_response(symbol)
+    
+    print(f"  OK Data loaded:")
+    print(f"    - H1 candles: {len(df_h1)}")
+    print(f"    - M15 candles: {len(df_m15)}")
+    
+    try:
+        # ===================================================================
+        # NIVEL A: ESTRUCTURA BASE (SIEMPRE SE CALCULA)
+        # ===================================================================
+        print(f"  Calculating base structure...")
+        
+        # Calculate swings
+        swings_h1 = detectar_swings(df_h1, SWING_LOOKBACK)
+        swings_m15 = detectar_swings(df_m15, SWING_LOOKBACK)
+        print(f"    - H1 swings: {len(swings_h1)}")
+        print(f"    - M15 swings: {len(swings_m15)}")
+        
+        # Calculate structure (eventos + tendencia)
+        eventos_h1, tendencia_h1 = detectar_estructura(df_h1, swings_h1)
+        eventos_m15, tendencia_m15 = detectar_estructura(df_m15, swings_m15)
+        print(f"    - H1 eventos: {len(eventos_h1)}, tendencia: {tendencia_h1}")
+        print(f"    - M15 eventos: {len(eventos_m15)}, tendencia: {tendencia_m15}")
+        
+        # Get last M15 event (always calculate)
+        ultimo_evento_m15 = get_last_event(eventos_m15)
+        print(f"    - Ultimo evento M15: {ultimo_evento_m15}")
+        
+        # Get current price
+        precio_actual = float(df_m15["close"].iloc[-1])
+        print(f"    - Precio actual: {precio_actual}")
+        
+        # ===================================================================
+        # NIVEL B: SETUP/ZONA
+        # Reglas de prioridad:
+        #   1) EN_ZONA / PROFIT: mantener zona guardada
+        #   2) ACTIVA / ESPERANDO_ENTRADA / LLEGANDO_A_ZONA:
+        #      comparar con zona fresca estilo master_bot y reemplazar si difiere
+        #   3) Sin setup activo: usar zona fresca estilo master_bot
+        # ===================================================================
+
+        # Estados no terminales que activan MODO SEGUIMIENTO
+        ESTADOS_SEGUIMIENTO = {'ACTIVA', 'ESPERANDO_ENTRADA', 'LLEGANDO_A_ZONA', 'EN_ZONA', 'PROFIT'}
+        # Sub-clasificación para la lógica de zona en MODO SEGUIMIENTO
+        ESTADOS_PRE_ZONA  = {'ACTIVA', 'ESPERANDO_ENTRADA', 'LLEGANDO_A_ZONA'}
+        ESTADOS_POST_ZONA = {'EN_ZONA', 'PROFIT'}
+
+        setup_activo = None
+        if supabase_service:
+            setup_activo = supabase_service.get_active_setup_by_symbol('SMC_M15_PRO', symbol)
+
+        # Determinar si aplica MODO SEGUIMIENTO y extraer datos guardados
+        modo_seguimiento = False
+        if setup_activo and setup_activo.get('estado') in ESTADOS_SEGUIMIENTO:
+            estado_previo = setup_activo.get('estado')
+            entrada = setup_activo.get('entrada')
+            stoploss = setup_activo.get('stoploss')
+            tp_1_1 = setup_activo.get('tp_1_1')
+
+            if entrada is None or stoploss is None or tp_1_1 is None:
+                print(f"  WARNING MODO SEGUIMIENTO: datos incompletos en setup guardado ({symbol})")
+                print(f"    entrada={entrada}, stoploss={stoploss}, tp_1_1={tp_1_1}")
+                print(f"    Forzando MODO BUSQUEDA")
+            else:
+                modo_seguimiento = True
+
+        if modo_seguimiento:
+            # ---------------------------------------------------------------
+            # MODO SEGUIMIENTO: zona guardada como punto de partida
+            # Se divide en dos sub-modos según el estado previo:
+            #   PRE-ZONA  (ACTIVA/ESPERANDO_ENTRADA/LLEGANDO_A_ZONA):
+            #     - recalcular candidata con crear_zona_m15
+            #     - reemplazar si la nueva zona es distinta y válida
+            #   POST-ZONA (EN_ZONA/PROFIT):
+            #     - bloquear zona guardada sin recalcular
+            # ---------------------------------------------------------------
+
+            # Inferir direccion_operativa desde el simbolo
+            direccion_operativa = direccion_operativa_por_indice(symbol)
+            if not direccion_operativa:
+                # Fallback: inferir por entrada vs stoploss
+                direccion_operativa = "ALCISTA" if entrada > stoploss else "BAJISTA"
+
+            # Reconstruir zona_desde/zona_hasta (inverso de calcular_niveles_operativos)
+            if direccion_operativa == "ALCISTA":
+                # entrada = zona_hasta, stoploss = zona_desde
+                zona_desde = stoploss
+                zona_hasta = entrada
+            else:
+                # entrada = zona_desde, stoploss = zona_hasta
+                zona_desde = entrada
+                zona_hasta = stoploss
+
+            # Recuperar ob/fvg/barrida/score almacenados (pueden ser bool o string)
+            has_ob = bool(setup_activo.get('ob', False))
+            has_fvg = bool(setup_activo.get('fvg', False))
+            has_barrida = bool(setup_activo.get('barrida', False))
+            score = setup_activo.get('score', 0) or 0
+
+            log_tracked_supabase_zone(
+                symbol=symbol,
+                estado_previo=estado_previo,
+                zona_desde=zona_desde,
+                zona_hasta=zona_hasta,
+                entrada=entrada,
+                stoploss=stoploss,
+                created_at=setup_activo.get('created_at'),
+                updated_at=setup_activo.get('updated_at')
+            )
+
+            # Calcular SIEMPRE zona fresca estilo master_bot para logging/comparación
+            fvgs_m15_seg = detectar_fvg(df_m15)
+            zona_fresca_master = crear_zona_m15(df_m15, eventos_m15, fvgs_m15_seg, symbol, precio_actual)
+            log_fresh_master_style_zone(symbol, precio_actual, zona_fresca_master)
+
+            print(f"  MODO SEGUIMIENTO: usando zona guardada para {symbol}")
+            print(f"    estado_previo: {estado_previo}")
+            print(f"    entrada: {entrada}, stoploss: {stoploss}, tp_1_1: {tp_1_1}")
+            print(f"    zona_desde: {zona_desde}, zona_hasta: {zona_hasta}")
+            print(f"    direccion_operativa: {direccion_operativa}")
+
+            # ------------------------------------------------------------------
+            # PRE-ZONA: comparar zona guardada vs zona fresca estilo master_bot
+            # ------------------------------------------------------------------
+            if estado_previo in ESTADOS_PRE_ZONA:
+                print(f"  MODO SEGUIMIENTO PRE-ZONA: comparando zona guardada vs zona fresca para {symbol}...")
+
+                # ----------------------------------------------------------
+                # PRIORIDAD ABSOLUTA: detectar toque de zona guardada ANTES
+                # de cualquier reemplazo.
+                # BOOM (ALCISTA): stoploss <= precio_actual <= entrada
+                # CRASH (BAJISTA): entrada <= precio_actual <= stoploss
+                # ----------------------------------------------------------
+                en_zona_actual = (
+                    (direccion_operativa == "ALCISTA" and stoploss <= precio_actual <= entrada) or
+                    (direccion_operativa == "BAJISTA" and entrada <= precio_actual <= stoploss)
+                )
+
+                print(f"\n=== CHECK_TRACKED_ZONE_TOUCH_BEFORE_REPLACE ===")
+                print(f"  symbol: {symbol}")
+                print(f"  estado_previo: {estado_previo}")
+                print(f"  precio_actual: {precio_actual}")
+                print(f"  entrada_actual: {entrada}")
+                print(f"  stoploss_actual: {stoploss}")
+                print(f"  en_zona_actual: {en_zona_actual}")
+                print(f"===============================================\n")
+
+                if en_zona_actual:
+                    # Precio ya toco la zona guardada: bloquear y marcar EN_ZONA.
+                    # NO recalcular ni reemplazar zona.
+                    print(f"\n=== ZONE_TOUCH_LOCKED ===")
+                    print(f"  symbol: {symbol}")
+                    print(f"  estado_previo: {estado_previo}")
+                    print(f"  nuevo_estado: EN_ZONA")
+                    print(f"  entrada: {entrada}")
+                    print(f"  stoploss: {stoploss}")
+                    print(f"=========================\n")
+
+                    estado_dashboard = "EN_ZONA"
+                    log_price_entered_zone_check(
+                        symbol=symbol,
+                        precio_actual=precio_actual,
+                        entrada=entrada,
+                        stoploss=stoploss,
+                        zona_desde=zona_desde,
+                        zona_hasta=zona_hasta,
+                        direccion_operativa=direccion_operativa,
+                        en_zona_operativa=True,
+                        estado_antes=estado_previo,
+                        estado_despues=estado_dashboard
+                    )
+                    print(f"  MODO SEGUIMIENTO PRE-ZONA: EN_ZONA bloqueado por toque de zona guardada")
+
+                    # Calcular estado historial con maquina de estados
+                    estado_historial, motivo_transicion = calcular_estado_historial(
+                        symbol,
+                        estado_dashboard,
+                        precio_actual,
+                        entrada,
+                        stoploss,
+                        tp_1_1,
+                        zona_desde,
+                        zona_hasta,
+                        estado_previo
+                    )
+                    print(f"  Estado Historial (validado, ZONE_TOUCH_LOCKED): {estado_historial}")
+                    print(f"  Motivo transicion: {motivo_transicion}")
+
+                    print(f"\n=== LOG TRANSICION ESTADO {symbol} (ZONE_TOUCH_LOCKED) ===")
+                    print(f"  symbol: {symbol}")
+                    print(f"  estado_previo: {estado_previo}")
+                    print(f"  estado_calculado: {estado_dashboard}")
+                    print(f"  estado_validado: {estado_historial}")
+                    print(f"  precio_actual: {precio_actual}")
+                    print(f"  zona_desde: {zona_desde}")
+                    print(f"  zona_hasta: {zona_hasta}")
+                    print(f"  entrada: {entrada}")
+                    print(f"  stoploss: {stoploss}")
+                    print(f"  tp_1_1: {tp_1_1}")
+                    print(f"  motivo_transicion: {motivo_transicion}")
+                    print(f"======================================================\n")
+
+                    print(f"\n=== RESUMEN SETUP {symbol} (ZONE_TOUCH_LOCKED) ===")
+                    print(f"  zona_madre_m15: desde={zona_desde}, hasta={zona_hasta}")
+                    print(f"  score: {score}")
+                    print(f"  ob: {'SI' if has_ob else 'NO'}")
+                    print(f"  fvg: {'SI' if has_fvg else 'NO'}")
+                    print(f"  barrida: {'SI' if has_barrida else 'NO'}")
+                    print(f"  estado_final: {estado_historial}")
+                    print(f"  guardado_historial: SI (ZONE_TOUCH_LOCKED, zona activa)")
+                    print(f"=================================================\n")
+
+                    result = {
+                        "symbol": symbol,
+                        "price": precio_actual,
+                        "tendencia_h1": format_trend(tendencia_h1),
+                        "tendencia_m15": format_trend(tendencia_m15),
+                        "ultimo_evento_m15": ultimo_evento_m15,
+                        "zona_madre_m15": {
+                            "desde": float(zona_desde),
+                            "hasta": float(zona_hasta)
+                        },
+                        "entrada": entrada,
+                        "stoploss": stoploss,
+                        "tp_1_1": tp_1_1,
+                        "estado_dashboard": estado_dashboard,
+                        "estado_historial": estado_historial,
+                        "estado_final": estado_historial,
+                        "score": score,
+                        "ob": "SI" if has_ob else "NO",
+                        "fvg": "SI" if has_fvg else "NO",
+                        "barrida": "SI" if has_barrida else "NO",
+                        "estado": estado_historial,
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    }
+                    _print_result_summary(result)
+                    return result
+
+                # ---------------------------------------------------------------
+                # VALIDACION DIRECCIONAL ZONA GUARDADA (PRE-ZONA)
+                # Antes de mantener la zona guardada, verificar que siga
+                # cumpliendo la regla direccional base (igual que master_bot):
+                #   BOOM / ALCISTA : zona_hasta <= precio_actual
+                #   CRASH / BAJISTA: zona_desde >= precio_actual
+                # Si ya no cumple: marcar DESCARTADA y devolver SIN_SETUP.
+                # ---------------------------------------------------------------
+                zona_guardada_es_util, motivo_dir_val, _ = validar_zona_operativa(
+                    symbol,
+                    {"zona_desde": zona_desde, "zona_hasta": zona_hasta},
+                    precio_actual
+                )
+                tipo_indice_log = "BOOM" if direccion_operativa == "ALCISTA" else "CRASH"
+                print(f"\n=== TRACKED_ZONE_DIRECTIONAL_VALIDATION ===")
+                print(f"  symbol: {symbol}")
+                print(f"  estado_previo: {estado_previo}")
+                print(f"  tipo_indice: {tipo_indice_log}")
+                print(f"  precio_actual: {precio_actual}")
+                print(f"  zona_desde: {zona_desde}")
+                print(f"  zona_hasta: {zona_hasta}")
+                print(f"  entrada: {entrada}")
+                print(f"  stoploss: {stoploss}")
+                print(f"  direccion_operativa: {direccion_operativa}")
+                print(f"  zona_guardada_es_util: {zona_guardada_es_util}")
+                print(f"  motivo: {motivo_dir_val}")
+                print(f"===========================================\n")
+
+                if not zona_guardada_es_util:
+                    print(f"\n=== TRACKED_ZONE_INVALIDATED_PRE_TOUCH ===")
+                    print(f"  symbol: {symbol}")
+                    print(f"  estado_previo: {estado_previo}")
+                    print(f"  nuevo_estado: DESCARTADA")
+                    print(f"  motivo: zona guardada ya no cumple regla direccional base")
+                    print(f"==========================================\n")
+
+                    if supabase_service and setup_activo and setup_activo.get('id'):
+                        print(f"  SUPABASE SYNC: marcando setup como DESCARTADA (id={setup_activo.get('id')})")
+                        update_result = supabase_service.update_setup(setup_activo.get('id'), {'estado': 'DESCARTADA'})
+                        if not update_result:
+                            print(f"  SUPABASE WARNING: no se pudo marcar DESCARTADA para {symbol} (id={setup_activo.get('id')})")
+
+                    result = {
+                        "symbol": symbol,
+                        "price": precio_actual,
+                        "tendencia_h1": format_trend(tendencia_h1),
+                        "tendencia_m15": format_trend(tendencia_m15),
+                        "ultimo_evento_m15": ultimo_evento_m15,
+                        "zona_madre_m15": {"desde": 0, "hasta": 0},
+                        "entrada": None,
+                        "stoploss": None,
+                        "tp_1_1": None,
+                        "score": 0,
+                        "ob": "NO",
+                        "fvg": "NO",
+                        "barrida": "NO",
+                        "estado_dashboard": "SIN_SETUP",
+                        "estado_historial": "SIN_SETUP",
+                        "estado_final": "SIN_SETUP",
+                        "estado": "SIN SETUP",
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    }
+                    _print_result_summary(result)
+                    return result
+
+                # NO toco la zona guardada: ahora si comparar con zona fresca.
+                zona_guardada_size = abs(float(zona_hasta) - float(zona_desde))
+                decision_pre_zone = "NO_FRESH_ZONE"
+                misma_zona = False
+
+                if zona_fresca_master:
+                    dir_cand = zona_fresca_master.get('direccion_operativa', zona_fresca_master.get('direccion', direccion_operativa))
+                    niv_cand = calcular_niveles_operativos(zona_fresca_master, dir_cand)
+                    entrada_nueva = niv_cand["entrada"]
+                    stoploss_nueva = niv_cand["stoploss"]
+                    tp_nueva = niv_cand["tp_1_1"]
+                    z_desde_nueva = float(zona_fresca_master.get('zona_desde', 0))
+                    z_hasta_nueva = float(zona_fresca_master.get('zona_hasta', 0))
+                    zona_fresca_size = abs(z_hasta_nueva - z_desde_nueva)
+                    score_nueva = zona_fresca_master.get('score', 0)
+
+                    # Revalidar regla direccional base para la zona fresca
+                    es_util_direccional_fresca, _, _ = validar_zona_operativa(
+                        symbol,
+                        {"zona_desde": z_desde_nueva, "zona_hasta": z_hasta_nueva},
+                        precio_actual
+                    )
+                    zona_fresca_es_util = bool(zona_fresca_master.get('es_util', False)) and es_util_direccional_fresca
+
+                    misma_zona = (
+                        round(entrada_nueva, 2) == round(entrada, 2) and
+                        round(stoploss_nueva, 2) == round(stoploss, 2) and
+                        round(z_desde_nueva, 2) == round(zona_desde, 2) and
+                        round(z_hasta_nueva, 2) == round(zona_hasta, 2)
+                    )
+
+                    # Reemplazar solo si la zona fresca es util y distinta.
+                    zona_cambio = zona_fresca_es_util and not misma_zona
+                    decision_pre_zone = "REPLACE_WITH_FRESH" if zona_cambio else "KEEP_STORED"
+
+                    print(f"\n=== PRE_ZONE_FRESH_ZONE_COMPARISON ===")
+                    print(f"  symbol: {symbol}")
+                    print(f"  estado_previo: {estado_previo}")
+                    print(f"  precio_actual: {precio_actual}")
+                    print(f"  zona_guardada_desde: {zona_desde}")
+                    print(f"  zona_guardada_hasta: {zona_hasta}")
+                    print(f"  zona_guardada_size: {zona_guardada_size}")
+                    print(f"  zona_fresca_desde: {z_desde_nueva}")
+                    print(f"  zona_fresca_hasta: {z_hasta_nueva}")
+                    print(f"  zona_fresca_size: {zona_fresca_size}")
+                    print(f"  zona_fresca_es_util: {zona_fresca_es_util}")
+                    print(f"  misma_zona: {misma_zona}")
+                    print(f"  decision: {decision_pre_zone}")
+                    print(f"======================================\n")
+
+                    if zona_cambio:
+                        print(f"\n=== PRE_ZONE_REPLACED_WITH_FRESH ===")
+                        print(f"  symbol: {symbol}")
+                        print(f"  old_entrada: {entrada}")
+                        print(f"  old_stoploss: {stoploss}")
+                        print(f"  new_entrada: {entrada_nueva}")
+                        print(f"  new_stoploss: {stoploss_nueva}")
+                        print(f"  motivo: fresh_zone_es_util_and_distinta_en_pre_zona")
+                        print(f"====================================\n")
+
+                        # Reemplazar variables de zona
+                        entrada = entrada_nueva
+                        stoploss = stoploss_nueva
+                        tp_1_1 = tp_nueva
+                        zona_desde = z_desde_nueva
+                        zona_hasta = z_hasta_nueva
+                        direccion_operativa = dir_cand
+                        has_ob = zona_fresca_master.get('ob') is not None
+                        has_fvg = zona_fresca_master.get('fvg') is not None
+                        has_barrida = zona_fresca_master.get('barrida') is not None
+                        score = score_nueva
+
+                        # Actualizar setup activo en Supabase con la zona fresca elegida
+                        if supabase_service and setup_activo and setup_activo.get('id'):
+                            updates_zona_fresca = {
+                                'entrada': entrada,
+                                'stoploss': stoploss,
+                                'tp_1_1': tp_1_1,
+                                'score': score,
+                                'ob': has_ob,
+                                'fvg': has_fvg,
+                                'barrida': has_barrida
+                            }
+                            print(f"  SUPABASE SYNC: actualizando setup activo con zona fresca (id={setup_activo.get('id')})")
+                            supabase_service.update_setup(setup_activo.get('id'), updates_zona_fresca)
+                    else:
+                        print(f"  PRE-ZONA: zona guardada se mantiene.")
+                else:
+                    print(f"\n=== PRE_ZONE_FRESH_ZONE_COMPARISON ===")
+                    print(f"  symbol: {symbol}")
+                    print(f"  estado_previo: {estado_previo}")
+                    print(f"  precio_actual: {precio_actual}")
+                    print(f"  zona_guardada_desde: {zona_desde}")
+                    print(f"  zona_guardada_hasta: {zona_hasta}")
+                    print(f"  zona_guardada_size: {zona_guardada_size}")
+                    print(f"  zona_fresca_desde: None")
+                    print(f"  zona_fresca_hasta: None")
+                    print(f"  zona_fresca_size: None")
+                    print(f"  zona_fresca_es_util: False")
+                    print(f"  misma_zona: {misma_zona}")
+                    print(f"  decision: {decision_pre_zone}")
+                    print(f"======================================\n")
+                    print(f"  PRE-ZONA: no se encontro zona fresca valida, manteniendo zona guardada.")
+
+            # ------------------------------------------------------------------
+            # POST-ZONA: bloquear zona guardada (EN_ZONA / PROFIT)
+            # ------------------------------------------------------------------
+            elif estado_previo in ESTADOS_POST_ZONA:
+                # Log ZONE_LOCKED_AFTER_EN_ZONA (obligatorio)
+                print(f"\n=== ZONE_LOCKED_AFTER_EN_ZONA ===")
+                print(f"  symbol: {symbol}")
+                print(f"  estado_previo: {estado_previo}")
+                print(f"  entrada: {entrada}")
+                print(f"  stoploss: {stoploss}")
+                print(f"=================================\n")
+
+            # EN_ZONA tiene prioridad absoluta en MODO SEGUIMIENTO
+            en_zona_seguimiento = (
+                (direccion_operativa == "ALCISTA" and stoploss <= precio_actual <= entrada) or
+                (direccion_operativa == "BAJISTA" and entrada <= precio_actual <= stoploss)
+            )
+
+            if en_zona_seguimiento:
+                estado_dashboard = "EN_ZONA"
+                log_price_entered_zone_check(
+                    symbol=symbol,
+                    precio_actual=precio_actual,
+                    entrada=entrada,
+                    stoploss=stoploss,
+                    zona_desde=zona_desde,
+                    zona_hasta=zona_hasta,
+                    direccion_operativa=direccion_operativa,
+                    en_zona_operativa=en_zona_seguimiento,
+                    estado_antes=estado_previo if estado_previo else "MODO_SEGUIMIENTO",
+                    estado_despues=estado_dashboard
+                )
+                print(f"  MODO SEGUIMIENTO: EN_ZONA forzado por rango operativo guardado")
+            else:
+                # Calcular estado dashboard con la zona guardada
+                estado_dashboard = calcular_estado_dashboard(
+                    precio_actual,
+                    entrada,
+                    zona_desde,
+                    zona_hasta,
+                    direccion_operativa,
+                    df_m1=df_m1,
+                    symbol=symbol
+                )
+            print(f"  Estado Dashboard (calculado, MODO SEGUIMIENTO): {estado_dashboard}")
+
+            # Calcular estado historial con maquina de estados
+            estado_historial, motivo_transicion = calcular_estado_historial(
+                symbol,
+                estado_dashboard,
+                precio_actual,
+                entrada,
+                stoploss,
+                tp_1_1,
+                zona_desde,
+                zona_hasta,
+                estado_previo
+            )
+            print(f"  Estado Historial (validado, MODO SEGUIMIENTO): {estado_historial}")
+            print(f"  Motivo transicion: {motivo_transicion}")
+
+            # LOG transicion
+            print(f"\n=== LOG TRANSICION ESTADO {symbol} (MODO SEGUIMIENTO) ===")
+            print(f"  symbol: {symbol}")
+            print(f"  estado_previo: {estado_previo}")
+            print(f"  estado_calculado: {estado_dashboard}")
+            print(f"  estado_validado: {estado_historial}")
+            print(f"  precio_actual: {precio_actual}")
+            print(f"  zona_desde: {zona_desde}")
+            print(f"  zona_hasta: {zona_hasta}")
+            print(f"  entrada: {entrada}")
+            print(f"  stoploss: {stoploss}")
+            print(f"  tp_1_1: {tp_1_1}")
+            print(f"  motivo_transicion: {motivo_transicion}")
+            print(f"======================================================\n")
+
+            print(f"\n=== RESUMEN SETUP {symbol} (MODO SEGUIMIENTO) ===")
+            print(f"  zona_madre_m15: desde={zona_desde}, hasta={zona_hasta}")
+            print(f"  score: {score}")
+            print(f"  ob: {'SI' if has_ob else 'NO'}")
+            print(f"  fvg: {'SI' if has_fvg else 'NO'}")
+            print(f"  barrida: {'SI' if has_barrida else 'NO'}")
+            print(f"  estado_final: {estado_historial}")
+            print(f"  guardado_historial: SI (MODO SEGUIMIENTO, zona activa)")
+            print(f"=================================================\n")
+
+            result = {
+                "symbol": symbol,
+                "price": precio_actual,
+                "tendencia_h1": format_trend(tendencia_h1),
+                "tendencia_m15": format_trend(tendencia_m15),
+                "ultimo_evento_m15": ultimo_evento_m15,
+                "zona_madre_m15": {
+                    "desde": float(zona_desde),
+                    "hasta": float(zona_hasta)
+                },
+                "entrada": entrada,
+                "stoploss": stoploss,
+                "tp_1_1": tp_1_1,
+                "estado_dashboard": estado_dashboard,
+                "estado_historial": estado_historial,
+                "estado_final": estado_historial,
+                "score": score,
+                "ob": "SI" if has_ob else "NO",
+                "fvg": "SI" if has_fvg else "NO",
+                "barrida": "SI" if has_barrida else "NO",
+                "estado": estado_historial,
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }
+            _print_result_summary(result)
+            return result
+
+        # ---------------------------------------------------------------
+        # MODO BUSQUEDA: no hay setup activo, buscar zona nueva
+        # ---------------------------------------------------------------
+        print(f"  MODO BUSQUEDA: buscando zona nueva para {symbol}...")
+        log_tracked_supabase_zone(
+            symbol=symbol,
+            estado_previo="NINGUNO",
+            zona_desde=None,
+            zona_hasta=None,
+            entrada=None,
+            stoploss=None,
+            created_at=None,
+            updated_at=None
+        )
+
+        # Detect FVGs
+        fvgs_m15 = detectar_fvg(df_m15)
+        print(f"    - FVGs M15: {len(fvgs_m15)}")
+
+        # Try to create zone
+        zona = crear_zona_m15(df_m15, eventos_m15, fvgs_m15, symbol, precio_actual)
+        log_fresh_master_style_zone(symbol, precio_actual, zona)
+        
+        # If NO zone, return BASE STRUCTURE with SIN SETUP for zone part
+        if not zona:
+            print(f"  WARNING NO ZONE created (no OB/FVG or not operative)")
+            print(f"  Returning BASE STRUCTURE with SIN SETUP")
+            
+            # COMPREHENSIVE LOG as requested in problem statement
+            print(f"\n=== RESUMEN SETUP {symbol} ===")
+            print(f"  zona_madre_m15: NINGUNA")
+            print(f"  score: 0")
+            print(f"  ob: NO")
+            print(f"  fvg: NO")
+            print(f"  barrida: NO")
+            print(f"  es_util: N/A")
+            print(f"  estado_final: SIN SETUP")
+            print(f"  guardado_historial: NO (sin zona valida)")
+            print(f"===============================\n")
+            
+            result = {
+                "symbol": symbol,
+                "price": precio_actual,
+                "tendencia_h1": format_trend(tendencia_h1),
+                "tendencia_m15": format_trend(tendencia_m15),
+                "ultimo_evento_m15": ultimo_evento_m15,
+                "zona_madre_m15": {"desde": 0, "hasta": 0},
+                "entrada": None,
+                "stoploss": None,
+                "tp_1_1": None,
+                "score": 0,
+                "ob": "NO",
+                "fvg": "NO",
+                "barrida": "NO",
+                "estado_dashboard": "SIN_SETUP",
+                "estado_historial": "SIN_SETUP",
+                "estado_final": "SIN_SETUP",
+                "estado": "SIN SETUP",
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }
+            _print_result_summary(result)
+            return result
+        
+        # If zone exists, calculate full setup
+        print(f"  OK ZONE created:")
+        print(f"    - Desde: {zona['zona_desde']}")
+        print(f"    - Hasta: {zona['zona_hasta']}")
+        print(f"    - Direccion: {zona['direccion']}")
+        
+        # Extract zone components
+        has_ob = zona.get('ob') is not None
+        has_fvg = zona.get('fvg') is not None
+        has_barrida = zona.get('barrida') is not None
+        es_util = zona.get('es_util', False)
+        
+        print(f"    - OB: {'SI' if has_ob else 'NO'}")
+        print(f"    - FVG: {'SI' if has_fvg else 'NO'}")
+        print(f"    - Barrida: {'SI' if has_barrida else 'NO'}")
+        
+        # Get score from zone
+        score = zona.get('score', 0)
+        print(f"    - Score: {score}")
+        print(f"    - es_util: {es_util} - {zona.get('motivo', 'N/A')}")
+        
+        # Get direccion_operativa
+        direccion_operativa = zona.get('direccion_operativa', zona.get('direccion', 'ALCISTA'))
+        
+        # Calculate operational levels (entrada, stoploss, tp_1_1)
+        niveles = calcular_niveles_operativos(zona, direccion_operativa)
+        entrada = niveles["entrada"]
+        stoploss = niveles["stoploss"]
+        tp_1_1 = niveles["tp_1_1"]
+        
+        print(f"    - Entrada: {entrada}")
+        print(f"    - StopLoss: {stoploss}")
+        print(f"    - TP 1:1: {tp_1_1}")
+        
+        # Calculate dashboard state (velocidad M1 o posicion si no hay M1)
+        estado_dashboard = calcular_estado_dashboard(
+            precio_actual,
+            entrada,
+            zona['zona_desde'],
+            zona['zona_hasta'],
+            direccion_operativa,
+            df_m1=df_m1,
+            symbol=symbol
+        )
+        print(f"  Estado Dashboard (calculado): {estado_dashboard}")
+        
+        # Obtener estado previo guardado en Supabase (si existe)
+        estado_previo = None
+        existing_setup = None
+        existe_setup_previo = False
+        
+        if supabase_service:
+            existing_setup = supabase_service.get_active_setup(
+                'SMC_M15_PRO',
+                symbol,
+                entrada,
+                stoploss
+            )
+            if existing_setup:
+                estado_previo = existing_setup.get('estado')
+                existe_setup_previo = True
+                print(f"  Estado Previo (guardado): {estado_previo}")
+            else:
+                print(f"  Estado Previo: NINGUNO (nueva zona)")
+        else:
+            print(f"  SUPABASE ERROR: Service not available, cannot read estado_previo")
+        
+        # Calculate historial state with state machine validation
+        estado_historial, motivo_transicion = calcular_estado_historial(
+            symbol,
+            estado_dashboard,
+            precio_actual,
+            entrada,
+            stoploss,
+            tp_1_1,
+            zona['zona_desde'],
+            zona['zona_hasta'],
+            estado_previo
+        )
+        print(f"  Estado Historial (validado): {estado_historial}")
+        print(f"  Motivo transición: {motivo_transicion}")
+        
+        # Si la zona es invalida para el dashboard, tratarla como SIN SETUP
+        if estado_historial == "SIN_SETUP":
+            print(f"  WARNING: Zona invalida para dashboard ({symbol}) - precio fuera del rango valido")
+            print(f"  entrada={entrada}, stoploss={stoploss}, precio={precio_actual}")
+            print(f"  Retornando SIN SETUP para no mostrar zona invalida en dashboard")
+            result = {
+                "symbol": symbol,
+                "price": precio_actual,
+                "tendencia_h1": format_trend(tendencia_h1),
+                "tendencia_m15": format_trend(tendencia_m15),
+                "ultimo_evento_m15": ultimo_evento_m15,
+                "zona_madre_m15": {"desde": 0, "hasta": 0},
+                "entrada": None,
+                "stoploss": None,
+                "tp_1_1": None,
+                "score": 0,
+                "ob": "NO",
+                "fvg": "NO",
+                "barrida": "NO",
+                "estado_dashboard": "SIN_SETUP",
+                "estado_historial": "SIN_SETUP",
+                "estado_final": "SIN_SETUP",
+                "estado": "SIN SETUP",
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }
+            _print_result_summary(result)
+            return result
+        
+        # LOG COMPLETO según requerimientos del problema
+        print(f"\n=== LOG TRANSICION ESTADO {symbol} ===")
+        print(f"  symbol: {symbol}")
+        print(f"  existe_setup_previo: {existe_setup_previo}")
+        print(f"  estado_previo: {estado_previo if estado_previo else 'NINGUNO'}")
+        print(f"  estado_calculado: {estado_dashboard}")
+        print(f"  estado_validado: {estado_historial}")
+        print(f"  estado_final: {estado_historial}")
+        print(f"  precio_actual: {precio_actual}")
+        print(f"  zona_desde: {zona['zona_desde']}")
+        print(f"  zona_hasta: {zona['zona_hasta']}")
+        print(f"  entrada: {entrada}")
+        print(f"  stoploss: {stoploss}")
+        print(f"  tp_1_1: {tp_1_1}")
+        print(f"  motivo_transicion: {motivo_transicion}")
+        print(f"======================================\n")
+        
+        # COMPREHENSIVE LOG as requested in problem statement
+        print(f"\n=== RESUMEN SETUP {symbol} ===")
+        print(f"  zona_madre_m15: desde={zona['zona_desde']}, hasta={zona['zona_hasta']}")
+        print(f"  score: {score}")
+        print(f"  ob: {'SI' if has_ob else 'NO'}")
+        print(f"  fvg: {'SI' if has_fvg else 'NO'}")
+        print(f"  barrida: {'SI' if has_barrida else 'NO'}")
+        print(f"  es_util: {es_util}")
+        print(f"  estado_final: {estado_historial}")
+        print(f"  guardado_historial: SI (zona valida con score={score})")
+        print(f"===============================\n")
+        
+        # Build full response with zone
+        # CRITICAL FIX: BUG 2 - Use estado_historial (validated) instead of estado_dashboard (raw)
+        result = {
+            "symbol": symbol,
+            "price": precio_actual,
+            "tendencia_h1": format_trend(tendencia_h1),
+            "tendencia_m15": format_trend(tendencia_m15),
+            "ultimo_evento_m15": ultimo_evento_m15,
+            "zona_madre_m15": {
+                "desde": float(zona.get('zona_desde', 0)),
+                "hasta": float(zona.get('zona_hasta', 0))
+            },
+            "entrada": entrada,
+            "stoploss": stoploss,
+            "tp_1_1": tp_1_1,
+            "estado_dashboard": estado_dashboard,  # Keep for debugging
+            "estado_historial": estado_historial,  # Validated state
+            "estado_final": estado_historial,      # NEW: Final state for dashboard
+            "score": score,
+            "ob": "SI" if has_ob else "NO",
+            "fvg": "SI" if has_fvg else "NO",
+            "barrida": "SI" if has_barrida else "NO",
+            "estado": estado_historial,  # FIXED: Use estado_historial NOT estado_dashboard
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }
+        _print_result_summary(result)
+        
+        
+        return result
+        
+    except Exception as e:
+        print(f"  ERROR analyzing {symbol}: {e}")
+        traceback.print_exc()
+        return _create_sin_setup_response(symbol)
+
+
+class SMCM15ProEngine(BaseStrategy):
+    """SMC M15 PRO strategy engine with full strategic orchestration."""
 
     strategy_id = "SMC_M15_PRO"
     strategy_name = "SMC M15 PRO"
 
     def analyze(self, symbol, df_h1, df_m15, df_m1=None, **kwargs):
-        raise NotImplementedError(
-            "SMCM15ProEngine.analyze() will be integrated in FASE 2B. "
-            "Use smc_m15_service.analyze_symbol_smc() during FASE 2A."
-        )
+        return analyze_symbol_smc_engine(symbol, df_h1, df_m15, df_m1=df_m1, **kwargs)
