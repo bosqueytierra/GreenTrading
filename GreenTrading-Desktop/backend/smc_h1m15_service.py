@@ -34,6 +34,9 @@ except ImportError:
 STRATEGY_ID = "SMC_H1_M15_PRO"
 STRATEGY_NAME = "SMC H1 + M15 PRO"
 
+# Valores considerados como "SI/verdadero" en campos ob/fvg/barrida
+TRUTHY_VALUES = {"SÍ", "SI", "YES"}
+
 # Cache independiente — no comparte estado con smc_m15_service._setup_cache
 _setup_cache_h1m15: dict = {}
 
@@ -127,9 +130,9 @@ def sync_setup_to_supabase_h1m15(analysis_result: dict) -> None:
         "stoploss": critical_data["stoploss"],
         "tp_1_1": critical_data["tp_1_1"],
         "score": critical_data["score"],
-        "ob": analysis_result.get("ob") in ["SÍ", "SI", "YES"],
-        "fvg": analysis_result.get("fvg") in ["SÍ", "SI", "YES"],
-        "barrida": analysis_result.get("barrida") in ["SÍ", "SI", "YES"],
+        "ob": analysis_result.get("ob") in TRUTHY_VALUES,
+        "fvg": analysis_result.get("fvg") in TRUTHY_VALUES,
+        "barrida": analysis_result.get("barrida") in TRUTHY_VALUES,
         "estado": critical_data["estado"],
         "estado_dashboard": analysis_result.get("estado_dashboard", "ESPERANDO_ENTRADA"),
         "precio_detectado": critical_data["precio_actual"],

@@ -544,16 +544,26 @@ async def get_smc_h1_m15_pro_snapshot():
                 detail="MT5 not connected. Please ensure MT5 is running."
             )
 
+    def _h1m15_minimal_snapshot(symbol, price=None):
+        """Return a minimal SIN SETUP dict when the h1m15 response function is unavailable."""
+        return {
+            "symbol": symbol,
+            "price": price,
+            "estado": "SIN SETUP",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
     if analyze_symbol_smc_h1m15 is None or create_sin_setup_h1m15_response is None:
         print("WARNING: SMC H1+M15 PRO service not available, returning placeholder data")
         snapshots = []
         for symbol in DASHBOARD_SYMBOLS:
             m1_candle = read_candle_data(symbol, 'M1')
             price = m1_candle.get('close') if m1_candle else None
-            snapshots.append(create_sin_setup_h1m15_response(symbol, price) if create_sin_setup_h1m15_response else {
-                "symbol": symbol, "price": price, "estado": "SIN SETUP",
-                "updated_at": datetime.now(timezone.utc).isoformat()
-            })
+            snapshots.append(
+                create_sin_setup_h1m15_response(symbol, price)
+                if create_sin_setup_h1m15_response
+                else _h1m15_minimal_snapshot(symbol, price)
+            )
         return snapshots
 
     snapshots = []
@@ -587,12 +597,7 @@ async def get_smc_h1_m15_pro_snapshot():
                     snapshots.append(create_sin_setup_h1m15_response(symbol, price))
                 except Exception as fallback_e:
                     print(f"H1M15 Error creating fallback for {symbol}: {fallback_e}")
-                    snapshots.append({
-                        "symbol": symbol,
-                        "price": None,
-                        "estado": "SIN SETUP",
-                        "updated_at": datetime.now(timezone.utc).isoformat()
-                    })
+                    snapshots.append(_h1m15_minimal_snapshot(symbol))
     except Exception as outer_e:
         print(f"H1M15 CRITICAL ERROR in snapshot loop: {outer_e}")
         traceback.print_exc()

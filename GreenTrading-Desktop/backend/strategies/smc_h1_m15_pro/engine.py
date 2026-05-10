@@ -689,7 +689,7 @@ def analyze_symbol_smc_h1m15_engine(
     except Exception as e:
         print(f"  ERROR analyzing {symbol} (H1M15): {e}")
         traceback.print_exc()
-        return _create_sin_setup(symbol)
+        return _create_sin_setup()
 
 
 # =========================
