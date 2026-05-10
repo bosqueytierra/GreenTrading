@@ -480,3 +480,18 @@
         padding: 11px 12px;
     }
 }
+
+/* =========================
+   FASE 3B - STRATEGY FILTER & SUMMARY
+   ========================= */
+
+.winrate-count {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    background-color: rgba(59, 130, 246, 0.10);
+    color: #2563eb;
+    margin-left: 4px;
+}

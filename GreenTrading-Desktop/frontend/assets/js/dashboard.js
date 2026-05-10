@@ -1,142 +1,301 @@
-console.log("DASHBOARD_JS_VERSION: FIX_DASHBOARD_STABILITY_V2");
+console.log("DASHBOARD_JS_VERSION: FASE3B_MULTI_STRATEGY_V1");
 
 /**
  * GreenTrading Desktop - Dashboard JavaScript
- * Phase 3: SMC M15 PRO dashboard with real-time SMC analysis
+ * FASE 3B: Multi-strategy UI (SMC_M15_PRO + SMC_H1_M15_PRO)
+ *
+ * Arquitectura:
+ *  - Cache independiente por estrategia
+ *  - Auto-refresh independiente por endpoint
+ *  - Cambio instantáneo entre tabs (sin esperar fetch)
+ *  - "TODAS": combina ambas estrategias + columna ESTRATEGIA
  */
 
-// Auto-refresh interval (1 second)
+// ============================================================
+// ESTADO GLOBAL
+// ============================================================
+
+// Tab activa: 'm15pro' | 'h1m15pro' | 'all'
+let activeStrategy = 'm15pro';
+
+// Caches independientes por estrategia
+const strategyCache = {
+    m15pro: [],
+    h1m15pro: []
+};
+
+// Guards de concurrencia (uno por endpoint, independientes)
+const fetchInProgress = {
+    m15pro: false,
+    h1m15pro: false
+};
+
+// Timers de auto-refresh independientes
+const refreshTimers = {
+    m15pro: null,
+    h1m15pro: null
+};
+
+// Intervalo de refresco
 const AUTO_REFRESH_INTERVAL = 1000;
-let refreshIntervalId = null;
 
-// Concurrency guard: skip refresh if a fetch is already in progress
-let isFetchingSnapshot = false;
+// ============================================================
+// INIT
+// ============================================================
 
-/**
- * Initialize dashboard
- */
 async function initDashboard() {
-    console.log('🚀 Initializing GreenTrading Desktop Dashboard...');
-    
-    // Setup event listeners
-    setupEventListeners();
-    
-    // Initial data load
-    await loadDashboardData();
-    
-    // Start auto-refresh
-    startAutoRefresh();
-    
-    console.log('✅ Dashboard initialized');
+    console.log('🚀 FASE3B: Initializing multi-strategy dashboard...');
+
+    setupTabListeners();
+    setupRefreshButton();
+
+    // Carga inicial de ambas estrategias en paralelo
+    await Promise.all([
+        fetchStrategy('m15pro'),
+        fetchStrategy('h1m15pro')
+    ]);
+
+    // Render inicial según tab activa
+    renderCurrentTab();
+
+    // Arrancar auto-refresh independiente para cada estrategia
+    startAutoRefresh('m15pro');
+    startAutoRefresh('h1m15pro');
+
+    console.log('✅ FASE3B: Dashboard initialized');
 }
 
-/**
- * Setup event listeners
- */
-function setupEventListeners() {
-    // Refresh button
-    const refreshBtn = document.getElementById('refreshBtn');
-    if (refreshBtn) {
-        refreshBtn.addEventListener('click', async () => {
+// ============================================================
+// AUTO-REFRESH
+// ============================================================
+
+function startAutoRefresh(strategy) {
+    if (refreshTimers[strategy]) {
+        clearInterval(refreshTimers[strategy]);
+    }
+    refreshTimers[strategy] = setInterval(async () => {
+        await fetchStrategy(strategy);
+        // Re-render solo si la tab activa depende de esta estrategia
+        if (activeStrategy === strategy || activeStrategy === 'all') {
+            renderCurrentTab();
+        }
+    }, AUTO_REFRESH_INTERVAL);
+    console.log(`Auto-refresh started: ${strategy} every ${AUTO_REFRESH_INTERVAL / 1000}s`);
+}
+
+function stopAllAutoRefresh() {
+    Object.keys(refreshTimers).forEach(strategy => {
+        if (refreshTimers[strategy]) {
+            clearInterval(refreshTimers[strategy]);
+            refreshTimers[strategy] = null;
+        }
+    });
+}
+
+// ============================================================
+// FETCH POR ESTRATEGIA
+// ============================================================
+
+async function fetchStrategy(strategy) {
+    if (fetchInProgress[strategy]) {
+        console.log(`SNAPSHOT FETCH SKIPPED_ALREADY_RUNNING: ${strategy}`);
+        return;
+    }
+    fetchInProgress[strategy] = true;
+    console.log(`SNAPSHOT FETCH START: ${strategy}`);
+
+    try {
+        let result;
+        if (strategy === 'm15pro') {
+            result = await window.api.getSmcM15ProSnapshot();
+        } else {
+            result = await window.api.getSmcH1M15ProSnapshot();
+        }
+
+        if (!result.success) {
+            // SNAPSHOT_ALREADY_RUNNING es silencioso — no es un error real
+            if (result.error !== 'SNAPSHOT_ALREADY_RUNNING') {
+                throw new Error(result.error || 'Failed to load SMC data');
+            }
+            return;
+        }
+
+        const snapshots = result.data || [];
+        strategyCache[strategy] = snapshots;
+        console.log(`SNAPSHOT FETCH OK: ${strategy} - ${snapshots.length} snapshots`);
+
+        updateConnectionStatus(true);
+
+    } catch (error) {
+        console.error(`SNAPSHOT FETCH ERROR (${strategy}):`, error.message);
+        updateConnectionStatus(false);
+    } finally {
+        fetchInProgress[strategy] = false;
+    }
+}
+
+// ============================================================
+// TABS
+// ============================================================
+
+function setupTabListeners() {
+    document.querySelectorAll('.strategy-tab').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const strategy = btn.dataset.strategy;
+            if (strategy === activeStrategy) return;
+
+            // Actualizar estado visual
+            document.querySelectorAll('.strategy-tab').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            activeStrategy = strategy;
+            console.log(`Tab switched to: ${activeStrategy}`);
+
+            // Render inmediato desde cache (sin esperar fetch)
+            renderCurrentTab();
+        });
+    });
+}
+
+function setupRefreshButton() {
+    const btn = document.getElementById('refreshBtn');
+    if (btn) {
+        btn.addEventListener('click', async () => {
             console.log('Manual refresh triggered');
-            await loadDashboardData();
+            await Promise.all([
+                fetchStrategy('m15pro'),
+                fetchStrategy('h1m15pro')
+            ]);
+            renderCurrentTab();
+            updateLastUpdateTime();
         });
     }
 }
 
-/**
- * Load dashboard data from backend
- */
-async function loadDashboardData() {
-    if (isFetchingSnapshot) {
-        console.log('SNAPSHOT FETCH SKIPPED_ALREADY_RUNNING');
-        return;
+// ============================================================
+// RENDER SEGÚN TAB ACTIVA
+// ============================================================
+
+function renderCurrentTab() {
+    const statusEl = document.getElementById('strategyTabStatus');
+
+    if (activeStrategy === 'm15pro') {
+        renderTwoTableView(strategyCache.m15pro, 'm15pro');
+        if (statusEl) statusEl.textContent = `${strategyCache.m15pro.length} símbolos`;
+
+    } else if (activeStrategy === 'h1m15pro') {
+        renderTwoTableView(strategyCache.h1m15pro, 'h1m15pro');
+        if (statusEl) statusEl.textContent = `${strategyCache.h1m15pro.length} símbolos`;
+
+    } else {
+        // TODAS: combina ambas
+        const combined = [
+            ...strategyCache.m15pro.map(s => ({ ...s, _estrategia: 'm15pro' })),
+            ...strategyCache.h1m15pro.map(s => ({ ...s, _estrategia: 'h1m15pro' }))
+        ];
+        renderAllStrategiesView(combined);
+        const count = strategyCache.m15pro.length + strategyCache.h1m15pro.length;
+        if (statusEl) statusEl.textContent = `${count} símbolos (${strategyCache.m15pro.length} M15 + ${strategyCache.h1m15pro.length} H1+M15)`;
     }
 
-    isFetchingSnapshot = true;
-    console.log('SNAPSHOT FETCH START');
-    
-    try {
-        // Call SMC API through exposed window.api
-        const result = await window.api.getSmcM15ProSnapshot();
-        
-        console.log("DEBUG RESULT FULL:", result);
-        console.log("DEBUG RESULT.DATA:", result.data);
-        console.log("DEBUG FIRST ITEM:", result.data?.[0]);
-        
-        if (!result.success) {
-            throw new Error(result.error || 'Failed to load SMC data');
-        }
-        
-        const snapshots = result.data;
-        
-        console.log("DEBUG SNAPSHOTS IS ARRAY:", Array.isArray(snapshots));
-        console.log("DEBUG SNAPSHOTS FIRST:", snapshots?.[0]);
-        console.log(`SNAPSHOT FETCH OK - ${snapshots.length} snapshots`);
-        
-        // Update connection status
-        updateConnectionStatus(true);
-        
-        // Separate into Boom and Crash
-        const boomData = snapshots.filter(s => s.symbol.includes('Boom'));
-        const crashData = snapshots.filter(s => s.symbol.includes('Crash'));
-        
-        // Render tables
-        renderTable('boomTableBody', boomData);
-        renderTable('crashTableBody', crashData);
-        
-        // Update timestamp
-        updateLastUpdateTime();
-        
-    } catch (error) {
-        console.error('SNAPSHOT FETCH ERROR:', error.message);
-        updateConnectionStatus(false);
-        showError(error.message);
-    } finally {
-        isFetchingSnapshot = false;
-    }
+    updateLastUpdateTime();
 }
 
-/**
- * Render table with symbol data
- */
-function renderTable(tableBodyId, data) {
+// ============================================================
+// VISTA: UNA ESTRATEGIA (dos tablas Boom / Crash)
+// ============================================================
+
+function renderTwoTableView(snapshots, strategy) {
+    // Restaurar headers de tabla (sin columna ESTRATEGIA)
+    setTableHeaders(strategy);
+
+    const boomData = snapshots.filter(s => s.symbol && s.symbol.includes('Boom'));
+    const crashData = snapshots.filter(s => s.symbol && s.symbol.includes('Crash'));
+
+    renderTable('boomTableBody', boomData, strategy, false);
+    renderTable('crashTableBody', crashData, strategy, false);
+}
+
+// ============================================================
+// VISTA: TODAS (combina estrategias, añade columna ESTRATEGIA)
+// ============================================================
+
+function renderAllStrategiesView(combined) {
+    setTableHeaders('all');
+
+    const boomData = combined.filter(s => s.symbol && s.symbol.includes('Boom'));
+    const crashData = combined.filter(s => s.symbol && s.symbol.includes('Crash'));
+
+    renderTable('boomTableBody', boomData, 'all', true);
+    renderTable('crashTableBody', crashData, 'all', true);
+}
+
+// ============================================================
+// HEADERS DINÁMICOS
+// ============================================================
+
+function setTableHeaders(strategy) {
+    const baseHeaders = [
+        'ÍNDICE', 'TENDENCIA H1', 'TENDENCIA M15', 'ÚLTIMO EVENTO M15',
+        'ZONA MADRE M15', 'SCORE', 'OB', 'FVG', 'BARRIDA', 'ESTADO', 'PRECIO', 'ACTUALIZACIÓN'
+    ];
+
+    let headers;
+    if (strategy === 'h1m15pro') {
+        // Añadir columnas H1+M15 específicas
+        headers = [
+            'ÍNDICE', 'TENDENCIA H1', 'TENDENCIA M15', 'ÚLTIMO EVENTO M15',
+            'ZONA MADRE M15', 'SCORE', 'OB', 'FVG', 'BARRIDA',
+            'TP RATIO', 'ALIN. H1', 'ESTADO', 'PRECIO', 'ACTUALIZACIÓN'
+        ];
+    } else if (strategy === 'all') {
+        headers = ['ESTRATEGIA', ...baseHeaders];
+    } else {
+        headers = baseHeaders;
+    }
+
+    ['boomTableBody', 'crashTableBody'].forEach(tbodyId => {
+        const tbody = document.getElementById(tbodyId);
+        if (!tbody) return;
+        const thead = tbody.closest('table').querySelector('thead tr');
+        if (!thead) return;
+        thead.innerHTML = headers.map(h => `<th>${h}</th>`).join('');
+    });
+}
+
+// ============================================================
+// RENDER TABLE
+// ============================================================
+
+function renderTable(tableBodyId, data, strategy, showEstrategia) {
     const tbody = document.getElementById(tableBodyId);
     if (!tbody) {
         console.error(`Table body ${tableBodyId} not found`);
         return;
     }
-    
+
+    const colCount = showEstrategia ? 13 : (strategy === 'h1m15pro' ? 14 : 12);
+
     if (data.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="12" class="loading-cell" style="text-align: center; padding: 20px;">
+                <td colspan="${colCount}" class="loading-cell" style="text-align:center;padding:20px;">
                     No hay datos disponibles
                 </td>
             </tr>
         `;
         return;
     }
-    
-    // Generate rows
-    const rows = data.map(snapshot => createTableRow(snapshot)).join('');
+
+    const rows = data.map(snapshot => createTableRow(snapshot, strategy, showEstrategia)).join('');
     tbody.innerHTML = rows;
 }
 
-/**
- * Create table row for a symbol snapshot (SMC M15 PRO)
- */
-function createTableRow(snapshot) {
-    console.log("DEBUG ROW SNAPSHOT:", snapshot);
-    console.log("DEBUG ROW H1:", snapshot?.tendencia_h1);
-    console.log("DEBUG ROW M15:", snapshot?.tendencia_m15);
-    console.log("DEBUG ROW EVENT:", snapshot?.ultimo_evento_m15);
-    console.log("DEBUG ROW ZONE:", snapshot?.zona_madre_m15);
-    console.log("DEBUG ROW SCORE:", snapshot?.score);
-    console.log("DEBUG ROW ESTADO:", snapshot?.estado);
-    console.log("DEBUG ROW ESTADO_FINAL:", snapshot?.estado_final);
-    console.log("DEBUG ROW ESTADO_HISTORIAL:", snapshot?.estado_historial);
-    
+// ============================================================
+// CREAR FILA
+// ============================================================
+
+function createTableRow(snapshot, strategy, showEstrategia) {
     const {
         symbol,
         price,
@@ -151,55 +310,63 @@ function createTableRow(snapshot) {
         fvg,
         barrida,
         estado,
-        estado_dashboard,  // Operational live state (never SL/TP)
+        estado_dashboard,
         estado_final,
         estado_historial,
-        updated_at
+        updated_at,
+        // H1+M15 específicos
+        tp_ratio,
+        alineacion_h1,
+        estado_h1_m15,
+        // combinado
+        _estrategia
     } = snapshot;
-    
-    // Dashboard live: always use the state-machine validated state (estado_final / estado_historial).
-    // estado_dashboard is the raw calculated value kept only for debugging — never use it for display.
-    // If the resolved candidate is a terminal/historical-only state, show SIN_SETUP instead.
+
+    // Resolver estado a mostrar en dashboard live
     const DASHBOARD_BLOCKED = new Set(['SL', 'TP', 'DESCARTADA', 'PAUSADA']);
     const estadoCandidate = estado_final || estado_historial || estado;
     const estadoNorm = estadoCandidate ? estadoCandidate.toUpperCase().replace(/ /g, '_') : '';
     const estadoToDisplay = (!estadoNorm || DASHBOARD_BLOCKED.has(estadoNorm)) ? 'SIN_SETUP' : estadoCandidate;
-    console.log("DEBUG ESTADO TO DISPLAY:", estadoToDisplay, "(raw candidate:", estadoCandidate, ")");
-    
-    // Format symbol (shorter name)
-    const symbolShort = symbol.replace(' Index', '');
-    
-    // Format price
-    const priceStr = price !== null ? formatPrice(price) : '--';
-    
-    // Format zona madre M15 with ENTRADA/STOPLOSS + copy button
+
+    const symbolShort = (symbol || '').replace(' Index', '');
+    const priceStr = price !== null && price !== undefined ? formatPrice(price) : '--';
     const zonaCell = formatZonaMadre(zona_madre_m15, entrada, stoploss, symbolShort);
-    
-    // Format estado badge using the live dashboard state
     const estadoBadge = formatEstadoBadge(estadoToDisplay);
-    
-    // Format score badge
     const scoreBadge = formatScoreBadge(score);
-    
-    // Format update time
     const timeStr = formatTime(updated_at);
-    
-    // Apply row color based on estado — any active/operational state gets row-activa.
-    // Use estadoNorm (already uppercased + underscored) for reliable Set lookup.
+
     const ACTIVE_ESTADOS = new Set(['ACTIVA', 'ESPERANDO_ENTRADA', 'LLEGANDO_A_ZONA', 'EN_ZONA', 'PROFIT']);
     const rowClass = ACTIVE_ESTADOS.has(estadoNorm) ? 'row-activa' : 'row-sin-setup';
-    
+
+    // Columna ESTRATEGIA para vista TODAS
+    const estrategiaCol = showEstrategia
+        ? `<td>${formatEstrategiaBadge(_estrategia)}</td>`
+        : '';
+
+    // Columnas extra H1+M15
+    let extraH1M15Cols = '';
+    if (strategy === 'h1m15pro') {
+        const tpRatioStr = tp_ratio ? `TP ${tp_ratio}` : '--';
+        const alinStr = alineacion_h1 || '--';
+        extraH1M15Cols = `
+            <td><span class="tp-ratio-badge">${tpRatioStr}</span></td>
+            <td><span class="h1-badge">${alinStr}</span></td>
+        `;
+    }
+
     return `
         <tr class="${rowClass}">
+            ${estrategiaCol}
             <td><span class="symbol-name">${symbolShort}</span></td>
-            <td><span class="trend-badge">${tendencia_h1}</span></td>
-            <td><span class="trend-badge">${tendencia_m15}</span></td>
-            <td><span class="event-label">${ultimo_evento_m15}</span></td>
+            <td><span class="trend-badge">${tendencia_h1 || '--'}</span></td>
+            <td><span class="trend-badge">${tendencia_m15 || '--'}</span></td>
+            <td><span class="event-label">${ultimo_evento_m15 || '--'}</span></td>
             <td>${zonaCell}</td>
             <td>${scoreBadge}</td>
-            <td><span class="indicator-badge">${ob}</span></td>
-            <td><span class="indicator-badge">${fvg}</span></td>
-            <td><span class="indicator-badge">${barrida}</span></td>
+            <td><span class="indicator-badge">${ob || '--'}</span></td>
+            <td><span class="indicator-badge">${fvg || '--'}</span></td>
+            <td><span class="indicator-badge">${barrida || '--'}</span></td>
+            ${extraH1M15Cols}
             <td>${estadoBadge}</td>
             <td><span class="price-value">${priceStr}</span></td>
             <td><span class="time-value">${timeStr}</span></td>
@@ -207,9 +374,17 @@ function createTableRow(snapshot) {
     `;
 }
 
-/**
- * Format zona madre M15 as ENTRADA / STOPLOSS with per-line copy buttons
- */
+// ============================================================
+// BADGES / FORMATTERS
+// ============================================================
+
+function formatEstrategiaBadge(estrategia) {
+    if (estrategia === 'm15pro') {
+        return '<span class="estrategia-badge estrategia-m15pro">M15 PRO</span>';
+    }
+    return '<span class="estrategia-badge estrategia-h1m15">H1+M15 PRO</span>';
+}
+
 function formatZonaMadre(zona, entrada, stoploss, symbolShort) {
     const hasZona = zona && (zona.desde !== 0 || zona.hasta !== 0);
     const hasEntrada = entrada !== null && entrada !== undefined && entrada !== 0;
@@ -257,9 +432,6 @@ function escapeHtmlAttr(value) {
         .replace(/>/g, '&gt;');
 }
 
-/**
- * Copy a single zone value to clipboard with visual feedback
- */
 function copyZoneValue(btn) {
     const text = btn.dataset.value || '--';
     const handleSuccess = () => {
@@ -271,21 +443,17 @@ function copyZoneValue(btn) {
             btn.classList.remove('copy-zona-btn--copiado');
         }, 1500);
     };
-
     const handleError = (err) => {
         console.error('Error copiando al portapapeles:', err);
         const original = btn.textContent;
         btn.textContent = '!';
-        setTimeout(() => {
-            btn.textContent = original;
-        }, 1500);
+        setTimeout(() => { btn.textContent = original; }, 1500);
     };
 
     if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
         navigator.clipboard.writeText(text).then(handleSuccess).catch(handleError);
         return;
     }
-
     try {
         const textArea = document.createElement('textarea');
         textArea.value = text;
@@ -296,198 +464,86 @@ function copyZoneValue(btn) {
         textArea.select();
         const copied = document.execCommand('copy');
         document.body.removeChild(textArea);
-        if (copied) {
-            handleSuccess();
-        } else {
-            handleError(new Error('document.execCommand(copy) returned false'));
-        }
+        if (copied) handleSuccess();
+        else handleError(new Error('execCommand(copy) returned false'));
     } catch (err) {
         handleError(err);
     }
 }
 
-/**
- * @deprecated Use formatZonaMadre instead
- */
-function formatZone(zona) {
-    if (!zona || zona.desde === 0 || zona.hasta === 0) {
-        return '--';
-    }
-    return `${zona.desde.toFixed(2)} - ${zona.hasta.toFixed(2)}`;
-}
-
-/**
- * Format estado badge for the live dashboard.
- * Only operational states are expected here (SL/TP are filtered upstream).
- */
 function formatEstadoBadge(estado) {
-    // Normalize estado - handle both 'SIN SETUP' and 'SIN_SETUP'
     const estadoNormalized = estado ? estado.toUpperCase().replace(/ /g, '_') : 'SIN_SETUP';
-    
-    // Map all possible estados to badges
     switch (estadoNormalized) {
-        case 'ACTIVA':
-            return '<span class="status-badge status-activa">✓ ACTIVA</span>';
-        
-        case 'ESPERANDO_ENTRADA':
-            return '<span class="status-badge status-esperando">⏳ ESPERANDO ENTRADA</span>';
-        
-        case 'LLEGANDO_A_ZONA':
-            return '<span class="status-badge status-llegando">↓ LLEGANDO A ZONA</span>';
-        
-        case 'EN_ZONA':
-            return '<span class="status-badge status-en-zona">🎯 EN ZONA</span>';
-        
-        case 'PROFIT':
-            return '<span class="status-badge status-profit">💰 PROFIT</span>';
-        
-        case 'TP':
-            return '<span class="status-badge status-tp">✅ TP</span>';
-        
-        case 'SL':
-            return '<span class="status-badge status-sl">❌ SL</span>';
-        
-        case 'PAUSADA':
-            return '<span class="status-badge status-pausada">⏸ PAUSADA</span>';
-        
-        case 'DESCARTADA':
-            return '<span class="status-badge status-descartada">🗑 DESCARTADA</span>';
-        
+        case 'ACTIVA':             return '<span class="status-badge status-activa">✓ ACTIVA</span>';
+        case 'ESPERANDO_ENTRADA':  return '<span class="status-badge status-esperando">⏳ ESPERANDO ENTRADA</span>';
+        case 'LLEGANDO_A_ZONA':    return '<span class="status-badge status-llegando">↓ LLEGANDO A ZONA</span>';
+        case 'EN_ZONA':            return '<span class="status-badge status-en-zona">🎯 EN ZONA</span>';
+        case 'PROFIT':             return '<span class="status-badge status-profit">💰 PROFIT</span>';
+        case 'TP':                 return '<span class="status-badge status-tp">✅ TP</span>';
+        case 'SL':                 return '<span class="status-badge status-sl">❌ SL</span>';
+        case 'PAUSADA':            return '<span class="status-badge status-pausada">⏸ PAUSADA</span>';
+        case 'DESCARTADA':         return '<span class="status-badge status-descartada">🗑 DESCARTADA</span>';
         case 'SIN_SETUP':
         case 'SIN SETUP':
-        default:
-            return '<span class="status-badge status-sin-setup">○ SIN SETUP</span>';
+        default:                   return '<span class="status-badge status-sin-setup">○ SIN SETUP</span>';
     }
 }
 
-/**
- * Format score badge
- */
 function formatScoreBadge(score) {
     let badgeClass = 'score-badge';
-    if (score >= 7) {
-        badgeClass += ' score-high';
-    } else if (score >= 4) {
-        badgeClass += ' score-medium';
-    } else {
-        badgeClass += ' score-low';
-    }
-    return `<span class="${badgeClass}">${score}</span>`;
+    if (score >= 7)      badgeClass += ' score-high';
+    else if (score >= 4) badgeClass += ' score-medium';
+    else                 badgeClass += ' score-low';
+    return `<span class="${badgeClass}">${score ?? '--'}</span>`;
 }
 
-/**
- * Format price value
- */
 function formatPrice(price) {
     if (price === null || price === undefined) return '--';
     return price.toFixed(2);
 }
 
-/**
- * Format timestamp
- */
 function formatTime(isoString) {
     try {
         const date = new Date(isoString);
-        return date.toLocaleTimeString('es-ES', {
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit'
-        });
-    } catch (e) {
-        return '--';
-    }
+        return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    } catch (e) { return '--'; }
 }
 
-/**
- * Update connection status indicator
- */
+// ============================================================
+// CONNECTION / TIMESTAMPS
+// ============================================================
+
 function updateConnectionStatus(connected) {
     const statusDot = document.getElementById('statusDot');
     const connectionText = document.getElementById('connectionText');
-    
     if (statusDot) {
-        if (connected) {
-            statusDot.classList.remove('disconnected');
-        } else {
-            statusDot.classList.add('disconnected');
-        }
+        if (connected) statusDot.classList.remove('disconnected');
+        else statusDot.classList.add('disconnected');
     }
-    
     if (connectionText) {
-        connectionText.textContent = connected 
-            ? 'MT5: Conectado' 
-            : 'MT5: Desconectado';
+        connectionText.textContent = connected ? 'MT5: Conectado' : 'MT5: Desconectado';
     }
 }
 
-/**
- * Update last update timestamp
- */
 function updateLastUpdateTime() {
     const lastUpdate = document.getElementById('lastUpdate');
     if (lastUpdate) {
         const now = new Date();
-        const timeStr = now.toLocaleTimeString('es-ES', {
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit'
-        });
-        lastUpdate.textContent = `Última actualización: ${timeStr}`;
+        lastUpdate.textContent = `Última actualización: ${now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
     }
 }
 
-/**
- * Show error message
- */
-function showError(message) {
-    console.error('Error:', message);
-    // Could add a toast notification here in the future
-}
+// ============================================================
+// BOOT
+// ============================================================
 
-/**
- * Start auto-refresh
- */
-function startAutoRefresh() {
-    // Clear any existing interval
-    if (refreshIntervalId) {
-        clearInterval(refreshIntervalId);
-    }
-    
-    // Set new interval with error handling
-    refreshIntervalId = setInterval(async () => {
-        try {
-            await loadDashboardData();
-        } catch (error) {
-            console.error('Auto-refresh error:', error);
-            // Continue interval even on error
-        }
-    }, AUTO_REFRESH_INTERVAL);
-    
-    console.log(`Auto-refresh started (every ${AUTO_REFRESH_INTERVAL / 1000}s)`);
-}
-
-/**
- * Stop auto-refresh
- */
-function stopAutoRefresh() {
-    if (refreshIntervalId) {
-        clearInterval(refreshIntervalId);
-        refreshIntervalId = null;
-        console.log('🛑 Auto-refresh stopped');
-    }
-}
-
-// Initialize when DOM is ready
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initDashboard);
 } else {
     initDashboard();
 }
 
-// Cleanup on page unload
-window.addEventListener('beforeunload', () => {
-    stopAutoRefresh();
-});
+window.addEventListener('beforeunload', stopAllAutoRefresh);
 
-console.log('✅ Dashboard script loaded');
+console.log('✅ FASE3B Dashboard script loaded');
+

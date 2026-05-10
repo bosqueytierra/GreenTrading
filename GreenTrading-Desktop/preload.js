@@ -43,6 +43,14 @@ contextBridge.exposeInMainWorld('api', {
    */
   getSmcM15ProSnapshot: () => {
     return ipcRenderer.invoke('get-smc-m15-pro-snapshot');
+  },
+
+  /**
+   * Get SMC H1+M15 PRO snapshot (FASE 3B)
+   * @returns {Promise<Object>} Array of SMC H1+M15 analysis snapshots or error
+   */
+  getSmcH1M15ProSnapshot: () => {
+    return ipcRenderer.invoke('get-smc-h1m15-pro-snapshot');
   }
 });
 

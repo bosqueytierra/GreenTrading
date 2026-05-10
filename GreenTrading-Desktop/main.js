@@ -16,6 +16,8 @@ let pythonProcess = null;
 
 // Concurrency guard for SMC snapshot fetches
 let snapshotFetchInProgress = false;
+// Independent concurrency guard for H1+M15 PRO
+let snapshotH1M15FetchInProgress = false;
 
 // Timeout for snapshot fetch (15 seconds - enough for 10 symbols + Supabase)
 const SNAPSHOT_FETCH_TIMEOUT_MS = 15000;
@@ -375,6 +377,44 @@ ipcMain.handle('get-smc-m15-pro-snapshot', async () => {
   } finally {
     clearTimeout(timeoutId);
     snapshotFetchInProgress = false;
+  }
+});
+
+/**
+ * IPC Handler: Get SMC H1+M15 PRO snapshot (FASE 3B)
+ */
+ipcMain.handle('get-smc-h1m15-pro-snapshot', async () => {
+  if (snapshotH1M15FetchInProgress) {
+    console.log('H1M15 SNAPSHOT FETCH SKIPPED_ALREADY_RUNNING (main process)');
+    return { success: false, error: 'SNAPSHOT_ALREADY_RUNNING' };
+  }
+
+  snapshotH1M15FetchInProgress = true;
+  console.log('H1M15 SNAPSHOT FETCH START (main process)');
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), SNAPSHOT_FETCH_TIMEOUT_MS);
+
+  try {
+    const url = `http://${PYTHON_BACKEND.host}:${PYTHON_BACKEND.port}/api/smc/h1-m15-pro/snapshot`;
+
+    const response = await fetch(url, { signal: controller.signal });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    clearTimeout(timeoutId);
+    console.log(`H1M15 SNAPSHOT FETCH OK (main process) - ${Array.isArray(data) ? data.length : '?'} rows`);
+    return { success: true, data };
+  } catch (error) {
+    const reason = error.name === 'AbortError' ? 'TIMEOUT' : error.message;
+    console.error(`H1M15 SNAPSHOT FETCH ERROR (main process): ${reason}`);
+    return { success: false, error: reason };
+  } finally {
+    clearTimeout(timeoutId);
+    snapshotH1M15FetchInProgress = false;
   }
 });
 
