@@ -48,6 +48,17 @@ except ImportError:
     analyze_symbol_smc_h1m15 = None
     create_sin_setup_h1m15_response = None
 
+# Import SMC MICRO IMPULSO service
+try:
+    from smc_micro_impulso_service import (
+        analyze_symbol_smc_micro_impulso,
+        create_sin_setup_micro_impulso_response,
+    )
+except ImportError:
+    print("WARNING: SMC MICRO IMPULSO service not available")
+    analyze_symbol_smc_micro_impulso = None
+    create_sin_setup_micro_impulso_response = None
+
 # Import Supabase service
 try:
     import supabase_service
@@ -606,6 +617,99 @@ async def get_smc_h1_m15_pro_snapshot():
 
     total_ms = int((time.time() - snapshot_start) * 1000)
     print(f"H1M15 SNAPSHOT TOTAL: {total_ms}ms, {len(snapshots)} rows")
+    return snapshots
+
+
+@app.get("/api/smc/micro-impulso/snapshot")
+async def get_smc_micro_impulso_snapshot():
+    """
+    FASE 4: Get SMC MICRO IMPULSO snapshot for all dashboard symbols.
+
+    Estrategia agresiva 100% basada en micro estructura M1:
+    - M1: núcleo operativo (swings, BOS/CHOCH, barrida, OB, FVG, zona, desplazamiento).
+    - M15: solo informativo (tendencia_m15), NO bloquea setups.
+    - H1: NO se usa.
+    - TP ratio 1:1.
+    - strategy_id = SMC_MICRO_IMPULSO (completamente aislado).
+
+    Returns:
+        list: Array de SMC MICRO IMPULSO snapshots — campos adicionales:
+              micro_bos_choch, micro_ob, micro_fvg, micro_barrida,
+              desplazamiento_valido, tp_ratio.
+    """
+    print("MICRO_IMPULSO SNAPSHOT ENDPOINT HIT")
+
+    if not mt5_initialized:
+        if not init_mt5():
+            raise HTTPException(
+                status_code=503,
+                detail="MT5 not connected. Please ensure MT5 is running."
+            )
+
+    def _micro_impulso_minimal_snapshot(symbol, price=None):
+        """Respuesta mínima SIN SETUP cuando el servicio no está disponible."""
+        return {
+            "symbol": symbol,
+            "price": price,
+            "estado": "SIN SETUP",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    if analyze_symbol_smc_micro_impulso is None or create_sin_setup_micro_impulso_response is None:
+        print("WARNING: SMC MICRO IMPULSO service not available, returning placeholder data")
+        snapshots = []
+        for symbol in DASHBOARD_SYMBOLS:
+            m1_candle = read_candle_data(symbol, 'M1')
+            price = m1_candle.get('close') if m1_candle else None
+            snapshots.append(
+                create_sin_setup_micro_impulso_response(symbol, price)
+                if create_sin_setup_micro_impulso_response
+                else _micro_impulso_minimal_snapshot(symbol, price)
+            )
+        return snapshots
+
+    snapshots = []
+    snapshot_start = time.time()
+
+    try:
+        for symbol in DASHBOARD_SYMBOLS:
+            symbol_start = time.time()
+            print(f"MICRO_IMPULSO SYMBOL START: {symbol}")
+            try:
+                # M1 es el núcleo operativo; M15 es informativo opcional
+                df_m1 = read_candles_dataframe(symbol, 'M1', count=300)
+                df_m15 = read_candles_dataframe(symbol, 'M15', count=100)
+
+                smc_result = analyze_symbol_smc_micro_impulso(symbol, df_m1, df_m15)
+
+                # Asegurar precio actual desde M1 si falta
+                if smc_result.get('price') is None:
+                    m1_candle = read_candle_data(symbol, 'M1')
+                    smc_result['price'] = m1_candle.get('close') if m1_candle else None
+
+                snapshots.append(smc_result)
+                symbol_ms = int((time.time() - symbol_start) * 1000)
+                print(f"MICRO_IMPULSO SYMBOL DONE: {symbol} {symbol_ms}ms")
+
+            except Exception as e:
+                symbol_ms = int((time.time() - symbol_start) * 1000)
+                print(f"MICRO_IMPULSO SYMBOL ERROR: {symbol} {symbol_ms}ms - {e}")
+                traceback.print_exc()
+                try:
+                    m1_candle = read_candle_data(symbol, 'M1')
+                    price = m1_candle.get('close') if m1_candle else None
+                    snapshots.append(create_sin_setup_micro_impulso_response(symbol, price))
+                except Exception as fallback_e:
+                    print(f"MICRO_IMPULSO Error creating fallback for {symbol}: {fallback_e}")
+                    snapshots.append(_micro_impulso_minimal_snapshot(symbol))
+    except Exception as outer_e:
+        print(f"MICRO_IMPULSO CRITICAL ERROR in snapshot loop: {outer_e}")
+        traceback.print_exc()
+        if not snapshots:
+            return []
+
+    total_ms = int((time.time() - snapshot_start) * 1000)
+    print(f"MICRO_IMPULSO SNAPSHOT TOTAL: {total_ms}ms, {len(snapshots)} rows")
     return snapshots
 
 
