@@ -212,9 +212,14 @@ def _build_result_tracked(
         "zona_size": round(zona_size, 4),
         "entrada": round(entrada, 2),
         "stoploss": round(stoploss, 2),
+        # tp_1_1 mantiene compatibilidad con el schema de Supabase (columna compartida).
+        # Para esta estrategia, tp_1_1 almacena el TP operativo 1:2 (no 1:1).
+        # Usar tp_operativo o tp para lógica interna; tp_ratio indica el ratio real.
         "tp": round(tp, 2) if tp is not None else None,
+        "tp_1_1": round(tp, 2) if tp is not None else None,  # TP operativo 1:2 — nombre heredado de schema Supabase
+        "tp_operativo": round(tp, 2) if tp is not None else None,  # Alias explícito
+        "tp_ratio": 2,  # Ratio real de esta estrategia: 1:2 (no 1:1)
         "sl": round(stoploss, 2),
-        "tp_1_1": round(tp, 2) if tp is not None else None,
         "score": score,
         "ob": ob,
         "fvg": fvg,
@@ -316,7 +321,9 @@ def sync_setup_filtrado_m15(result: dict) -> None:
         "ultimo_evento_m15": result.get("micro_bos_choch", "--"),
         "entrada": critical_data["entrada"],
         "stoploss": critical_data["stoploss"],
-        "tp_1_1": critical_data["tp_1_1"],
+        # tp_1_1 es el nombre de columna en Supabase (schema compartido).
+        # Para esta estrategia almacena el TP operativo con ratio 1:2 (no 1:1).
+        "tp_1_1": critical_data["tp_1_1"],  # TP operativo 1:2 — compatibilidad schema
         "score": critical_data["score"],
         "ob": result.get("ob", "NO") in TRUTHY_VALUES,
         "fvg": result.get("fvg", "NO") in TRUTHY_VALUES,
@@ -366,7 +373,7 @@ def sync_setup_filtrado_m15(result: dict) -> None:
         print(f"  estrategia: {STRATEGY_ID}")
         print(f"  entrada: {critical_data['entrada']}")
         print(f"  stoploss: {critical_data['stoploss']}")
-        print(f"  tp_1_1: {critical_data['tp_1_1']}")
+        print(f"  tp operativo (1:2): {critical_data['tp_1_1']}")  # tp_1_1 = TP 1:2 por compat schema
         print(f"  found_closed: {bool(closed_setup)}")
         print(f"  decision: {decision}")
 
