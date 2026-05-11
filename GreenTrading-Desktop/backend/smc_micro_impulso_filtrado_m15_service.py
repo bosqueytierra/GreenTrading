@@ -232,7 +232,7 @@ def sync_setup_filtrado_m15(result: dict) -> None:
         else:
             print(
                 f"  FILTRADO_M15 SYNC: existing PAUSADA id={existing.get('id')} "
-                f"-- ignorando, se creara nuevo registro para zona fresca"
+                f"-- ignorando, se creará nuevo registro para zona fresca"
             )
             existing = None
 
