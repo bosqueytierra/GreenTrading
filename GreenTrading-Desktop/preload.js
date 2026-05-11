@@ -51,6 +51,14 @@ contextBridge.exposeInMainWorld('api', {
    */
   getSmcH1M15ProSnapshot: () => {
     return ipcRenderer.invoke('get-smc-h1m15-pro-snapshot');
+  },
+
+  /**
+   * Get SMC MICRO IMPULSO snapshot (FASE 4)
+   * @returns {Promise<Object>} Array of SMC MICRO IMPULSO analysis snapshots or error
+   */
+  getSmcMicroImpulsoSnapshot: () => {
+    return ipcRenderer.invoke('get-smc-micro-impulso-snapshot');
   }
 });
 
