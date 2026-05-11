@@ -88,7 +88,7 @@ def _derivar_zona(entrada: float, stoploss: float):
     """
     if entrada == stoploss:
         raise ValueError(
-            f"_derivar_zona: entrada == stoploss ({entrada}) — zona de tamaño cero es inválida"
+            f"_derivar_zona: entrada == stoploss ({entrada}) -- zona de tamano cero es invalida"
         )
     if entrada > stoploss:
         return stoploss, entrada, "ALCISTA"
@@ -126,7 +126,7 @@ def _has_relevant_changes_filtrado_m15(symbol: str, new_data: dict) -> bool:
     if old_price > 0:
         pct = abs(new_price - old_price) / old_price * 100
         if pct > PRICE_CHANGE_SYNC_THRESHOLD_PCT:
-            print(f"FILTRADO_M15 SYNC TRIGGER: {symbol} - precio cambió {pct:.2f}%")
+            print(f"FILTRADO_M15 SYNC TRIGGER: {symbol} - precio cambio {pct:.2f}%")
             _setup_cache_micro_impulso_filtrado_m15[symbol] = new_data
             return True
 
@@ -264,7 +264,7 @@ def _update_estado_supabase_filtrado_m15(
         "estado_dashboard": estado_nuevo,
         "precio_actual": precio_actual,
     }
-    print(f"  FILTRADO_M15: Actualizando id={setup_id} → {estado_nuevo}")
+    print(f"  FILTRADO_M15: Actualizando id={setup_id} -> {estado_nuevo}")
     supabase_service.update_setup(setup_id, updates)
 
 
@@ -287,11 +287,11 @@ def sync_setup_filtrado_m15(result: dict) -> None:
 
     estado_actual = result.get("estado", "")
     if estado_actual in ("SIN SETUP", "SIN_SETUP", "NO CUMPLE DIRECCIÓN M15"):
-        print(f"  FILTRADO_M15 SYNC: Skip {result.get('symbol')} — {estado_actual}")
+        print(f"  FILTRADO_M15 SYNC: Skip {result.get('symbol')} -- {estado_actual}")
         return
 
     if not result.get("entrada") or not result.get("stoploss"):
-        print(f"  FILTRADO_M15 SYNC: Skip {result.get('symbol')} — falta entrada o stoploss")
+        print(f"  FILTRADO_M15 SYNC: Skip {result.get('symbol')} -- falta entrada o stoploss")
         return
 
     symbol = result["symbol"]
@@ -310,7 +310,7 @@ def sync_setup_filtrado_m15(result: dict) -> None:
     }
 
     if not _has_relevant_changes_filtrado_m15(symbol, critical_data):
-        print(f"  FILTRADO_M15 SYNC: Skip {symbol} — sin cambios relevantes")
+        print(f"  FILTRADO_M15 SYNC: Skip {symbol} -- sin cambios relevantes")
         return
 
     print(f"  FILTRADO_M15 SYNC: Preparando sync para {symbol}")
@@ -354,7 +354,7 @@ def sync_setup_filtrado_m15(result: dict) -> None:
         if res:
             print(f"FILTRADO_M15 SYNC OK: Updated {symbol}")
         else:
-            print(f"FILTRADO_M15 SYNC WARN: update devolvió None para {symbol}")
+            print(f"FILTRADO_M15 SYNC WARN: update devolvio None para {symbol}")
     else:
         # Guard: no recrear zonas ya cerradas con los mismos niveles
         closed_setup = None
@@ -399,14 +399,14 @@ def sync_setup_filtrado_m15(result: dict) -> None:
             }
             if symbol in _tracking_cache_filtrado_m15:
                 del _tracking_cache_filtrado_m15[symbol]
-            print(f"  FILTRADO_M15 SYNC: SKIP — zona ya cerrada (TP/SL)")
+            print(f"  FILTRADO_M15 SYNC: SKIP -- zona ya cerrada (TP/SL)")
             return
 
         res = supabase_service.create_setup(setup_data)
         if res:
             print(f"FILTRADO_M15 SYNC OK: Created setup {symbol} id={res.get('id')}")
         else:
-            print(f"FILTRADO_M15 SYNC WARN: create_setup devolvió None para {symbol}")
+            print(f"FILTRADO_M15 SYNC WARN: create_setup devolvio None para {symbol}")
 
 
 # =============================================================================
@@ -450,7 +450,7 @@ def _modo_seguimiento_filtrado_m15(
         try:
             existing = supabase_service.get_active_setup_by_symbol(STRATEGY_ID, symbol)
         except Exception as exc:
-            print(f"  FILTRADO_M15 TRACKING: Error querying Supabase — {exc}")
+            print(f"  FILTRADO_M15 TRACKING: Error querying Supabase -- {exc}")
             existing = None
 
     # ── Fallback: usar tracking en memoria si Supabase no disponible ──────────
@@ -462,7 +462,7 @@ def _modo_seguimiento_filtrado_m15(
 
     # ── Sin setup activo → usar fresh directamente ────────────────────────────
     if not existing:
-        print(f"  FILTRADO_M15 TRACKING: Sin setup activo → resultado fresco")
+        print(f"  FILTRADO_M15 TRACKING: Sin setup activo -> resultado fresco")
         if fresh_estado == "ACTIVA" and fresh_result.get("entrada") is not None:
             _tracking_cache_filtrado_m15[symbol] = {
                 "estado": "ACTIVA",
@@ -484,7 +484,7 @@ def _modo_seguimiento_filtrado_m15(
     # ── PAUSADA se trata como "sin tracking activo" ───────────────────────────
     # La zona fue pausada porque llegó una zona nueva; fresh_result toma control.
     if estado_previo == "PAUSADA":
-        print(f"  FILTRADO_M15 TRACKING: Estado PAUSADA → fresh_result toma control")
+        print(f"  FILTRADO_M15 TRACKING: Estado PAUSADA -> fresh_result toma control")
         if fresh_estado == "ACTIVA" and fresh_result.get("entrada") is not None:
             _tracking_cache_filtrado_m15[symbol] = {
                 "estado": "ACTIVA",
@@ -507,11 +507,11 @@ def _modo_seguimiento_filtrado_m15(
 
     # Validar datos mínimos del setup guardado
     if not entrada_g or not stoploss_g or not tp_g:
-        print(f"  FILTRADO_M15 TRACKING: Setup guardado incompleto → fresco")
+        print(f"  FILTRADO_M15 TRACKING: Setup guardado incompleto -> fresco")
         return fresh_result
 
     if precio_actual is None:
-        print(f"  FILTRADO_M15 TRACKING: Sin precio_actual → fresco")
+        print(f"  FILTRADO_M15 TRACKING: Sin precio_actual -> fresco")
         return fresh_result
 
     zona_desde_g, zona_hasta_g, direccion_g = _derivar_zona(entrada_g, stoploss_g)
@@ -528,7 +528,7 @@ def _modo_seguimiento_filtrado_m15(
     # CASO A: EN_ZONA o PROFIT — operación activa — NO reemplazar con zona nueva
     # ─────────────────────────────────────────────────────────────────────────
     if estado_previo in IN_TRADE_STATES:
-        print(f"  FILTRADO_M15 TRACKING: Trade activo ({estado_previo}) — aplicando SM")
+        print(f"  FILTRADO_M15 TRACKING: Trade activo ({estado_previo}) -- aplicando SM")
 
         estado_dashboard = calcular_estado_dashboard(
             precio_actual=precio_actual,
@@ -552,7 +552,7 @@ def _modo_seguimiento_filtrado_m15(
             zona_hasta=zona_hasta_g,
         )
 
-        print(f"  FILTRADO_M15 TRACKING: {estado_previo} → {estado_nuevo} | {motivo}")
+        print(f"  FILTRADO_M15 TRACKING: {estado_previo} -> {estado_nuevo} | {motivo}")
 
         if estado_nuevo != estado_previo:
             _update_estado_supabase_filtrado_m15(existing.get("id"), estado_nuevo, precio_actual)
@@ -583,7 +583,7 @@ def _modo_seguimiento_filtrado_m15(
 
             if is_different:
                 # Nueva zona diferente → PAUSAR antigua, activar nueva
-                print(f"  FILTRADO_M15 TRACKING: Nueva zona diferente → PAUSANDO {symbol}")
+                print(f"  FILTRADO_M15 TRACKING: Nueva zona diferente -> PAUSANDO {symbol}")
                 _update_estado_supabase_filtrado_m15(existing.get("id"), "PAUSADA", precio_actual)
                 # Limpiar cache para que fresh_result arranque desde cero
                 if symbol in _tracking_cache_filtrado_m15:
@@ -627,7 +627,7 @@ def _modo_seguimiento_filtrado_m15(
             zona_hasta=zona_hasta_g,
         )
 
-        print(f"  FILTRADO_M15 TRACKING: {estado_previo} → {estado_nuevo} | {motivo}")
+        print(f"  FILTRADO_M15 TRACKING: {estado_previo} -> {estado_nuevo} | {motivo}")
 
         if estado_nuevo != estado_previo:
             _update_estado_supabase_filtrado_m15(existing.get("id"), estado_nuevo, precio_actual)
@@ -638,7 +638,7 @@ def _modo_seguimiento_filtrado_m15(
         return _build_result_tracked(symbol, existing, fresh_result, estado_nuevo, motivo)
 
     # ── Fallback: estado no reconocido → usar fresco ──────────────────────────
-    print(f"  FILTRADO_M15 TRACKING: Estado no reconocido ({estado_previo}) → fresco")
+    print(f"  FILTRADO_M15 TRACKING: Estado no reconocido ({estado_previo}) -> fresco")
     return fresh_result
 
 
