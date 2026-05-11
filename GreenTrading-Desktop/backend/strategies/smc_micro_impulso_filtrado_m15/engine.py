@@ -3,25 +3,21 @@
 """
 SMC MICRO IMPULSO FILTRADO M15 strategy engine.
 
-Parte 2: implementación completa del motor lógico.
-
 Estrategia derivada de SMC MICRO IMPULSO con filtro direccional M15 obligatorio.
 
 Diferencias clave vs SMC_MICRO_IMPULSO:
   - M15: filtro direccional OBLIGATORIO (bloquea si no alinea con índice).
-  - M1: núcleo operativo completo (micro BOS/CHOCH, barrida, OB, FVG, zona).
+  - M1: núcleo operativo completo — reutiliza íntegramente crear_zona_micro_impulso
+        (micro BOS/CHOCH, barrida, OB+FVG unión, zona, score idénticos).
   - H1: NO se usa.
-  - Zona: SIEMPRE desde micro OB M1 (no zona madre M15, no OB+FVG unión).
-  - TP ratio 1:2 (sl=zona_desde / tp=zona_hasta+(size*2) para ALCISTA).
+  - TP ratio 1:2 (en lugar de 1:1 de MICRO IMPULSO normal).
   - strategy_id = "SMC_MICRO_IMPULSO_FILTRADO_M15" — completamente aislado.
 
-Estados implementados (Parte 2):
-  - NO CUMPLE DIRECCIÓN M15
-  - SIN SETUP
-  - ACTIVA
-
-Estados pendientes (Parte 3):
-  - EN_ZONA, PROFIT, TP, SL, PAUSADA, DESCARTADA.
+Estados:
+  - NO CUMPLE DIRECCIÓN M15 (filtro M15 no alinea)
+  - SIN SETUP                (sin zona micro válida)
+  - ACTIVA                   (zona válida encontrada)
+  - EN_ZONA, PROFIT, TP, SL, PAUSADA, DESCARTADA (máquina de estados en service)
 """
 
 import traceback
@@ -29,15 +25,19 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-# Pure helpers reutilizados de smc_m15_pro (funciones sin estado ni efectos secundarios).
+# Helpers de smc_m15_pro usados para el filtro direccional M15.
 from strategies.smc_m15_pro.engine import (
     direccion_operativa_por_indice,
-    validar_zona_operativa,
     detectar_swings,
     detectar_estructura,
     detectar_fvg,
-    buscar_order_block,
-    detectar_barrida_previa,
+)
+
+# Lógica de zona delegada íntegramente al engine de MICRO IMPULSO normal,
+# garantizando zonas idénticas (OB+FVG unión, mismos parámetros M1).
+from strategies.smc_micro_impulso.engine import (
+    detectar_swings_m1,
+    crear_zona_micro_impulso,
 )
 
 STRATEGY_ID = "SMC_MICRO_IMPULSO_FILTRADO_M15"
@@ -47,13 +47,7 @@ STRATEGY_KEY = "microimpulso_filtrado_m15"
 # Configuración M15 (filtro direccional)
 SWING_LOOKBACK_M15 = 3
 
-# Configuración M1 (núcleo operativo)
-SWING_LOOKBACK_M1 = 2          # micro swings con ventana reducida
-BARRIDA_LOOKBACK_M1 = 20       # velas hacia atrás para buscar barrida local
-DESPLAZAMIENTO_VENTANA = 5     # velas después del evento para validar impulso
-DESPLAZAMIENTO_MIN_VELAS = 1   # min velas en dirección correcta (estrategia agresiva)
-
-# TP 1:2
+# TP 1:2 (única diferencia operativa vs MICRO IMPULSO normal que usa 1:1)
 TP_RATIO = 2.0
 
 
@@ -156,64 +150,6 @@ def _calcular_direccion_m15(df_m15: pd.DataFrame) -> str:
         return "--"
 
 
-def _detectar_desplazamiento_m1(
-    df_m1: pd.DataFrame,
-    evento: dict,
-    ventana: int = DESPLAZAMIENTO_VENTANA,
-    min_velas: int = DESPLAZAMIENTO_MIN_VELAS,
-) -> dict:
-    """
-    Valida desplazamiento impulsivo fuerte después del evento estructural M1.
-
-    Lógica OR agresiva: válido si rango > 0 Y (velas_favor >= min_velas O movimiento neto correcto).
-
-    Args:
-        df_m1: DataFrame de velas M1.
-        evento: Evento estructural M1 con campos 'index' y 'evento'.
-        ventana: Número de velas a analizar después del evento.
-        min_velas: Mínimo de velas en dirección correcta para validar.
-
-    Returns:
-        dict con valido (bool), velas_favor (int), rango (float).
-    """
-    idx = evento.get("index", -1)
-    direccion = "ALCISTA" if "ALCISTA" in evento.get("evento", "") else "BAJISTA"
-
-    inicio = idx + 1
-    fin = min(len(df_m1), inicio + ventana)
-
-    if inicio >= len(df_m1) or fin <= inicio:
-        return {"valido": False, "velas_favor": 0, "rango": 0.0}
-
-    tramo = df_m1.iloc[inicio:fin]
-
-    if direccion == "ALCISTA":
-        mask = tramo["close"] > tramo["open"]
-    else:
-        mask = tramo["close"] < tramo["open"]
-
-    velas_favor = int(mask.sum())
-    rango = float(tramo["high"].max() - tramo["low"].min()) if len(tramo) > 0 else 0.0
-
-    close_evento = float(df_m1.iloc[idx]["close"]) if idx < len(df_m1) else None
-    close_final = float(tramo.iloc[-1]["close"]) if len(tramo) > 0 else None
-    net_ok = False
-    if close_evento is not None and close_final is not None:
-        if direccion == "ALCISTA":
-            net_ok = close_final > close_evento
-        else:
-            net_ok = close_final < close_evento
-
-    valido = rango > 0 and (velas_favor >= min_velas or net_ok)
-
-    print(f"\nDESPLAZAMIENTO_FILTRADO_M15:")
-    print(f"  evento_index: {idx}, direccion: {direccion}")
-    print(f"  velas_analizadas: {len(tramo)}, velas_favor: {velas_favor}, min_velas: {min_velas}")
-    print(f"  rango: {round(rango, 4)}, net_ok: {net_ok}, valido: {valido}")
-
-    return {"valido": valido, "velas_favor": velas_favor, "rango": rango}
-
-
 def _calcular_tp_sl_1_2(
     zona_desde: float,
     zona_hasta: float,
@@ -277,26 +213,22 @@ def analyze_symbol_filtrado_m15(
     2. Obtener precio actual desde M1.
     3. Detectar dirección del índice (Boom=ALCISTA, Crash=BAJISTA).
     4. Calcular dirección estructural M15.
-    5. Validar filtro M15: si no alinea → NO CUMPLE DIRECCIÓN M15.
-    6. Detectar estructura M1 (micro BOS/CHOCH).
-    7. Filtrar eventos M1 alineados con dirección del índice.
-    8. Para cada candidato (último → primero):
-       a. Desplazamiento impulsivo.
-       b. Micro OB M1.
-       c. Si no hay OB → siguiente candidato.
-       d. Micro FVG M1 (confirmación adicional).
-       e. Barrida local M1.
-       f. Construir zona desde OB.
-       g. Validar zona operativa (lado correcto del precio).
-    9. Calcular score (0–6).
-    10. Verificar condiciones mínimas ACTIVA.
-    11. Calcular TP/SL 1:2 y entrada.
-    12. Retornar payload completo.
+    5. Validar filtro M15 obligatorio: si no alinea → NO CUMPLE DIRECCIÓN M15.
+    6. Detectar estructura M1 (micro BOS/CHOCH, FVGs) — igual que MICRO IMPULSO normal.
+    7. Construir zona vía crear_zona_micro_impulso — MISMA lógica que MICRO IMPULSO normal
+       (OB+FVG unión, mismos parámetros M1, mismo score).
+    8. Calcular TP/SL con ratio 1:2 (única diferencia operativa vs MICRO IMPULSO 1:1).
+    9. Retornar payload completo.
+
+    Garantía: para cualquier símbolo donde M15 cumple, zona_desde / zona_hasta /
+    micro_bos_choch / ob / fvg / barrida / desplazamiento / score son IDÉNTICOS
+    a los que retorna /api/smc/micro-impulso/snapshot.
+    entrada / stoploss se derivan de la misma zona pero con ratio TP 1:2 (vs 1:1).
 
     Args:
         symbol: Nombre del símbolo.
         df_m1: DataFrame de velas M1 (núcleo operativo).
-        df_m15: DataFrame de velas M15 (filtro direccional).
+        df_m15: DataFrame de velas M15 (filtro direccional obligatorio).
 
     Returns:
         dict con snapshot completo de la estrategia.
@@ -380,9 +312,10 @@ def analyze_symbol_filtrado_m15(
 
     # ------------------------------------------------------------------
     # PASO 4: Estructura M1 — micro BOS/CHOCH
+    # Misma lógica que MICRO IMPULSO normal (lookback=2, mismos parámetros).
     # ------------------------------------------------------------------
     try:
-        swings_m1 = detectar_swings(df_m1, lookback=SWING_LOOKBACK_M1)
+        swings_m1 = detectar_swings_m1(df_m1)
         eventos_m1, _ = detectar_estructura(df_m1, swings_m1)
         fvgs_m1 = detectar_fvg(df_m1)
     except Exception as exc:
@@ -397,96 +330,15 @@ def analyze_symbol_filtrado_m15(
 
     print(f"  swings_m1: {len(swings_m1)}, eventos_m1: {len(eventos_m1)}, fvgs_m1: {len(fvgs_m1)}")
 
-    # Filtrar eventos alineados con la dirección del índice
-    eventos_alineados = [
-        ev for ev in eventos_m1
-        if ("ALCISTA" in ev["evento"] and direccion_indice == "ALCISTA")
-        or ("BAJISTA" in ev["evento"] and direccion_indice == "BAJISTA")
-    ]
-
-    if not eventos_alineados:
-        print(f"  SIN_SETUP: no hay micro BOS/CHOCH alineados con {direccion_indice}")
-        return _sin_setup(
-            f"SIN MICRO BOS/CHOCH {direccion_indice} EN M1",
-            direccion_indice=direccion_indice,
-            direccion_m15=direccion_m15,
-            cumple_m15=True,
-        )
-
     # ------------------------------------------------------------------
-    # PASO 5–9: Buscar zona micro desde el último evento hacia atrás
+    # PASO 5–9: Zona micro — MISMA lógica que MICRO IMPULSO normal.
+    # Se delega íntegramente en crear_zona_micro_impulso para garantizar
+    # que zona_desde/zona_hasta/OB/FVG/score son idénticos al snapshot
+    # de /api/smc/micro-impulso/snapshot para este símbolo.
     # ------------------------------------------------------------------
-    zona_encontrada = None
+    zona = crear_zona_micro_impulso(df_m1, eventos_m1, fvgs_m1, symbol, precio_actual)
 
-    for evento in reversed(eventos_alineados):
-        ev_nombre = evento["evento"]
-        ev_idx = evento["index"]
-        direccion_ev = "ALCISTA" if "ALCISTA" in ev_nombre else "BAJISTA"
-
-        print(f"\n  CANDIDATO: {ev_nombre} idx={ev_idx}")
-
-        # PASO 5: desplazamiento impulsivo
-        desp = _detectar_desplazamiento_m1(df_m1, evento)
-        if not desp["valido"]:
-            print(f"    SKIP: desplazamiento invalido")
-            continue
-
-        # PASO 6: micro OB M1 — obligatorio para construir zona
-        ob = buscar_order_block(df_m1, evento)
-        if not ob:
-            print(f"    SKIP: sin micro OB M1")
-            continue
-
-        print(f"    OB: {ob['tipo']} desde={ob['desde']} hasta={ob['hasta']}")
-
-        # PASO 7: micro FVG M1 (confirmacion adicional -- no bloquea)
-        fvg_tipo_esperado = "FVG_ALCISTA" if direccion_ev == "ALCISTA" else "FVG_BAJISTA"
-        fvgs_validos = [
-            f for f in fvgs_m1
-            if f["index"] <= ev_idx and f["tipo"] == fvg_tipo_esperado
-        ]
-        fvg = fvgs_validos[-1] if fvgs_validos else None
-        if fvg:
-            print(f"    FVG: {fvg['tipo']} desde={fvg['desde']} hasta={fvg['hasta']}")
-        else:
-            print(f"    FVG: ninguno (confirmacion adicional -- no bloquea)")
-
-        # PASO 8: barrida local M1 (confirmacion adicional -- no bloquea)
-        barrida = detectar_barrida_previa(df_m1, evento, direccion_ev, lookback=BARRIDA_LOOKBACK_M1)
-        print(f"    barrida: {'SI' if barrida else 'NO'}")
-
-        # PASO 9: zona operativa SIEMPRE desde micro OB M1
-        zona_desde = ob["desde"]
-        zona_hasta = ob["hasta"]
-        zona_size = abs(zona_hasta - zona_desde)
-
-        # Validar que la zona esté en el lado correcto del precio
-        zona_dict = {"zona_desde": zona_desde, "zona_hasta": zona_hasta}
-        es_util, motivo_util, _ = validar_zona_operativa(symbol, zona_dict, precio_actual)
-
-        print(f"    zona: [{zona_desde}, {zona_hasta}] size={round(zona_size, 4)}")
-        print(f"    es_util: {es_util} ({motivo_util})")
-
-        if not es_util:
-            print(f"    SKIP: zona no util (precio no en lado correcto)")
-            continue
-
-        # Zona encontrada
-        zona_encontrada = {
-            "evento": evento,
-            "ob": ob,
-            "fvg": fvg,
-            "barrida": barrida,
-            "desplazamiento": desp,
-            "zona_desde": zona_desde,
-            "zona_hasta": zona_hasta,
-            "zona_size": zona_size,
-            "direccion": direccion_ev,
-        }
-        print(f"    ZONA ACEPTADA")
-        break
-
-    if not zona_encontrada:
+    if not zona:
         print(f"  SIN_SETUP: ningun candidato produjo zona micro valida")
         return _sin_setup(
             "SIN ZONA MICRO VALIDA EN M1",
@@ -496,43 +348,22 @@ def analyze_symbol_filtrado_m15(
         )
 
     # ------------------------------------------------------------------
-    # PASO 10: Score (0–6)
+    # PASO 10: Extraer zona — mismos valores que MICRO IMPULSO normal.
     # ------------------------------------------------------------------
-    score = 0
-    score += 1  # cumple M15 (ya validado)
-    score += 1  # micro BOS/CHOCH alineado (ya validado)
-    if zona_encontrada["barrida"]:
-        score += 1
-    if zona_encontrada["desplazamiento"]["valido"]:
-        score += 1
-    # OB siempre presente aquí (+1)
-    score += 1
-    if zona_encontrada["fvg"]:
-        score += 1
-
-    print(f"\n  SCORE: {score}/6")
+    zona_desde = float(zona["zona_desde"])
+    zona_hasta = float(zona["zona_hasta"])
+    zona_size = abs(zona_hasta - zona_desde)
+    direccion = zona.get("direccion_operativa", zona.get("direccion", direccion_indice))
+    micro_bos_choch = zona["evento"]["evento"]
+    score = zona.get("score", 0)
+    has_ob = zona.get("ob") is not None
+    has_fvg = zona.get("fvg") is not None
+    has_barrida = zona.get("barrida") is not None
+    has_desp = bool(zona.get("desplazamiento", {}).get("valido", False))
 
     # ------------------------------------------------------------------
-    # PASO 11: Verificar condiciones mínimas ACTIVA
-    #   - cumple M15                   ✓ (ya pasó filtro)
-    #   - micro BOS/CHOCH alineado     ✓ (ya pasó filtro)
-    #   - desplazamiento impulsivo     ✓ (ya pasó en zona_encontrada)
-    #   - micro OB válido              ✓ (ya pasó en zona_encontrada)
-    # ------------------------------------------------------------------
-    ev = zona_encontrada["evento"]
-    micro_bos_choch = ev["evento"]
-    zona_desde = zona_encontrada["zona_desde"]
-    zona_hasta = zona_encontrada["zona_hasta"]
-    zona_size = zona_encontrada["zona_size"]
-    direccion = zona_encontrada["direccion"]
-
-    has_ob = True
-    has_fvg = zona_encontrada["fvg"] is not None
-    has_barrida = zona_encontrada["barrida"] is not None
-    has_desp = zona_encontrada["desplazamiento"]["valido"]
-
-    # ------------------------------------------------------------------
-    # PASO 12: TP/SL 1:2 y entrada
+    # PASO 11: TP/SL y entrada.
+    # Misma zona que MICRO IMPULSO normal; solo cambia el ratio TP: 1:2.
     # ------------------------------------------------------------------
     sl, tp = _calcular_tp_sl_1_2(zona_desde, zona_hasta, direccion)
     entrada = _calcular_entrada(zona_desde, zona_hasta, direccion)
@@ -571,6 +402,7 @@ def analyze_symbol_filtrado_m15(
         "tp_operativo": tp,     # Alias explícito: mismo valor que tp_1_1
         "tp_ratio": TP_RATIO,   # Ratio real: 2 (no 1)
         "sl": sl,
+        "score": score,
         "ob": "SI" if has_ob else "NO",
         "fvg": "SI" if has_fvg else "NO",
         "barrida": "SI" if has_barrida else "NO",
@@ -595,11 +427,13 @@ class SMCMicroImpulsoFiltradoM15Engine:
     """
     Motor para SMC MICRO IMPULSO FILTRADO M15.
 
-    Parte 2: lógica completa con filtro M15, micro BOS/CHOCH, barrida,
-             OB, FVG, desplazamiento, TP/SL 1:2 y estados ACTIVA/SIN SETUP.
+    Reutiliza íntegramente la lógica de zona de SMC MICRO IMPULSO normal y
+    aplica como único filtro adicional la dirección estructural M15 obligatoria.
 
-    Parte 3 (pendiente): estados EN_ZONA, PROFIT, TP, SL, PAUSADA, DESCARTADA
-                         y modo seguimiento con Supabase.
+    Diferencias vs SMC MICRO IMPULSO normal:
+      - Filtro M15 obligatorio (bloquea si M15 no alinea con el índice).
+      - TP ratio 1:2 (en lugar de 1:1).
+      - strategy_id / strategy_key propios — historial completamente aislado.
     """
 
     def analyze(
