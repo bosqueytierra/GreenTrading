@@ -41,6 +41,50 @@ _setup_cache_micro_impulso: dict = {}
 
 
 # =============================================================================
+# READ-ONLY SUPABASE PROXY
+# =============================================================================
+
+class _ReadOnlySupabaseProxy:
+    """
+    Wraps the real Supabase service and passes all read methods through
+    unchanged, but silently no-ops any write methods.
+
+    Used when the MICRO IMPULSO engine is invoked from FILTRADO M15 so that
+    the engine can still read the currently-tracked SMC_MICRO_IMPULSO state
+    from Supabase (enabling correct ACTIVA/EN_ZONA/PROFIT mirroring) while
+    being completely prevented from creating or mutating SMC_MICRO_IMPULSO
+    records as a side-effect of the FILTRADO M15 call.
+
+    Blocked write methods (silently return None):
+      update_setup, create_setup, upsert_setup, delete_setup
+    """
+
+    _WRITE_METHODS = frozenset({"update_setup", "create_setup", "upsert_setup", "delete_setup"})
+
+    def __init__(self, svc):
+        if svc is None:
+            raise ValueError("_ReadOnlySupabaseProxy: svc must not be None")
+        self._svc = svc
+
+    def __getattr__(self, name: str):
+        # Check write methods FIRST so we never make an unnecessary getattr
+        # on the real service and never raise AttributeError for a write method
+        # that may not exist on the underlying service object.
+        if name in self._WRITE_METHODS:
+            def _noop(*args, **kwargs):
+                print(
+                    f"  [MICRO_IMPULSO READONLY_PROXY] Blocked {name}() "
+                    f"— called from FILTRADO M15 read-only mode, no write to SMC_MICRO_IMPULSO"
+                )
+                return None
+            return _noop
+        return getattr(self._svc, name)
+
+    def __bool__(self):
+        return bool(self._svc)
+
+
+# =============================================================================
 # SMART SYNC / DEBOUNCE
 # =============================================================================
 
@@ -243,36 +287,55 @@ def analyze_symbol_smc_micro_impulso(
     symbol: str,
     df_m1: pd.DataFrame,
     df_m15: pd.DataFrame = None,
+    sync_to_supabase: bool = True,
 ) -> dict:
     """
     Fachada pública para análisis SMC_MICRO_IMPULSO.
 
     Flujo:
     1. Delegar al engine SMCMicroImpulsoEngine.
-    2. Si hay zona válida: sincronizar con Supabase (strategy_id='SMC_MICRO_IMPULSO').
+    2. Si hay zona válida y sync_to_supabase=True: sincronizar con Supabase
+       (strategy_id='SMC_MICRO_IMPULSO').
     3. Retornar payload sin modificar.
 
     Args:
         symbol: Symbol name.
         df_m1: M1 candles DataFrame (núcleo operativo).
         df_m15: M15 candles DataFrame (opcional, solo informativo).
+        sync_to_supabase: When False, skips the service-level Supabase sync
+            AND passes a read-only proxy to the engine so the engine can still
+            read the tracked SMC_MICRO_IMPULSO state (for state mirroring) but
+            cannot write/update SMC_MICRO_IMPULSO records as a side-effect.
+            Set to False when delegating from FILTRADO M15 to guarantee zero
+            contamination of SMC_MICRO_IMPULSO history.
 
     Returns:
         dict con resultado SMC_MICRO_IMPULSO.
     """
     engine = SMCMicroImpulsoEngine()
 
+    # When sync_to_supabase=False (called from FILTRADO M15), use a read-only
+    # proxy so the engine can still read the tracked SMC_MICRO_IMPULSO state
+    # from Supabase (for correct state mirroring) but cannot write to those
+    # records as a side-effect of the FILTRADO M15 call.
+    engine_svc = (
+        _ReadOnlySupabaseProxy(supabase_service)
+        if not sync_to_supabase and supabase_service
+        else supabase_service
+    )
+
     result = engine.analyze(
         symbol=symbol,
         df_h1=None,
         df_m15=df_m15,
         df_m1=df_m1,
-        supabase_service=supabase_service,
+        supabase_service=engine_svc,
         create_sin_setup_response=create_sin_setup_micro_impulso_response,
     )
 
     if (
-        result.get("estado") not in ("SIN SETUP", "SIN_SETUP")
+        sync_to_supabase
+        and result.get("estado") not in ("SIN SETUP", "SIN_SETUP")
         and result.get("entrada") is not None
         and result.get("stoploss") is not None
     ):

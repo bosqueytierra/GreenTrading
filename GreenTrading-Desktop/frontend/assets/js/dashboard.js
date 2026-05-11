@@ -291,11 +291,11 @@ function setTableHeaders(strategy) {
             'ESTADO', 'PRECIO', 'ACTUALIZACIÓN'
         ];
     } else if (strategy === 'microimpulso_filtrado_m15') {
-        // SMC MICRO IMPULSO FILTRADO M15: columnas propias (sin H1, sin zona madre M15)
+        // SMC MICRO IMPULSO FILTRADO M15: mismas columnas finales que MICRO IMPULSO normal
         headers = [
             'ÍNDICE', 'M15 DIR', 'EVENTO M1',
             'ZONA MICRO', 'SCORE', 'OB', 'FVG', 'BARRIDA', 'DESPLAZAMIENTO',
-            'ESTADO', 'MOTIVO'
+            'ESTADO', 'PRECIO', 'ACTUALIZACIÓN'
         ];
     } else if (strategy === 'all') {
         headers = ['ESTRATEGIA', ...baseHeaders];
@@ -324,9 +324,18 @@ function renderTable(tableBodyId, data, strategy, showEstrategia) {
     }
 
     // Column count for colspan in empty/loading rows
-    // m15pro: 12 cols, h1m15pro: 14 cols (adds TP RATIO + ALIN. H1),
-    // microimpulso: 11 cols, microimpulso_filtrado_m15: 11 cols, all: 13 (adds ESTRATEGIA)
-    const colCount = showEstrategia ? 13 : (strategy === 'h1m15pro' ? 14 : (strategy === 'microimpulso' || strategy === 'microimpulso_filtrado_m15' ? 11 : 12));
+    let colCount;
+    if (showEstrategia) {
+        colCount = 13;                           // all strategies: + ESTRATEGIA col
+    } else if (strategy === 'h1m15pro') {
+        colCount = 14;                           // + TP RATIO + ALIN. H1
+    } else if (strategy === 'microimpulso') {
+        colCount = 11;
+    } else if (strategy === 'microimpulso_filtrado_m15') {
+        colCount = 12;                           // PRECIO + ACTUALIZACIÓN (no MOTIVO)
+    } else {
+        colCount = 12;                           // m15pro default
+    }
 
     if (data.length === 0) {
         tbody.innerHTML = `
@@ -427,8 +436,7 @@ function createTableRow(snapshot, strategy, showEstrategia) {
     // ----------------------------------------------------------------
     // Vista específica SMC MICRO IMPULSO FILTRADO M15
     // Columnas: ÍNDICE | M15 DIR | EVENTO M1 | ZONA MICRO | SCORE |
-    //           OB | FVG | BARRIDA | DESPLAZAMIENTO | ESTADO | MOTIVO
-    // Sin H1, sin zona madre M15, sin precio separado (está en zona micro)
+    //           OB | FVG | BARRIDA | DESPLAZAMIENTO | ESTADO | PRECIO | ACTUALIZACIÓN
     // ----------------------------------------------------------------
     if (strategy === 'microimpulso_filtrado_m15') {
         const dirM15 = snapshot.direccion_m15 || '--';
@@ -442,7 +450,6 @@ function createTableRow(snapshot, strategy, showEstrategia) {
             symbolShort
         );
         const desp = snapshot.desplazamiento || '--';
-        const motivoStr = snapshot.motivo || '--';
 
         return `
             <tr class="${rowClass}">
@@ -456,7 +463,8 @@ function createTableRow(snapshot, strategy, showEstrategia) {
                 <td><span class="indicator-badge">${barrida || '--'}</span></td>
                 <td><span class="indicator-badge">${desp}</span></td>
                 <td>${estadoBadge}</td>
-                <td><span class="motivo-label">${motivoStr}</span></td>
+                <td><span class="price-value">${priceStr}</span></td>
+                <td><span class="time-value">${timeStr}</span></td>
             </tr>
         `;
     }

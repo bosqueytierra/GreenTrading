@@ -3,37 +3,42 @@
 """
 GreenTrading Desktop - SMC MICRO IMPULSO FILTRADO M15 Service
 
-Parte 3: Gestión operativa completa.
+FILTRADO M15 delegates entirely to SMC MICRO IMPULSO normal and only adds:
+  - M15 mandatory directional filter (BOOM requires ALCISTA, CRASH requires BAJISTA).
+  - TP ratio 1:2 (instead of 1:1 used by the base strategy).
+  - Own strategy_id / strategy_key for isolated Supabase history.
 
-Añade al motor de Parte 2:
-  - Máquina de estados: ACTIVA → EN_ZONA → PROFIT → TP/SL
-  - PROFIT ↔ EN_ZONA (precio puede volver a zona antes de TP)
-  - PAUSADA cuando nueva zona aparece mientras existe una ACTIVA
-  - DESCARTADA solo para datos corruptos / zonas imposibles
-  - Modo seguimiento en tiempo real con Supabase
-  - Historial independiente (strategy_id = 'SMC_MICRO_IMPULSO_FILTRADO_M15')
-  - TP ratio 1:2, filtro M15 obligatorio, micro zonas M1
+Architecture:
+  1. Check M15 filter cheaply before any heavy computation.
+  2. If M15 passes: call analyze_symbol_smc_micro_impulso() with sync_to_supabase=False.
+     The base call runs the MICRO IMPULSO engine with Supabase access so the
+     fully-tracked state (ACTIVA / LLEGANDO_A_ZONA / EN_ZONA / PROFIT / TP / SL)
+     is returned — no independent state machine here.
+  3. Mirror all fields from the base result.  Recalculate TP to 1:2.
+  4. Sync the final result to the isolated FILTRADO history (strategy_id = STRATEGY_ID).
 
-AISLAMIENTO TOTAL:
-  - No modifica SMC_M15_PRO, SMC_H1_M15_PRO, SMC_MICRO_IMPULSO.
-  - Cache, historial y sync propios.
-  - strategy_key = 'microimpulso_filtrado_m15'
+ISOLATION:
+  - Does NOT write to SMC_MICRO_IMPULSO Supabase records.
+    sync_to_supabase=False activates a read-only proxy inside
+    analyze_symbol_smc_micro_impulso(): the engine can READ tracked state
+    from SMC_MICRO_IMPULSO records (for correct state mirroring) but is
+    completely blocked from any update_setup / create_setup on those records.
+  - Only writes to SMC_MICRO_IMPULSO_FILTRADO_M15 records.
+  - Zero contamination of SMC_M15_PRO, SMC_H1_M15_PRO, SMC_MICRO_IMPULSO.
 """
 
 import traceback
 from datetime import datetime, timezone
 
 from strategies.smc_micro_impulso_filtrado_m15.engine import (
-    SMCMicroImpulsoFiltradoM15Engine,
     create_sin_setup_micro_impulso_filtrado_m15_response,
+    _calcular_direccion_m15,
     STRATEGY_ID,
     STRATEGY_NAME,
     STRATEGY_KEY,
 )
-from core.state_machine import (
-    calcular_estado_dashboard,
-    calcular_transicion_estado,
-)
+from strategies.smc_m15_pro.engine import direccion_operativa_por_indice
+from smc_micro_impulso_service import analyze_symbol_smc_micro_impulso
 
 print("SMC_MICRO_IMPULSO_FILTRADO_M15_SERVICE_PATH:", __file__)
 
@@ -43,26 +48,11 @@ except ImportError:
     print("WARNING: Supabase service not available for FILTRADO_M15")
     supabase_service = None
 
-# ─── Instancia del engine ────────────────────────────────────────────────────
-_engine = SMCMicroImpulsoFiltradoM15Engine()
-
 # ─── Cache de debounce (evita updates innecesarios a Supabase) ───────────────
 _setup_cache_micro_impulso_filtrado_m15: dict = {}
 
-# ─── Cache de tracking en memoria (fallback cuando Supabase no disponible) ───
-_tracking_cache_filtrado_m15: dict = {}
-
 # ─── Valores considerados "SI/verdadero" en campos ob/fvg/barrida ────────────
 TRUTHY_VALUES = {"SÍ", "SI", "YES"}
-
-# ─── Estados terminales: no se cambian una vez alcanzados ────────────────────
-TERMINAL_STATES = {"TP", "SL", "DESCARTADA"}
-
-# ─── Estados "en operación activa": el trade ya tocó la zona ─────────────────
-IN_TRADE_STATES = {"EN_ZONA", "PROFIT"}
-
-# ─── Umbral de diferencia de niveles para detectar zona nueva ────────────────
-ZONE_LEVEL_TOLERANCE = 0.01   # puntos — umbral absoluto para comparar entradas/SL
 
 # ─── Umbral de cambio de precio para disparar sync a Supabase ────────────────
 PRICE_CHANGE_SYNC_THRESHOLD_PCT = 1.0  # % de cambio de precio que fuerza sync
@@ -72,27 +62,26 @@ PRICE_CHANGE_SYNC_THRESHOLD_PCT = 1.0  # % de cambio de precio que fuerza sync
 # HELPERS
 # =============================================================================
 
-def _derivar_zona(entrada: float, stoploss: float):
+def _recalcular_tp_1_2(entrada: float, stoploss: float) -> float:
     """
-    Deriva zona_desde, zona_hasta y dirección desde entrada y stoploss.
+    Recalcula el TP con ratio 1:2 a partir de los niveles de entrada y stoploss.
 
-    Convención del engine:
-      ALCISTA: entrada = zona_hasta (borde superior)  >  stoploss = zona_desde (borde inferior)
-      BAJISTA: entrada = zona_desde (borde inferior)  <  stoploss = zona_hasta (borde superior)
+    ALCISTA (entrada > stoploss):  tp = entrada + 2 * risk
+    BAJISTA (entrada < stoploss):  tp = entrada - 2 * risk
+    where risk = |entrada - stoploss| = zona_size
 
-    Raises:
-        ValueError: Si entrada == stoploss (zona de tamaño cero, zona imposible).
+    Args:
+        entrada: Nivel de entrada del trade.
+        stoploss: Nivel de stoploss del trade.
 
     Returns:
-        (zona_desde, zona_hasta, direccion)
+        TP redondeado a 2 decimales.
     """
-    if entrada == stoploss:
-        raise ValueError(
-            f"_derivar_zona: entrada == stoploss ({entrada}) -- zona de tamano cero es invalida"
-        )
-    if entrada > stoploss:
-        return stoploss, entrada, "ALCISTA"
-    return entrada, stoploss, "BAJISTA"
+    risk = abs(entrada - stoploss)
+    if entrada > stoploss:  # ALCISTA
+        return round(entrada + 2 * risk, 2)
+    else:  # BAJISTA
+        return round(entrada - 2 * risk, 2)
 
 
 def _has_relevant_changes_filtrado_m15(symbol: str, new_data: dict) -> bool:
@@ -134,141 +123,9 @@ def _has_relevant_changes_filtrado_m15(symbol: str, new_data: dict) -> bool:
     return False
 
 
-def _bool_to_si_no(val) -> str:
-    """Normaliza bool/str a 'SI'/'NO'."""
-    if isinstance(val, bool):
-        return "SI" if val else "NO"
-    if isinstance(val, str):
-        return "SI" if val in TRUTHY_VALUES else "NO"
-    return "NO"
-
-
-def _build_result_tracked(
-    symbol: str,
-    tracked: dict,
-    fresh_result: dict,
-    estado_nuevo: str,
-    motivo: str,
-) -> dict:
-    """
-    Construye el resultado del snapshot usando la zona guardada (tracking)
-    y el estado nuevo calculado por la máquina de estados.
-
-    Preserva los niveles de zona originales del setup guardado.
-    Actualiza precio_actual, estado y contexto de mercado desde fresh_result.
-
-    Args:
-        symbol: Nombre del símbolo.
-        tracked: Registro del setup guardado (dict de Supabase o cache).
-        fresh_result: Resultado fresco del engine (precio actual, dirección M15).
-        estado_nuevo: Estado calculado por la máquina de estados.
-        motivo: Motivo de la transición.
-
-    Returns:
-        dict con snapshot completo listo para el dashboard.
-    """
-    now = datetime.now(timezone.utc).isoformat()
-
-    entrada = tracked.get("entrada")
-    stoploss = tracked.get("stoploss")
-    tp = tracked.get("tp_1_1") or tracked.get("tp")
-    precio_actual = fresh_result.get("precio_actual") or fresh_result.get("price")
-
-    zona_desde, zona_hasta, _ = _derivar_zona(entrada, stoploss)
-    zona_size = abs(zona_hasta - zona_desde)
-
-    # Contexto de mercado desde fresh_result (siempre actualizado)
-    direccion_indice = fresh_result.get("direccion_indice", "--")
-    direccion_m15 = fresh_result.get("direccion_m15", "--")
-    cumple_m15 = fresh_result.get("cumple_m15", False)
-
-    # Campos del setup original (guardados en tracking)
-    micro_bos_choch = (
-        tracked.get("micro_bos_choch")
-        or tracked.get("ultimo_evento_m15")
-        or "--"
-    )
-    score = tracked.get("score", 0)
-    ob = _bool_to_si_no(tracked.get("ob", "NO"))
-    fvg = _bool_to_si_no(tracked.get("fvg", "NO"))
-    barrida = _bool_to_si_no(tracked.get("barrida", "NO"))
-    desplazamiento = _bool_to_si_no(tracked.get("desplazamiento", "NO"))
-
-    tp_puntos = abs(tp - entrada) if tp is not None and entrada is not None else 0.0
-    sl_puntos = abs(stoploss - entrada) if stoploss is not None and entrada is not None else 0.0
-    # Compute once: tp_1_1, tp, and tp_operativo all hold the same 1:2 TP value.
-    tp_rounded = round(tp, 2) if tp is not None else None
-
-    return {
-        "symbol": symbol,
-        "estrategia": STRATEGY_NAME,
-        "strategy_key": STRATEGY_KEY,
-        "price": precio_actual,
-        "precio_actual": precio_actual,
-        "direccion_indice": direccion_indice,
-        "direccion_m15": direccion_m15,
-        "cumple_m15": cumple_m15,
-        "micro_bos_choch": micro_bos_choch,
-        "zona_desde": round(zona_desde, 2),
-        "zona_hasta": round(zona_hasta, 2),
-        "zona_size": round(zona_size, 4),
-        "entrada": round(entrada, 2),
-        "stoploss": round(stoploss, 2),
-        # tp_1_1 mantiene compatibilidad con el schema de Supabase (columna compartida).
-        # Para esta estrategia, tp_1_1 almacena el TP operativo 1:2 (no 1:1).
-        # tp_operativo es el alias semánticamente correcto para uso interno.
-        # tp_ratio confirma el ratio real de la estrategia: 2 (no 1).
-        "tp": tp_rounded,
-        "tp_1_1": tp_rounded,      # TP operativo 1:2 — nombre heredado de schema Supabase
-        "tp_operativo": tp_rounded, # Alias explícito para uso en lógica interna
-        "tp_ratio": 2,              # Ratio real de esta estrategia: 1:2 (no 1:1)
-        "sl": round(stoploss, 2),
-        "score": score,
-        "ob": ob,
-        "fvg": fvg,
-        "barrida": barrida,
-        "desplazamiento": desplazamiento,
-        "estado": estado_nuevo,
-        "motivo": motivo,
-        "estado_dashboard": estado_nuevo,
-        "estado_historial": estado_nuevo,
-        "estado_final": estado_nuevo,
-        "tp_puntos": round(tp_puntos, 4),
-        "sl_puntos": round(sl_puntos, 4),
-        "timestamp": now,
-        "updated_at": now,
-    }
-
-
 # =============================================================================
 # SUPABASE SYNC
 # =============================================================================
-
-def _update_estado_supabase_filtrado_m15(
-    setup_id: int,
-    estado_nuevo: str,
-    precio_actual: float,
-) -> None:
-    """
-    Actualiza solo el estado de un setup existente en Supabase.
-
-    Args:
-        setup_id: ID del registro en Supabase.
-        estado_nuevo: Nuevo estado a guardar.
-        precio_actual: Precio actual para registrar en updated_at.
-    """
-    if not supabase_service or setup_id is None:
-        return
-    updates = {
-        "estado": estado_nuevo,
-        "estado_dashboard": estado_nuevo,
-        "estado_historial": estado_nuevo,
-        "estado_final": estado_nuevo,
-        "precio_actual": precio_actual,
-    }
-    print(f"  FILTRADO_M15: Actualizando id={setup_id} -> {estado_nuevo}")
-    supabase_service.update_setup(setup_id, updates)
-
 
 def sync_setup_filtrado_m15(result: dict) -> None:
     """
@@ -412,8 +269,6 @@ def sync_setup_filtrado_m15(result: dict) -> None:
                 "zona_hasta": 0,
                 "precio_actual": critical_data["precio_actual"],
             }
-            if symbol in _tracking_cache_filtrado_m15:
-                del _tracking_cache_filtrado_m15[symbol]
             print(f"  FILTRADO_M15 SYNC: SKIP -- zona ya cerrada (TP/SL)")
             return
 
@@ -422,278 +277,6 @@ def sync_setup_filtrado_m15(result: dict) -> None:
             print(f"FILTRADO_M15 SYNC OK: Created setup {symbol} id={res.get('id')}")
         else:
             print(f"FILTRADO_M15 SYNC WARN: create_setup devolvio None para {symbol}")
-
-
-# =============================================================================
-# MODO SEGUIMIENTO — TRACKING STATE MACHINE
-# =============================================================================
-
-def _modo_seguimiento_filtrado_m15(
-    symbol: str,
-    fresh_result: dict,
-    df_m1=None,
-) -> dict:
-    """
-    Aplica el modo seguimiento sobre el resultado fresco del engine.
-
-    Transiciones soportadas:
-      ACTIVA → EN_ZONA → PROFIT → TP   (camino ganador)
-      ACTIVA → EN_ZONA → SL            (camino perdedor)
-      PROFIT ↔ EN_ZONA                 (precio vuelve a zona antes de TP)
-      ACTIVA → PAUSADA                 (nueva zona detectada, se pausa la vieja)
-
-    Prioridad de operaciones:
-      1. Si existe trade EN_ZONA o PROFIT → NO reemplazar con zona nueva.
-      2. Si ACTIVA y llega zona diferente → PAUSAR antigua, usar nueva.
-      3. PAUSADA se trata como "sin tracking" — fresh_result toma el control.
-      4. Sin setup activo → fresh_result se usa directamente.
-
-    Args:
-        symbol: Nombre del símbolo.
-        fresh_result: Resultado fresco del engine (análisis de mercado actual).
-        df_m1: DataFrame M1 para calcular velocidad hacia zona (opcional).
-
-    Returns:
-        dict con snapshot final (puede ser fresh o tracked según contexto).
-    """
-    precio_actual = fresh_result.get("precio_actual") or fresh_result.get("price")
-    fresh_estado = fresh_result.get("estado", "SIN SETUP")
-
-    # ── Intentar obtener setup activo desde Supabase ─────────────────────────
-    existing = None
-    if supabase_service and hasattr(supabase_service, "get_active_setup_by_symbol"):
-        try:
-            existing = supabase_service.get_active_setup_by_symbol(STRATEGY_ID, symbol)
-        except Exception as exc:
-            print(f"  FILTRADO_M15 TRACKING: Error querying Supabase -- {exc}")
-            existing = None
-
-    # ── Fallback: usar tracking en memoria si Supabase no disponible ──────────
-    if existing is None and symbol in _tracking_cache_filtrado_m15:
-        cached = _tracking_cache_filtrado_m15[symbol]
-        if cached.get("estado") not in TERMINAL_STATES:
-            existing = cached
-            print(f"  FILTRADO_M15 TRACKING: Usando cache en memoria para {symbol}")
-
-    # ── Sin setup activo → usar fresh directamente ────────────────────────────
-    if not existing:
-        print(f"  FILTRADO_M15 TRACKING: Sin setup activo -> resultado fresco")
-        if fresh_estado == "ACTIVA" and fresh_result.get("entrada") is not None:
-            _tracking_cache_filtrado_m15[symbol] = {
-                "estado": "ACTIVA",
-                "entrada": fresh_result.get("entrada"),
-                "stoploss": fresh_result.get("stoploss"),
-                "tp_1_1": fresh_result.get("tp"),
-                "score": fresh_result.get("score", 0),
-                "ob": fresh_result.get("ob", "NO"),
-                "fvg": fresh_result.get("fvg", "NO"),
-                "barrida": fresh_result.get("barrida", "NO"),
-                "desplazamiento": fresh_result.get("desplazamiento", "NO"),
-                "micro_bos_choch": fresh_result.get("micro_bos_choch", "--"),
-                "precio_actual": precio_actual,
-            }
-        return fresh_result
-
-    estado_previo = existing.get("estado", "ACTIVA")
-
-    # ── PAUSADA se trata como "sin tracking activo" ───────────────────────────
-    # La zona fue pausada porque llegó una zona nueva; fresh_result toma control.
-    if estado_previo == "PAUSADA":
-        print(f"  FILTRADO_M15 TRACKING: Estado PAUSADA -> fresh_result toma control")
-        if fresh_estado == "ACTIVA" and fresh_result.get("entrada") is not None:
-            _tracking_cache_filtrado_m15[symbol] = {
-                "estado": "ACTIVA",
-                "entrada": fresh_result.get("entrada"),
-                "stoploss": fresh_result.get("stoploss"),
-                "tp_1_1": fresh_result.get("tp"),
-                "score": fresh_result.get("score", 0),
-                "ob": fresh_result.get("ob", "NO"),
-                "fvg": fresh_result.get("fvg", "NO"),
-                "barrida": fresh_result.get("barrida", "NO"),
-                "desplazamiento": fresh_result.get("desplazamiento", "NO"),
-                "micro_bos_choch": fresh_result.get("micro_bos_choch", "--"),
-                "precio_actual": precio_actual,
-            }
-        return fresh_result
-
-    entrada_g = existing.get("entrada")
-    stoploss_g = existing.get("stoploss")
-    tp_g = existing.get("tp_1_1") or existing.get("tp")
-
-    # Validar datos mínimos del setup guardado
-    if not entrada_g or not stoploss_g or not tp_g:
-        print(f"  FILTRADO_M15 TRACKING: Setup guardado incompleto -> fresco")
-        return fresh_result
-
-    if precio_actual is None:
-        print(f"  FILTRADO_M15 TRACKING: Sin precio_actual -> fresco")
-        return fresh_result
-
-    zona_desde_g, zona_hasta_g, direccion_g = _derivar_zona(entrada_g, stoploss_g)
-
-    print(f"\nFILTRADO_M15 TRACKING: {symbol}")
-    print(f"  estado_previo: {estado_previo}")
-    print(f"  precio_actual: {precio_actual}")
-    print(f"  entrada_guardada: {entrada_g}")
-    print(f"  stoploss_guardado: {stoploss_g}")
-    print(f"  tp_guardado: {tp_g}")
-    print(f"  zona: [{zona_desde_g}, {zona_hasta_g}] dir={direccion_g}")
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # CASO A: EN_ZONA o PROFIT — operación activa — NO reemplazar con zona nueva
-    # ─────────────────────────────────────────────────────────────────────────
-    if estado_previo in IN_TRADE_STATES:
-        print(f"  FILTRADO_M15 TRACKING: Trade activo ({estado_previo}) -- aplicando SM")
-
-        estado_dashboard = calcular_estado_dashboard(
-            precio_actual=precio_actual,
-            entrada=entrada_g,
-            zona_desde=zona_desde_g,
-            zona_hasta=zona_hasta_g,
-            direccion=direccion_g,
-            df_m1=df_m1,
-            symbol=symbol,
-        )
-
-        estado_nuevo, motivo = calcular_transicion_estado(
-            symbol=symbol,
-            estado_previo=estado_previo,
-            estado_calculado=estado_dashboard,
-            precio_actual=precio_actual,
-            entrada=entrada_g,
-            stoploss=stoploss_g,
-            tp=tp_g,
-            zona_desde=zona_desde_g,
-            zona_hasta=zona_hasta_g,
-        )
-
-        print(f"  FILTRADO_M15 TRACKING: {estado_previo} -> {estado_nuevo} | {motivo}")
-
-        if estado_nuevo != estado_previo:
-            _update_estado_supabase_filtrado_m15(existing.get("id"), estado_nuevo, precio_actual)
-        if symbol in _tracking_cache_filtrado_m15:
-            _tracking_cache_filtrado_m15[symbol]["estado"] = estado_nuevo
-            _tracking_cache_filtrado_m15[symbol]["precio_actual"] = precio_actual
-
-        return _build_result_tracked(symbol, existing, fresh_result, estado_nuevo, motivo)
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # CASO B: ACTIVA — posible reemplazo de zona si llega una zona diferente
-    # ─────────────────────────────────────────────────────────────────────────
-    if estado_previo == "ACTIVA":
-        # ── Prioridad: si el precio ya está DENTRO de la zona guardada,
-        #    NO comparar con fresh_result, NO pausar, NO reemplazar.
-        #    Transicionar directamente a EN_ZONA usando la máquina de estados.
-        precio_en_zona_g = (
-            min(zona_desde_g, zona_hasta_g) <= precio_actual <= max(zona_desde_g, zona_hasta_g)
-        )
-        if precio_en_zona_g:
-            print(
-                f"  FILTRADO_M15 TRACKING: Precio dentro de zona guardada "
-                f"-> EN_ZONA (ignorando fresh_result)"
-            )
-            estado_dashboard = calcular_estado_dashboard(
-                precio_actual=precio_actual,
-                entrada=entrada_g,
-                zona_desde=zona_desde_g,
-                zona_hasta=zona_hasta_g,
-                direccion=direccion_g,
-                df_m1=df_m1,
-                symbol=symbol,
-            )
-            estado_nuevo, motivo = calcular_transicion_estado(
-                symbol=symbol,
-                estado_previo=estado_previo,
-                estado_calculado=estado_dashboard,
-                precio_actual=precio_actual,
-                entrada=entrada_g,
-                stoploss=stoploss_g,
-                tp=tp_g,
-                zona_desde=zona_desde_g,
-                zona_hasta=zona_hasta_g,
-            )
-            print(f"  FILTRADO_M15 TRACKING: {estado_previo} -> {estado_nuevo} | {motivo}")
-            if estado_nuevo != estado_previo:
-                _update_estado_supabase_filtrado_m15(existing.get("id"), estado_nuevo, precio_actual)
-            if symbol in _tracking_cache_filtrado_m15:
-                _tracking_cache_filtrado_m15[symbol]["estado"] = estado_nuevo
-                _tracking_cache_filtrado_m15[symbol]["precio_actual"] = precio_actual
-            return _build_result_tracked(symbol, existing, fresh_result, estado_nuevo, motivo)
-
-        fresh_has_zone = (
-            fresh_estado == "ACTIVA"
-            and fresh_result.get("entrada") is not None
-            and fresh_result.get("stoploss") is not None
-        )
-
-        if fresh_has_zone:
-            fresh_entrada = fresh_result.get("entrada")
-            fresh_stoploss = fresh_result.get("stoploss")
-
-            is_different = (
-                abs(fresh_entrada - entrada_g) > ZONE_LEVEL_TOLERANCE
-                or abs(fresh_stoploss - stoploss_g) > ZONE_LEVEL_TOLERANCE
-            )
-
-            if is_different:
-                # Nueva zona diferente → PAUSAR antigua, activar nueva
-                print(f"  FILTRADO_M15 TRACKING: Nueva zona diferente -> PAUSANDO {symbol}")
-                _update_estado_supabase_filtrado_m15(existing.get("id"), "PAUSADA", precio_actual)
-                # Limpiar cache para que fresh_result arranque desde cero
-                if symbol in _tracking_cache_filtrado_m15:
-                    del _tracking_cache_filtrado_m15[symbol]
-                # Inicializar cache con nueva zona
-                _tracking_cache_filtrado_m15[symbol] = {
-                    "estado": "ACTIVA",
-                    "entrada": fresh_entrada,
-                    "stoploss": fresh_stoploss,
-                    "tp_1_1": fresh_result.get("tp"),
-                    "score": fresh_result.get("score", 0),
-                    "ob": fresh_result.get("ob", "NO"),
-                    "fvg": fresh_result.get("fvg", "NO"),
-                    "barrida": fresh_result.get("barrida", "NO"),
-                    "desplazamiento": fresh_result.get("desplazamiento", "NO"),
-                    "micro_bos_choch": fresh_result.get("micro_bos_choch", "--"),
-                    "precio_actual": precio_actual,
-                }
-                return fresh_result
-
-        # Misma zona (o sin zona fresca) → aplicar máquina de estados sobre zona guardada
-        estado_dashboard = calcular_estado_dashboard(
-            precio_actual=precio_actual,
-            entrada=entrada_g,
-            zona_desde=zona_desde_g,
-            zona_hasta=zona_hasta_g,
-            direccion=direccion_g,
-            df_m1=df_m1,
-            symbol=symbol,
-        )
-
-        estado_nuevo, motivo = calcular_transicion_estado(
-            symbol=symbol,
-            estado_previo=estado_previo,
-            estado_calculado=estado_dashboard,
-            precio_actual=precio_actual,
-            entrada=entrada_g,
-            stoploss=stoploss_g,
-            tp=tp_g,
-            zona_desde=zona_desde_g,
-            zona_hasta=zona_hasta_g,
-        )
-
-        print(f"  FILTRADO_M15 TRACKING: {estado_previo} -> {estado_nuevo} | {motivo}")
-
-        if estado_nuevo != estado_previo:
-            _update_estado_supabase_filtrado_m15(existing.get("id"), estado_nuevo, precio_actual)
-        if symbol in _tracking_cache_filtrado_m15:
-            _tracking_cache_filtrado_m15[symbol]["estado"] = estado_nuevo
-            _tracking_cache_filtrado_m15[symbol]["precio_actual"] = precio_actual
-
-        return _build_result_tracked(symbol, existing, fresh_result, estado_nuevo, motivo)
-
-    # ── Fallback: estado no reconocido → usar fresco ──────────────────────────
-    print(f"  FILTRADO_M15 TRACKING: Estado no reconocido ({estado_previo}) -> fresco")
-    return fresh_result
 
 
 # =============================================================================
@@ -708,13 +291,15 @@ def analyze_symbol_smc_micro_impulso_filtrado_m15(
     """
     Analiza un símbolo con la estrategia SMC MICRO IMPULSO FILTRADO M15.
 
-    Parte 3: gestión operativa completa:
-      - Motor de Parte 2 para análisis fresco de mercado.
-      - Modo seguimiento: ACTIVA → EN_ZONA → PROFIT → TP/SL.
-      - PROFIT ↔ EN_ZONA si el precio vuelve a la zona antes de TP.
-      - PAUSADA cuando nueva zona aparece con otra ACTIVA en seguimiento.
-      - Historial independiente en Supabase (strategy_id = STRATEGY_ID).
-      - TP ratio 1:2, filtro M15 obligatorio, micro zonas M1.
+    Delega completamente en SMC MICRO IMPULSO normal para obtener el estado
+    completamente trackeado (ACTIVA / LLEGANDO_A_ZONA / EN_ZONA / PROFIT / TP / SL),
+    luego aplica el filtro M15 obligatorio y recalcula el TP a ratio 1:2.
+
+    Garantía: para cada símbolo donde M15 cumple, todos los campos operativos
+    (estado, zona_desde, zona_hasta, entrada, stoploss, score, ob, fvg, barrida,
+    desplazamiento, micro_bos_choch, precio_actual) son IDÉNTICOS a los de
+    /api/smc/micro-impulso/snapshot.  La única diferencia es el TP (1:2 aquí,
+    1:1 en MICRO IMPULSO normal).
 
     Args:
         symbol: Symbol name (e.g. "Boom 1000 Index").
@@ -725,18 +310,173 @@ def analyze_symbol_smc_micro_impulso_filtrado_m15(
         dict con snapshot completo de la estrategia.
     """
     try:
-        # 1. Análisis fresco del mercado (engine Parte 2)
-        fresh_result = _engine.analyze(symbol=symbol, df_m1=df_m1, df_m15=df_m15)
+        # Precio para fallback en caso de error
+        price = None
+        if df_m1 is not None and len(df_m1) > 0:
+            try:
+                price = float(df_m1.iloc[-1]["close"])
+            except Exception:
+                pass
 
-        # 2. Aplicar modo seguimiento (Parte 3)
-        result = _modo_seguimiento_filtrado_m15(
-            symbol=symbol,
-            fresh_result=fresh_result,
-            df_m1=df_m1,
+        def _sin_setup(motivo, direccion_indice="--", direccion_m15="--",
+                       cumple_m15=False, estado="SIN SETUP"):
+            return create_sin_setup_micro_impulso_filtrado_m15_response(
+                symbol=symbol, price=price,
+                direccion_indice=direccion_indice,
+                direccion_m15=direccion_m15,
+                cumple_m15=cumple_m15,
+                motivo=motivo,
+                estado=estado,
+            )
+
+        # ------------------------------------------------------------------
+        # 1. Dirección operativa del índice (Boom → ALCISTA, Crash → BAJISTA)
+        # ------------------------------------------------------------------
+        direccion_indice = direccion_operativa_por_indice(symbol)
+        if not direccion_indice:
+            print(f"  FILTRADO_M15: {symbol} no es Boom ni Crash -> SIN SETUP")
+            return _sin_setup("SÍMBOLO NO CLASIFICADO")
+
+        # ------------------------------------------------------------------
+        # 2. Dirección estructural M15
+        # ------------------------------------------------------------------
+        if df_m15 is None or len(df_m15) == 0:
+            print(f"  FILTRADO_M15: sin datos M15 para {symbol} -> SIN SETUP")
+            return _sin_setup("SIN DATOS M15", direccion_indice=direccion_indice)
+
+        direccion_m15 = _calcular_direccion_m15(df_m15)
+
+        # ------------------------------------------------------------------
+        # 3. Aplicar filtro M15 obligatorio
+        # ------------------------------------------------------------------
+        cumple_m15 = (direccion_m15 != "--") and (direccion_m15 == direccion_indice)
+        if not cumple_m15:
+            motivo_nc = (
+                f"M15={direccion_m15} != INDICE={direccion_indice}"
+                if direccion_m15 != "--"
+                else "DIRECCIÓN M15 INDETERMINADA"
+            )
+            print(f"  FILTRADO_M15: NO CUMPLE M15 para {symbol}: {motivo_nc}")
+            return _sin_setup(
+                motivo=motivo_nc,
+                direccion_indice=direccion_indice,
+                direccion_m15=direccion_m15,
+                cumple_m15=False,
+                estado="NO CUMPLE DIRECCIÓN M15",
+            )
+
+        print(f"  FILTRADO_M15: CUMPLE M15 {direccion_m15} == {direccion_indice} para {symbol}")
+
+        # ------------------------------------------------------------------
+        # 4. Obtener resultado completamente trackeado de MICRO IMPULSO normal.
+        #    sync_to_supabase=False activa el modo read-only:
+        #    - el engine PUEDE leer registros SMC_MICRO_IMPULSO (para tracking)
+        #    - el engine NO PUEDE escribir/actualizar esos registros
+        #    → cero contaminación del historial SMC_MICRO_IMPULSO.
+        # ------------------------------------------------------------------
+        base = analyze_symbol_smc_micro_impulso(
+            symbol, df_m1, df_m15, sync_to_supabase=False
         )
 
-        # 3. Sincronizar con Supabase solo si hay zona válida
-        estado = result.get("estado", "")
+        base_estado = base.get("estado", "SIN SETUP")
+        if base_estado in ("SIN SETUP", "SIN_SETUP"):
+            print(f"  FILTRADO_M15: base MICRO IMPULSO sin setup para {symbol}")
+            return _sin_setup(
+                "SIN SETUP EN MICRO IMPULSO BASE",
+                direccion_indice=direccion_indice,
+                direccion_m15=direccion_m15,
+                cumple_m15=True,
+            )
+
+        # ------------------------------------------------------------------
+        # 5. Extraer niveles de zona del resultado base
+        # ------------------------------------------------------------------
+        zona_madre = base.get("zona_madre_m1", {})
+        zona_desde = float(zona_madre.get("desde", 0) or 0)
+        zona_hasta = float(zona_madre.get("hasta", 0) or 0)
+        zona_size = abs(zona_hasta - zona_desde)
+
+        entrada = base.get("entrada")
+        stoploss = base.get("stoploss")
+
+        if entrada is None or stoploss is None:
+            print(f"  FILTRADO_M15: base sin entrada/stoploss para {symbol}")
+            return _sin_setup(
+                "NIVELES INCOMPLETOS EN BASE",
+                direccion_indice=direccion_indice,
+                direccion_m15=direccion_m15,
+                cumple_m15=True,
+            )
+
+        # ------------------------------------------------------------------
+        # 6. Recalcular TP con ratio 1:2 (única diferencia operativa)
+        # ------------------------------------------------------------------
+        tp_1_2 = _recalcular_tp_1_2(entrada, stoploss)
+        tp_puntos = abs(tp_1_2 - entrada)
+        sl_puntos = abs(stoploss - entrada)
+
+        # ------------------------------------------------------------------
+        # 7. Construir resultado FILTRADO M15:
+        #    todos los campos operativos vienen del resultado base ya trackeado,
+        #    solo se sobreescriben strategy_id/key, TP y campos de filtro M15.
+        # ------------------------------------------------------------------
+        estado = base.get("estado", "ACTIVA")
+        estado_dashboard = base.get("estado_dashboard", estado)
+        estado_historial = base.get("estado_historial", estado)
+        estado_final = base.get("estado_final", estado_historial)
+
+        precio_actual = base.get("price") or price
+        now = datetime.now(timezone.utc).isoformat()
+        updated_at = base.get("updated_at", now)
+
+        result = {
+            "symbol": symbol,
+            "estrategia": STRATEGY_NAME,
+            "strategy_key": STRATEGY_KEY,
+            "price": precio_actual,
+            "precio_actual": precio_actual,
+            "direccion_indice": direccion_indice,
+            "direccion_m15": direccion_m15,
+            "cumple_m15": True,
+            "micro_bos_choch": base.get("micro_bos_choch", "--"),
+            "zona_desde": round(zona_desde, 2),
+            "zona_hasta": round(zona_hasta, 2),
+            "zona_size": round(zona_size, 4),
+            "entrada": round(entrada, 2),
+            "stoploss": round(stoploss, 2),
+            # tp_1_1: nombre de columna en Supabase (schema compartido).
+            # Almacena el TP operativo 1:2 — diferencia vs MICRO IMPULSO 1:1.
+            "tp": tp_1_2,
+            "tp_1_1": tp_1_2,
+            "tp_operativo": tp_1_2,
+            "tp_ratio": 2,
+            "sl": round(stoploss, 2),
+            "score": base.get("score", 0),
+            "ob": base.get("ob", "NO"),
+            "fvg": base.get("fvg", "NO"),
+            "barrida": base.get("barrida", "NO"),
+            # MICRO IMPULSO normal uses the field name "desplazamiento_valido" (SI/NO).
+            # FILTRADO M15 (and its Supabase schema) uses "desplazamiento" (SI/NO).
+            # Both hold the same value; this explicit mapping bridges the name gap.
+            "desplazamiento": base.get("desplazamiento_valido", "NO"),
+            "estado": estado,
+            "estado_dashboard": estado_dashboard,
+            "estado_historial": estado_historial,
+            "estado_final": estado_final,
+            "tp_puntos": round(tp_puntos, 4),
+            "sl_puntos": round(sl_puntos, 4),
+            "timestamp": updated_at,
+            "updated_at": updated_at,
+        }
+
+        print(
+            f"  FILTRADO_M15 {symbol}: estado={estado} "
+            f"entrada={result['entrada']} sl={result['stoploss']} tp={tp_1_2}"
+        )
+
+        # ------------------------------------------------------------------
+        # 8. Sincronizar con historial propio (strategy_id = STRATEGY_ID)
+        # ------------------------------------------------------------------
         if (
             estado not in ("SIN SETUP", "SIN_SETUP", "NO CUMPLE DIRECCIÓN M15")
             and result.get("entrada") is not None
@@ -749,10 +489,13 @@ def analyze_symbol_smc_micro_impulso_filtrado_m15(
     except Exception as e:
         print(f"MICRO_IMPULSO_FILTRADO_M15 ERROR: {symbol} - {e}")
         traceback.print_exc()
-        price = None
-        if df_m1 is not None and not df_m1.empty:
+        fallback_price = None
+        if df_m1 is not None and len(df_m1) > 0:
             try:
-                price = float(df_m1.iloc[-1]["close"])
+                fallback_price = float(df_m1.iloc[-1]["close"])
             except Exception:
-                price = None
-        return create_sin_setup_micro_impulso_filtrado_m15_response(symbol=symbol, price=price)
+                pass
+        return create_sin_setup_micro_impulso_filtrado_m15_response(
+            symbol=symbol, price=fallback_price
+        )
+
