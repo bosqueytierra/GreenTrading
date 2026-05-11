@@ -372,20 +372,43 @@ function createTableRow(setup) {
         : '--';
     const resultadoClass = setup.resultado_puntos > 0 ? 'resultado-positive' : 
                           setup.resultado_puntos < 0 ? 'resultado-negative' : '';
-    
-    const contexto = [
-        setup.tendencia_h1 || '',
-        setup.tendencia_m15 || '',
-        setup.ultimo_evento_m15 || ''
-    ].filter(Boolean).join(' / ') || '--';
+
+    // Resolve TP value: tp_operativo > tp > tp_1_1 (all store the same level for filtrado_m15)
+    const tpValue = setup.tp_operativo ?? setup.tp ?? setup.tp_1_1;
+    const tpDisplay = tpValue != null ? Number(tpValue).toFixed(2) : '--';
+
+    // For SMC_MICRO_IMPULSO_FILTRADO_M15, show TP 1:2 label; for others just show the value
+    const isFiltradoM15 = (setup.strategy_id === 'SMC_MICRO_IMPULSO_FILTRADO_M15')
+        || (setup.strategy_key === 'microimpulso_filtrado_m15');
+    const tpCell = isFiltradoM15
+        ? `<span class="tp-ratio-label">TP 1:2</span> ${tpDisplay}`
+        : tpDisplay;
+
+    // Contexto: prefer M1-specific fields for filtrado_m15 and microimpulso strategies
+    let contexto;
+    if (isFiltradoM15) {
+        contexto = [
+            setup.direccion_m15 ? `M15: ${setup.direccion_m15}` : '',
+            setup.micro_bos_choch || '',
+            setup.zona_desde && setup.zona_hasta
+                ? `Zona: ${Number(setup.zona_desde).toFixed(2)}–${Number(setup.zona_hasta).toFixed(2)}`
+                : ''
+        ].filter(Boolean).join(' / ') || '--';
+    } else {
+        contexto = [
+            setup.tendencia_h1 || '',
+            setup.tendencia_m15 || '',
+            setup.ultimo_evento_m15 || ''
+        ].filter(Boolean).join(' / ') || '--';
+    }
     
     tr.innerHTML = `
         <td>${formatDate(setup.created_at)}</td>
         <td>${setup.symbol || '--'}</td>
         <td>${setup.strategy_name || '--'}</td>
-        <td>${setup.entrada != null ? setup.entrada.toFixed(2) : '--'}</td>
-        <td class="stoploss-cell">${setup.stoploss != null ? setup.stoploss.toFixed(2) : '--'}</td>
-        <td>${setup.tp_1_1 != null ? setup.tp_1_1.toFixed(2) : '--'}</td>
+        <td>${setup.entrada != null ? Number(setup.entrada).toFixed(2) : '--'}</td>
+        <td class="stoploss-cell">${setup.stoploss != null ? Number(setup.stoploss).toFixed(2) : '--'}</td>
+        <td>${tpCell}</td>
         <td><span class="estado-badge ${estadoDashboardClass} estado-dashboard">${setup.estado_dashboard || '--'}</span></td>
         <td><span class="estado-badge ${estadoClass} estado">${setup.estado || '--'}</span></td>
         <td class="resultado-puntos ${resultadoClass}">${resultadoPuntos}</td>
