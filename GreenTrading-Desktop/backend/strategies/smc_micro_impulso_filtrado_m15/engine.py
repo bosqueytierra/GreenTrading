@@ -152,7 +152,7 @@ def _calcular_direccion_m15(df_m15: pd.DataFrame) -> str:
             return "--"
         return tendencia_m15.upper()
     except Exception as exc:
-        print(f"  FILTRADO_M15: error calculando direccion M15 — {exc}")
+        print(f"  FILTRADO_M15: error calculando direccion M15 -- {exc}")
         return "--"
 
 
@@ -343,7 +343,7 @@ def analyze_symbol_filtrado_m15(
     direccion_indice = direccion_operativa_por_indice(symbol)
     if not direccion_indice:
         print(f"  SIN_SETUP: {symbol} no es Boom ni Crash")
-        return _sin_setup("SÍMBOLO NO CLASIFICADO")
+        return _sin_setup("SIMBOLO NO CLASIFICADO")
 
     print(f"  direccion_indice: {direccion_indice}")
 
@@ -363,11 +363,11 @@ def analyze_symbol_filtrado_m15(
     cumple_m15 = (direccion_m15 != "--") and (direccion_m15 == direccion_indice)
     if not cumple_m15:
         motivo_no_cumple = (
-            f"M15={direccion_m15} ≠ ÍNDICE={direccion_indice}"
+            f"M15={direccion_m15} != INDICE={direccion_indice}"
             if direccion_m15 != "--"
-            else "DIRECCIÓN M15 INDETERMINADA"
+            else "DIRECCION M15 INDETERMINADA"
         )
-        print(f"  NO CUMPLE DIRECCIÓN M15: {motivo_no_cumple}")
+        print(f"  NO CUMPLE DIRECCION M15: {motivo_no_cumple}")
         return _sin_setup(
             motivo=motivo_no_cumple,
             direccion_indice=direccion_indice,
@@ -428,7 +428,7 @@ def analyze_symbol_filtrado_m15(
         # PASO 5: desplazamiento impulsivo
         desp = _detectar_desplazamiento_m1(df_m1, evento)
         if not desp["valido"]:
-            print(f"    SKIP: desplazamiento inválido")
+            print(f"    SKIP: desplazamiento invalido")
             continue
 
         # PASO 6: micro OB M1 — obligatorio para construir zona
@@ -439,7 +439,7 @@ def analyze_symbol_filtrado_m15(
 
         print(f"    OB: {ob['tipo']} desde={ob['desde']} hasta={ob['hasta']}")
 
-        # PASO 7: micro FVG M1 (confirmación adicional — no bloquea)
+        # PASO 7: micro FVG M1 (confirmacion adicional -- no bloquea)
         fvg_tipo_esperado = "FVG_ALCISTA" if direccion_ev == "ALCISTA" else "FVG_BAJISTA"
         fvgs_validos = [
             f for f in fvgs_m1
@@ -449,9 +449,9 @@ def analyze_symbol_filtrado_m15(
         if fvg:
             print(f"    FVG: {fvg['tipo']} desde={fvg['desde']} hasta={fvg['hasta']}")
         else:
-            print(f"    FVG: ninguno (confirmación adicional — no bloquea)")
+            print(f"    FVG: ninguno (confirmacion adicional -- no bloquea)")
 
-        # PASO 8: barrida local M1 (confirmación adicional — no bloquea)
+        # PASO 8: barrida local M1 (confirmacion adicional -- no bloquea)
         barrida = detectar_barrida_previa(df_m1, evento, direccion_ev, lookback=BARRIDA_LOOKBACK_M1)
         print(f"    barrida: {'SI' if barrida else 'NO'}")
 
@@ -468,7 +468,7 @@ def analyze_symbol_filtrado_m15(
         print(f"    es_util: {es_util} ({motivo_util})")
 
         if not es_util:
-            print(f"    SKIP: zona no útil (precio no en lado correcto)")
+            print(f"    SKIP: zona no util (precio no en lado correcto)")
             continue
 
         # Zona encontrada
@@ -487,9 +487,9 @@ def analyze_symbol_filtrado_m15(
         break
 
     if not zona_encontrada:
-        print(f"  SIN_SETUP: ningún candidato produjo zona micro válida")
+        print(f"  SIN_SETUP: ningun candidato produjo zona micro valida")
         return _sin_setup(
-            "SIN ZONA MICRO VÁLIDA EN M1",
+            "SIN ZONA MICRO VALIDA EN M1",
             direccion_indice=direccion_indice,
             direccion_m15=direccion_m15,
             cumple_m15=True,
@@ -626,7 +626,7 @@ class SMCMicroImpulsoFiltradoM15Engine:
                 df_m15=df_m15,
             )
         except Exception as exc:
-            print(f"FILTRADO_M15 ENGINE ERROR: {symbol} — {exc}")
+            print(f"FILTRADO_M15 ENGINE ERROR: {symbol} -- {exc}")
             traceback.print_exc()
             price = None
             if df_m1 is not None and not df_m1.empty:
