@@ -402,6 +402,7 @@ def analyze_symbol_filtrado_m15(
         "tp_operativo": tp,     # Alias explícito: mismo valor que tp_1_1
         "tp_ratio": TP_RATIO,   # Ratio real: 2 (no 1)
         "sl": sl,
+        "score": score,
         "ob": "SI" if has_ob else "NO",
         "fvg": "SI" if has_fvg else "NO",
         "barrida": "SI" if has_barrida else "NO",
