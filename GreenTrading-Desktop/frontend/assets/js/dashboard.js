@@ -45,6 +45,9 @@ const refreshTimers = {
 // Intervalo de refresco
 const AUTO_REFRESH_INTERVAL = 1000;
 
+// Backend base URL (same as historial.js)
+const BACKEND_BASE_URL = 'http://127.0.0.1:8765';
+
 // ============================================================
 // INIT
 // ============================================================
@@ -197,6 +200,17 @@ function setupRefreshButton() {
 
 function renderCurrentTab() {
     const statusEl = document.getElementById('strategyTabStatus');
+    const metricsPanel = document.getElementById('filtradoM15MetricsPanel');
+
+    // Show metrics panel only for filtrado_m15 tab
+    if (metricsPanel) {
+        if (activeStrategy === 'microimpulso_filtrado_m15') {
+            metricsPanel.classList.add('metrics-visible');
+            renderFiltradoM15Metrics(strategyCache.microimpulso_filtrado_m15);
+        } else {
+            metricsPanel.classList.remove('metrics-visible');
+        }
+    }
 
     if (activeStrategy === 'm15pro') {
         renderTwoTableView(strategyCache.m15pro, 'm15pro');
@@ -231,6 +245,66 @@ function renderCurrentTab() {
     }
 
     updateLastUpdateTime();
+}
+
+// ============================================================
+// MÉTRICAS: SMC MICRO IMPULSO FILTRADO M15
+// ============================================================
+
+/**
+ * Renders the live-state metrics panel for SMC MICRO IMPULSO FILTRADO M15.
+ * Live counters (ACTIVA, EN_ZONA, PROFIT, PAUSADA) come from the snapshot cache.
+ * Historical counters (TP, SL, winrate) are fetched from /api/setups/summary
+ * filtered strictly by strategy_id = SMC_MICRO_IMPULSO_FILTRADO_M15.
+ */
+function renderFiltradoM15Metrics(snapshots) {
+    // --- Live counters from snapshot cache ---
+    const counts = { ACTIVA: 0, EN_ZONA: 0, PROFIT: 0, PAUSADA: 0 };
+    snapshots.forEach(s => {
+        const ef = (s.estado_final || s.estado_dashboard || s.estado || '').toUpperCase().replace(/ /g, '_');
+        if (counts.hasOwnProperty(ef)) counts[ef]++;
+    });
+
+    const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    setEl('mf15-activa',  counts.ACTIVA);
+    setEl('mf15-en-zona', counts.EN_ZONA);
+    setEl('mf15-profit',  counts.PROFIT);
+    setEl('mf15-pausada', counts.PAUSADA);
+
+    // --- Historical counters from /api/setups/summary (async, non-blocking) ---
+    _fetchFiltradoM15HistoricalMetrics();
+}
+
+const _mf15_fetch_in_progress = { active: false };
+
+function _fetchFiltradoM15HistoricalMetrics() {
+    // Guard: skip if a fetch is already in flight
+    if (_mf15_fetch_in_progress.active) return;
+    _mf15_fetch_in_progress.active = true;
+
+    fetch(`${BACKEND_BASE_URL}/api/setups/summary?strategy_id=SMC_MICRO_IMPULSO_FILTRADO_M15`)
+        .then(r => r.json())
+        .then(result => {
+            if (!result.success) return;
+            const symbolStats = result.data || {};
+            let totalTp = 0, totalSl = 0;
+            Object.values(symbolStats).forEach(st => {
+                totalTp += st.tp || 0;
+                totalSl += st.sl || 0;
+            });
+            const total = totalTp + totalSl;
+            const winrate = total > 0 ? Math.round((totalTp / total) * 100) : null;
+
+            const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+            setEl('mf15-tp',       totalTp);
+            setEl('mf15-sl',       totalSl);
+            setEl('mf15-cerradas', total);
+            setEl('mf15-winrate',  winrate !== null ? `${winrate}%` : '--%');
+            const sub = document.getElementById('mf15-winrate-sub');
+            if (sub) sub.textContent = total > 0 ? `${totalTp}TP / ${totalSl}SL` : '';
+        })
+        .catch(() => { /* silencioso — datos históricos opcionales */ })
+        .finally(() => { _mf15_fetch_in_progress.active = false; });
 }
 
 // ============================================================
@@ -634,6 +708,10 @@ function copyZoneValue(btn) {
 function formatEstadoBadge(estado) {
     const estadoNormalized = estado ? estado.toUpperCase().replace(/ /g, '_') : 'SIN_SETUP';
     switch (estadoNormalized) {
+        case 'NO_CUMPLE_DIRECCIÓN_M15':
+        case 'NO_CUMPLE_DIRECCION_M15':
+        case 'NO CUMPLE DIRECCIÓN M15':
+        case 'NO CUMPLE DIRECCION M15':    return '<span class="status-badge status-no-cumple">⛔ NO CUMPLE M15</span>';
         case 'ACTIVA':             return '<span class="status-badge status-activa">✓ ACTIVA</span>';
         case 'ESPERANDO_ENTRADA':  return '<span class="status-badge status-esperando">⏳ ESPERANDO ENTRADA</span>';
         case 'LLEGANDO_A_ZONA':    return '<span class="status-badge status-llegando">↓ LLEGANDO A ZONA</span>';

@@ -350,6 +350,15 @@ function updateRowCells(row, setup) {
 }
 
 /**
+ * Returns true if a setup record belongs to the SMC MICRO IMPULSO FILTRADO M15 strategy.
+ * Checks both strategy_id and strategy_key to handle records saved with either convention.
+ */
+function isFiltradoM15Setup(setup) {
+    return setup.strategy_id === 'SMC_MICRO_IMPULSO_FILTRADO_M15'
+        || setup.strategy_key === 'microimpulso_filtrado_m15';
+}
+
+/**
  * Create a table row for a setup
  */
 function createTableRow(setup) {
@@ -372,20 +381,46 @@ function createTableRow(setup) {
         : '--';
     const resultadoClass = setup.resultado_puntos > 0 ? 'resultado-positive' : 
                           setup.resultado_puntos < 0 ? 'resultado-negative' : '';
-    
-    const contexto = [
-        setup.tendencia_h1 || '',
-        setup.tendencia_m15 || '',
-        setup.ultimo_evento_m15 || ''
-    ].filter(Boolean).join(' / ') || '--';
+
+    // Resolve TP value: multiple field names exist across strategies due to the shared Supabase schema.
+    // tp_operativo is the semantic alias for filtrado_m15 (ratio 1:2).
+    // tp is the normalized field used internally by some engines.
+    // tp_1_1 is the legacy Supabase column name — for filtrado_m15 it stores the 1:2 TP level despite the name.
+    // All three fields hold the same numeric value for filtrado_m15 records.
+    const tpValue = setup.tp_operativo ?? setup.tp ?? setup.tp_1_1;
+    const tpDisplay = tpValue != null ? Number(tpValue).toFixed(2) : '--';
+
+    // For SMC_MICRO_IMPULSO_FILTRADO_M15, show TP 1:2 label; for others just show the value
+    const filtradoM15 = isFiltradoM15Setup(setup);
+    const tpCell = filtradoM15
+        ? `<span class="tp-ratio-label">TP 1:2</span> ${tpDisplay}`
+        : tpDisplay;
+
+    // Contexto: prefer M1-specific fields for filtrado_m15
+    let contexto;
+    if (filtradoM15) {
+        contexto = [
+            setup.direccion_m15 ? `M15: ${setup.direccion_m15}` : '',
+            setup.micro_bos_choch || '',
+            setup.zona_desde && setup.zona_hasta
+                ? `Zona: ${Number(setup.zona_desde).toFixed(2)}–${Number(setup.zona_hasta).toFixed(2)}`
+                : ''
+        ].filter(Boolean).join(' / ') || '--';
+    } else {
+        contexto = [
+            setup.tendencia_h1 || '',
+            setup.tendencia_m15 || '',
+            setup.ultimo_evento_m15 || ''
+        ].filter(Boolean).join(' / ') || '--';
+    }
     
     tr.innerHTML = `
         <td>${formatDate(setup.created_at)}</td>
         <td>${setup.symbol || '--'}</td>
         <td>${setup.strategy_name || '--'}</td>
-        <td>${setup.entrada != null ? setup.entrada.toFixed(2) : '--'}</td>
-        <td class="stoploss-cell">${setup.stoploss != null ? setup.stoploss.toFixed(2) : '--'}</td>
-        <td>${setup.tp_1_1 != null ? setup.tp_1_1.toFixed(2) : '--'}</td>
+        <td>${setup.entrada != null ? Number(setup.entrada).toFixed(2) : '--'}</td>
+        <td class="stoploss-cell">${setup.stoploss != null ? Number(setup.stoploss).toFixed(2) : '--'}</td>
+        <td>${tpCell}</td>
         <td><span class="estado-badge ${estadoDashboardClass} estado-dashboard">${setup.estado_dashboard || '--'}</span></td>
         <td><span class="estado-badge ${estadoClass} estado">${setup.estado || '--'}</span></td>
         <td class="resultado-puntos ${resultadoClass}">${resultadoPuntos}</td>

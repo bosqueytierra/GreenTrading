@@ -485,6 +485,20 @@
    FASE 3B - STRATEGY FILTER & SUMMARY
    ========================= */
 
+/* TP ratio label shown for SMC_MICRO_IMPULSO_FILTRADO_M15 rows */
+.tp-ratio-label {
+    display: inline-block;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    background-color: rgba(139, 92, 246, 0.12);
+    color: #6d28d9;
+    margin-right: 3px;
+    vertical-align: middle;
+}
+
 .winrate-count {
     display: inline-block;
     padding: 1px 6px;
