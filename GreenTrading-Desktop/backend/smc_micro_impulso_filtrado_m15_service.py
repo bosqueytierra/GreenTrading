@@ -262,6 +262,8 @@ def _update_estado_supabase_filtrado_m15(
     updates = {
         "estado": estado_nuevo,
         "estado_dashboard": estado_nuevo,
+        "estado_historial": estado_nuevo,
+        "estado_final": estado_nuevo,
         "precio_actual": precio_actual,
     }
     print(f"  FILTRADO_M15: Actualizando id={setup_id} -> {estado_nuevo}")
@@ -342,11 +344,24 @@ def sync_setup_filtrado_m15(result: dict) -> None:
     if hasattr(supabase_service, "get_active_setup_by_symbol"):
         existing = supabase_service.get_active_setup_by_symbol(STRATEGY_ID, symbol)
 
+    # PAUSADA se trata como "sin setup" para esta llamada de sync:
+    # la zona fue pausada porque llegó una zona nueva; no re-activar el registro
+    # PAUSADA con los niveles viejos — en su lugar crear un nuevo registro con
+    # los niveles frescos.
+    if existing and existing.get("estado") == "PAUSADA":
+        print(
+            f"  FILTRADO_M15 SYNC: existing PAUSADA id={existing.get('id')} "
+            f"-- ignorando, se creara nuevo registro para zona fresca"
+        )
+        existing = None
+
     if existing:
         setup_id = existing["id"]
         updates = {
             "estado": setup_data["estado"],
             "estado_dashboard": setup_data["estado_dashboard"],
+            "estado_historial": setup_data["estado"],
+            "estado_final": setup_data["estado"],
             "precio_actual": setup_data["precio_actual"],
         }
         print(f"  FILTRADO_M15 SYNC: UPDATE id={setup_id}, estado={setup_data['estado']}")
