@@ -61,6 +61,12 @@ TERMINAL_STATES = {"TP", "SL", "DESCARTADA"}
 # ─── Estados "en operación activa": el trade ya tocó la zona ─────────────────
 IN_TRADE_STATES = {"EN_ZONA", "PROFIT"}
 
+# ─── Umbral de diferencia de niveles para detectar zona nueva ────────────────
+ZONE_LEVEL_TOLERANCE = 0.01   # puntos — umbral absoluto para comparar entradas/SL
+
+# ─── Umbral de cambio de precio para disparar sync a Supabase ────────────────
+PRICE_CHANGE_SYNC_THRESHOLD_PCT = 1.0  # % de cambio de precio que fuerza sync
+
 
 # =============================================================================
 # HELPERS
@@ -74,9 +80,16 @@ def _derivar_zona(entrada: float, stoploss: float):
       ALCISTA: entrada = zona_hasta (borde superior)  >  stoploss = zona_desde (borde inferior)
       BAJISTA: entrada = zona_desde (borde inferior)  <  stoploss = zona_hasta (borde superior)
 
+    Raises:
+        ValueError: Si entrada == stoploss (zona de tamaño cero, zona imposible).
+
     Returns:
         (zona_desde, zona_hasta, direccion)
     """
+    if entrada == stoploss:
+        raise ValueError(
+            f"_derivar_zona: entrada == stoploss ({entrada}) — zona de tamaño cero es inválida"
+        )
     if entrada > stoploss:
         return stoploss, entrada, "ALCISTA"
     return entrada, stoploss, "BAJISTA"
@@ -110,9 +123,9 @@ def _has_relevant_changes_filtrado_m15(symbol: str, new_data: dict) -> bool:
 
     old_price = old_data.get("precio_actual", 0)
     new_price = new_data.get("precio_actual", 0)
-    if old_price and old_price > 0:
+    if old_price > 0:
         pct = abs(new_price - old_price) / old_price * 100
-        if pct > 1.0:
+        if pct > PRICE_CHANGE_SYNC_THRESHOLD_PCT:
             print(f"FILTRADO_M15 SYNC TRIGGER: {symbol} - precio cambió {pct:.2f}%")
             _setup_cache_micro_impulso_filtrado_m15[symbol] = new_data
             return True
@@ -554,8 +567,8 @@ def _modo_seguimiento_filtrado_m15(
             fresh_stoploss = fresh_result.get("stoploss")
 
             is_different = (
-                abs(fresh_entrada - entrada_g) > 0.01
-                or abs(fresh_stoploss - stoploss_g) > 0.01
+                abs(fresh_entrada - entrada_g) > ZONE_LEVEL_TOLERANCE
+                or abs(fresh_stoploss - stoploss_g) > ZONE_LEVEL_TOLERANCE
             )
 
             if is_different:
