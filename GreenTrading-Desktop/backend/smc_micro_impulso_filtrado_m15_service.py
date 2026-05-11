@@ -133,9 +133,11 @@ def sync_setup_filtrado_m15(result: dict) -> None:
 
     Implementa:
       - Debounce (solo sincroniza si hay cambios en campos críticos).
+        Excepción: estados terminales TP/SL siempre sincronizan (force_sync).
       - Guard de zonas ya cerradas (no recrea TP/SL por mismos niveles).
       - Aislamiento total por strategy_id = STRATEGY_ID.
       - NO toca registros de otras estrategias.
+      - Para TP/SL: actualiza resultado, resultado_puntos y motivo_cierre.
 
     Args:
         result: Resultado del análisis con zona válida.
@@ -145,6 +147,8 @@ def sync_setup_filtrado_m15(result: dict) -> None:
         return
 
     estado_actual = result.get("estado", "")
+    estado_dashboard_actual = result.get("estado_dashboard", "")
+
     if estado_actual in ("SIN SETUP", "SIN_SETUP", "NO CUMPLE DIRECCIÓN M15"):
         print(f"  FILTRADO_M15 SYNC: Skip {result.get('symbol')} -- {estado_actual}")
         return
@@ -153,24 +157,33 @@ def sync_setup_filtrado_m15(result: dict) -> None:
         print(f"  FILTRADO_M15 SYNC: Skip {result.get('symbol')} -- falta entrada o stoploss")
         return
 
+    # Estados terminales: nunca deben saltarse por debounce ni por guard de PAUSADA
+    terminal_state = estado_actual in ("TP", "SL") or estado_dashboard_actual in ("TP", "SL")
+
     symbol = result["symbol"]
     tp_val = result.get("tp") or result.get("tp_1_1")
-    estado_historial = result.get("estado_historial", result.get("estado_dashboard", "ACTIVA"))
+    incoming_entrada = result.get("entrada")
+    incoming_stoploss = result.get("stoploss")
+    precio_actual = result.get("precio_actual") or result.get("price")
 
     critical_data = {
-        "estado": estado_historial,
-        "entrada": result.get("entrada"),
-        "stoploss": result.get("stoploss"),
+        "estado": estado_actual,
+        "entrada": incoming_entrada,
+        "stoploss": incoming_stoploss,
         "tp_1_1": tp_val,
         "score": result.get("score", 0),
         "zona_desde": result.get("zona_desde", 0),
         "zona_hasta": result.get("zona_hasta", 0),
-        "precio_actual": result.get("precio_actual") or result.get("price"),
+        "precio_actual": precio_actual,
     }
 
-    if not _has_relevant_changes_filtrado_m15(symbol, critical_data):
+    has_changes = _has_relevant_changes_filtrado_m15(symbol, critical_data)
+    if not has_changes and not terminal_state:
         print(f"  FILTRADO_M15 SYNC: Skip {symbol} -- sin cambios relevantes")
         return
+
+    if not has_changes and terminal_state:
+        print(f"  FILTRADO_M15 SYNC: force_sync=True para {symbol} -- estado terminal {estado_actual}")
 
     print(f"  FILTRADO_M15 SYNC: Preparando sync para {symbol}")
 
@@ -181,19 +194,19 @@ def sync_setup_filtrado_m15(result: dict) -> None:
         "tendencia_h1": "--",
         "tendencia_m15": result.get("direccion_m15", "--"),
         "ultimo_evento_m15": result.get("micro_bos_choch", "--"),
-        "entrada": critical_data["entrada"],
-        "stoploss": critical_data["stoploss"],
+        "entrada": incoming_entrada,
+        "stoploss": incoming_stoploss,
         # tp_1_1 es el nombre de columna en Supabase (schema compartido).
         # Para esta estrategia almacena el TP operativo con ratio 1:2 (no 1:1).
-        "tp_1_1": critical_data["tp_1_1"],  # TP operativo 1:2 — compatibilidad schema
+        "tp_1_1": tp_val,  # TP operativo 1:2 — compatibilidad schema
         "score": critical_data["score"],
         "ob": result.get("ob", "NO") in TRUTHY_VALUES,
         "fvg": result.get("fvg", "NO") in TRUTHY_VALUES,
         "barrida": result.get("barrida", "NO") in TRUTHY_VALUES,
-        "estado": critical_data["estado"],
-        "estado_dashboard": result.get("estado_dashboard", "ACTIVA"),
-        "precio_detectado": critical_data["precio_actual"],
-        "precio_actual": critical_data["precio_actual"],
+        "estado": estado_actual,
+        "estado_dashboard": estado_dashboard_actual or estado_actual,
+        "precio_detectado": precio_actual,
+        "precio_actual": precio_actual,
     }
 
     # Buscar setup activo existente (por símbolo — modo seguimiento)
@@ -201,33 +214,99 @@ def sync_setup_filtrado_m15(result: dict) -> None:
     if hasattr(supabase_service, "get_active_setup_by_symbol"):
         existing = supabase_service.get_active_setup_by_symbol(STRATEGY_ID, symbol)
 
-    # PAUSADA se trata como "sin setup" para esta llamada de sync:
-    # la zona fue pausada porque llegó una zona nueva; no re-activar el registro
-    # PAUSADA con los niveles viejos — en su lugar crear un nuevo registro con
-    # los niveles frescos.
+    # PAUSADA guard:
+    # - En estado NO terminal: ignorar registro PAUSADA y crear uno nuevo para la
+    #   zona fresca (la zona fue pausada porque llegó una zona distinta).
+    # - En estado terminal TP/SL: cerrar registro PAUSADA solo si sus niveles de
+    #   entrada/stoploss coinciden con los del cierre entrante; de lo contrario
+    #   ignorar (no cerrar una zona vieja/distinta).
     if existing and existing.get("estado") == "PAUSADA":
-        print(
-            f"  FILTRADO_M15 SYNC: existing PAUSADA id={existing.get('id')} "
-            f"-- ignorando, se creara nuevo registro para zona fresca"
-        )
-        existing = None
+        if terminal_state:
+            # Para TP/SL: comprobar si los niveles coinciden con el registro PAUSADA
+            existing_entrada = existing.get("entrada")
+            existing_stoploss = existing.get("stoploss")
+            levels_match = (
+                existing_entrada is not None
+                and existing_stoploss is not None
+                and abs(float(existing_entrada) - float(incoming_entrada)) <= 0.01
+                and abs(float(existing_stoploss) - float(incoming_stoploss)) <= 0.01
+            )
+            if not levels_match:
+                print(
+                    f"  FILTRADO_M15 SYNC: existing PAUSADA id={existing.get('id')} "
+                    f"niveles no coinciden (entrada {existing_entrada} vs {incoming_entrada}, "
+                    f"stoploss {existing_stoploss} vs {incoming_stoploss}) -- ignorando"
+                )
+                existing = None
+            else:
+                print(
+                    f"  FILTRADO_M15 SYNC: existing PAUSADA id={existing.get('id')} "
+                    f"niveles coinciden -- cerrando como {estado_actual}"
+                )
+        else:
+            print(
+                f"  FILTRADO_M15 SYNC: existing PAUSADA id={existing.get('id')} "
+                f"-- ignorando, se creara nuevo registro para zona fresca"
+            )
+            existing = None
+
+    # ── DEBUG LOG ────────────────────────────────────────────────────────────
+    print(f"\n[FILTRADO_M15 CLOSE DEBUG]")
+    print(f"  symbol: {symbol}")
+    print(f"  incoming_estado: {estado_actual}")
+    print(f"  incoming_estado_dashboard: {estado_dashboard_actual}")
+    print(f"  incoming_entrada: {incoming_entrada}")
+    print(f"  incoming_stoploss: {incoming_stoploss}")
+    print(f"  incoming_tp: {tp_val}")
+    print(f"  incoming_precio: {precio_actual}")
+    print(f"  existing_id: {existing.get('id') if existing else None}")
+    print(f"  existing_estado: {existing.get('estado') if existing else None}")
+    print(f"  existing_entrada: {existing.get('entrada') if existing else None}")
+    print(f"  existing_stoploss: {existing.get('stoploss') if existing else None}")
+    # ─────────────────────────────────────────────────────────────────────────
 
     if existing:
         setup_id = existing["id"]
         updates = {
-            "estado": setup_data["estado"],
+            "estado": estado_actual,
             "estado_dashboard": setup_data["estado_dashboard"],
-            "estado_historial": setup_data["estado"],
-            "estado_final": setup_data["estado"],
-            "precio_actual": setup_data["precio_actual"],
+            "precio_actual": precio_actual,
         }
-        print(f"  FILTRADO_M15 SYNC: UPDATE id={setup_id}, estado={setup_data['estado']}")
+        if terminal_state:
+            # Calcular resultado_puntos: positivo para TP, negativo para SL
+            tp_puntos = result.get("tp_puntos")
+            sl_puntos = result.get("sl_puntos")
+            if estado_actual == "TP":
+                resultado_puntos = tp_puntos if tp_puntos is not None else None
+                motivo_cierre = "TP alcanzado"
+            else:  # SL
+                resultado_puntos = -sl_puntos if sl_puntos is not None else None
+                motivo_cierre = "SL alcanzado"
+            updates["resultado"] = estado_actual
+            if resultado_puntos is not None:
+                updates["resultado_puntos"] = resultado_puntos
+            updates["motivo_cierre"] = motivo_cierre
+
+        debug_action = "UPDATE_CLOSE" if terminal_state else "UPDATE"
+        print(f"  [FILTRADO_M15 CLOSE DEBUG] action={debug_action}")
+        print(f"  FILTRADO_M15 SYNC: UPDATE id={setup_id}, estado={estado_actual}")
         res = supabase_service.update_setup(setup_id, updates)
         if res:
             print(f"FILTRADO_M15 SYNC OK: Updated {symbol}")
         else:
             print(f"FILTRADO_M15 SYNC WARN: update devolvio None para {symbol}")
     else:
+        # Para estados terminales sin registro existente: no crear registro nuevo
+        if terminal_state:
+            print(f"  [FILTRADO_M15 CLOSE DEBUG] action=SKIP -- no hay registro activo para cerrar")
+            print(
+                f"  FILTRADO_M15 SYNC: SKIP {symbol} -- "
+                f"estado terminal {estado_actual} sin registro activo para cerrar"
+            )
+            return
+
+        print(f"  [FILTRADO_M15 CLOSE DEBUG] action=CREATE")
+
         # Guard: no recrear zonas ya cerradas con los mismos niveles
         closed_setup = None
         if (
@@ -237,8 +316,8 @@ def sync_setup_filtrado_m15(result: dict) -> None:
             closed_setup = supabase_service.get_closed_setup_by_levels(
                 STRATEGY_ID,
                 symbol,
-                critical_data["entrada"],
-                critical_data["stoploss"],
+                incoming_entrada,
+                incoming_stoploss,
                 critical_data["tp_1_1"],
             )
 
@@ -246,8 +325,8 @@ def sync_setup_filtrado_m15(result: dict) -> None:
         print(f"\nFILTRADO_M15 DUPLICATE_CLOSED_ZONE_CHECK:")
         print(f"  symbol: {symbol}")
         print(f"  estrategia: {STRATEGY_ID}")
-        print(f"  entrada: {critical_data['entrada']}")
-        print(f"  stoploss: {critical_data['stoploss']}")
+        print(f"  entrada: {incoming_entrada}")
+        print(f"  stoploss: {incoming_stoploss}")
         print(f"  tp operativo (1:2): {critical_data['tp_1_1']}")  # tp_1_1 = TP 1:2 por compat schema
         print(f"  found_closed: {bool(closed_setup)}")
         print(f"  decision: {decision}")
@@ -255,7 +334,7 @@ def sync_setup_filtrado_m15(result: dict) -> None:
         if closed_setup:
             # Zona ya cerrada — resetear a SIN_SETUP
             sin_setup = create_sin_setup_micro_impulso_filtrado_m15_response(
-                symbol=symbol, price=critical_data["precio_actual"]
+                symbol=symbol, price=precio_actual
             )
             for k, v in sin_setup.items():
                 result[k] = v
@@ -267,7 +346,7 @@ def sync_setup_filtrado_m15(result: dict) -> None:
                 "score": 0,
                 "zona_desde": 0,
                 "zona_hasta": 0,
-                "precio_actual": critical_data["precio_actual"],
+                "precio_actual": precio_actual,
             }
             print(f"  FILTRADO_M15 SYNC: SKIP -- zona ya cerrada (TP/SL)")
             return
