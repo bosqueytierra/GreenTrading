@@ -727,15 +727,25 @@ async def get_smc_micro_impulso_snapshot():
 @app.get("/api/smc/micro-impulso-filtrado-m15/snapshot")
 async def get_smc_micro_impulso_filtrado_m15_snapshot():
     """
-    PARTE 1 — ARQUITECTURA BASE: SMC MICRO IMPULSO FILTRADO M15 snapshot.
+    PARTE 3 — GESTIÓN OPERATIVA COMPLETA: SMC MICRO IMPULSO FILTRADO M15 snapshot.
 
-    Estrategia independiente con filtro direccional M15 obligatorio:
-    - M15: filtro direccional (lógica completa en Parte 2).
-    - M1: núcleo operativo (lógica completa en Parte 2).
+    Estrategia completamente independiente con filtro direccional M15 obligatorio:
+    - M15: filtro direccional obligatorio (bloquea si no alinea con índice).
+    - M1: núcleo operativo (micro BOS/CHOCH, barrida, OB, FVG, zona).
     - H1: NO se usa.
+    - TP ratio 1:2 (micro zonas M1).
     - strategy_key = microimpulso_filtrado_m15.
+    - strategy_id = SMC_MICRO_IMPULSO_FILTRADO_M15.
 
-    Parte 1: devuelve los 10 índices con estado SIN SETUP.
+    Estados soportados:
+      NO CUMPLE DIRECCIÓN M15 | SIN SETUP | ACTIVA | EN_ZONA |
+      PROFIT | TP | SL | PAUSADA | DESCARTADA
+
+    Transiciones:
+      ACTIVA → EN_ZONA → PROFIT → TP
+      ACTIVA → EN_ZONA → SL
+      PROFIT ↔ EN_ZONA  (precio puede volver a zona)
+      ACTIVA → PAUSADA  (nueva zona detectada)
 
     Returns:
         list: Array de SMC MICRO IMPULSO FILTRADO M15 snapshots.

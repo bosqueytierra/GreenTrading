@@ -101,7 +101,13 @@ def create_sin_setup_micro_impulso_filtrado_m15_response(
         "zona_size": 0.0,
         "entrada": None,
         "stoploss": None,
+        # tp_1_1 mantiene compatibilidad con el schema de Supabase (columna compartida).
+        # Para esta estrategia, tp_1_1 almacena el TP operativo 1:2 (no 1:1).
+        # Usar tp_operativo o tp para lógica interna; tp_ratio indica el ratio real.
         "tp": None,
+        "tp_1_1": None,     # TP operativo 1:2 — nombre heredado de schema Supabase
+        "tp_operativo": None,  # Alias explícito: mismo valor que tp_1_1
+        "tp_ratio": TP_RATIO,  # Ratio real: 2 (no 1)
         "sl": None,
         "score": 0,
         "ob": "NO",
@@ -557,9 +563,14 @@ def analyze_symbol_filtrado_m15(
         "zona_size": round(zona_size, 4),
         "entrada": entrada,
         "stoploss": sl,
+        # tp_1_1 mantiene compatibilidad con el schema de Supabase (columna compartida).
+        # Para esta estrategia, tp_1_1 almacena el TP operativo 1:2 (no 1:1).
+        # Usar tp_operativo o tp para lógica interna; tp_ratio indica el ratio real.
         "tp": tp,
+        "tp_1_1": tp,           # TP operativo 1:2 — nombre heredado de schema Supabase
+        "tp_operativo": tp,     # Alias explícito: mismo valor que tp_1_1
+        "tp_ratio": TP_RATIO,   # Ratio real: 2 (no 1)
         "sl": sl,
-        "score": score,
         "ob": "SI" if has_ob else "NO",
         "fvg": "SI" if has_fvg else "NO",
         "barrida": "SI" if has_barrida else "NO",
