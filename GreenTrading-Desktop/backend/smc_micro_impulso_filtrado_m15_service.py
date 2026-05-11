@@ -196,6 +196,8 @@ def _build_result_tracked(
 
     tp_puntos = abs(tp - entrada) if tp is not None and entrada is not None else 0.0
     sl_puntos = abs(stoploss - entrada) if stoploss is not None and entrada is not None else 0.0
+    # Compute once: tp_1_1, tp, and tp_operativo all hold the same 1:2 TP value.
+    tp_rounded = round(tp, 2) if tp is not None else None
 
     return {
         "symbol": symbol,
@@ -214,11 +216,12 @@ def _build_result_tracked(
         "stoploss": round(stoploss, 2),
         # tp_1_1 mantiene compatibilidad con el schema de Supabase (columna compartida).
         # Para esta estrategia, tp_1_1 almacena el TP operativo 1:2 (no 1:1).
-        # Usar tp_operativo o tp para lógica interna; tp_ratio indica el ratio real.
-        "tp": round(tp, 2) if tp is not None else None,
-        "tp_1_1": round(tp, 2) if tp is not None else None,  # TP operativo 1:2 — nombre heredado de schema Supabase
-        "tp_operativo": round(tp, 2) if tp is not None else None,  # Alias explícito
-        "tp_ratio": 2,  # Ratio real de esta estrategia: 1:2 (no 1:1)
+        # tp_operativo es el alias semánticamente correcto para uso interno.
+        # tp_ratio confirma el ratio real de la estrategia: 2 (no 1).
+        "tp": tp_rounded,
+        "tp_1_1": tp_rounded,      # TP operativo 1:2 — nombre heredado de schema Supabase
+        "tp_operativo": tp_rounded, # Alias explícito para uso en lógica interna
+        "tp_ratio": 2,              # Ratio real de esta estrategia: 1:2 (no 1:1)
         "sl": round(stoploss, 2),
         "score": score,
         "ob": ob,
