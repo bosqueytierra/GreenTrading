@@ -581,6 +581,45 @@ def _modo_seguimiento_filtrado_m15(
     # CASO B: ACTIVA — posible reemplazo de zona si llega una zona diferente
     # ─────────────────────────────────────────────────────────────────────────
     if estado_previo == "ACTIVA":
+        # ── Prioridad: si el precio ya está DENTRO de la zona guardada,
+        #    NO comparar con fresh_result, NO pausar, NO reemplazar.
+        #    Transicionar directamente a EN_ZONA usando la máquina de estados.
+        precio_en_zona_g = (
+            min(zona_desde_g, zona_hasta_g) <= precio_actual <= max(zona_desde_g, zona_hasta_g)
+        )
+        if precio_en_zona_g:
+            print(
+                f"  FILTRADO_M15 TRACKING: Precio dentro de zona guardada "
+                f"-> EN_ZONA (ignorando fresh_result)"
+            )
+            estado_dashboard = calcular_estado_dashboard(
+                precio_actual=precio_actual,
+                entrada=entrada_g,
+                zona_desde=zona_desde_g,
+                zona_hasta=zona_hasta_g,
+                direccion=direccion_g,
+                df_m1=df_m1,
+                symbol=symbol,
+            )
+            estado_nuevo, motivo = calcular_transicion_estado(
+                symbol=symbol,
+                estado_previo=estado_previo,
+                estado_calculado=estado_dashboard,
+                precio_actual=precio_actual,
+                entrada=entrada_g,
+                stoploss=stoploss_g,
+                tp=tp_g,
+                zona_desde=zona_desde_g,
+                zona_hasta=zona_hasta_g,
+            )
+            print(f"  FILTRADO_M15 TRACKING: {estado_previo} -> {estado_nuevo} | {motivo}")
+            if estado_nuevo != estado_previo:
+                _update_estado_supabase_filtrado_m15(existing.get("id"), estado_nuevo, precio_actual)
+            if symbol in _tracking_cache_filtrado_m15:
+                _tracking_cache_filtrado_m15[symbol]["estado"] = estado_nuevo
+                _tracking_cache_filtrado_m15[symbol]["precio_actual"] = precio_actual
+            return _build_result_tracked(symbol, existing, fresh_result, estado_nuevo, motivo)
+
         fresh_has_zone = (
             fresh_estado == "ACTIVA"
             and fresh_result.get("entrada") is not None
