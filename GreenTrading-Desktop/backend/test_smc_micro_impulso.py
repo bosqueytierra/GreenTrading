@@ -1128,6 +1128,73 @@ def test_barrida_no_es_obligatoria_para_zona():
 
 
 # ============================================================
+# 34. test_micro_bos_choch_no_es_estado_operativo
+# ============================================================
+
+def test_micro_bos_choch_no_es_estado_operativo():
+    print("\n[TEST] test_micro_bos_choch_no_es_estado_operativo")
+
+    ESTADOS_OPERATIVOS = {"ACTIVA", "EN_ZONA", "PROFIT", "LLEGANDO_A_ZONA", "ESPERANDO_ENTRADA"}
+
+    class FakeSupabaseActivaConEvento:
+        """Supabase con setup ACTIVA y ultimo_evento_m15 guardado como BOS_ALCISTA."""
+        def get_active_setup_by_symbol(self, strategy_id, symbol):
+            return {
+                "id": 42,
+                "estado": "ACTIVA",
+                "entrada": 1010.0,
+                "stoploss": 1000.0,
+                "tp_1_1": 1020.0,
+                "ob": True,
+                "fvg": False,
+                "barrida": False,
+                "desplazamiento_valido": True,
+                "score": 5,
+                "ultimo_evento_m15": "BOS_ALCISTA",
+                "created_at": "2024-01-01T00:00:00+00:00",
+                "updated_at": "2024-01-01T00:01:00+00:00",
+            }
+
+        def get_active_setup(self, strategy_id, symbol, entrada, stoploss):
+            return None
+
+        def update_setup(self, setup_id, updates):
+            return {"id": setup_id, **updates}
+
+    symbol = "Boom 1000 Index"
+    # precio por encima de la zona → PRE-ZONA válida para Boom
+    precio_actual = 1025.0
+    n = 20
+    opens  = [precio_actual] * n
+    closes = [precio_actual] * n
+    highs  = [precio_actual + 1] * n
+    lows   = [precio_actual - 1] * n
+    df_m1 = make_df(opens, highs, lows, closes)
+
+    result = analyze_symbol_smc_micro_impulso_engine(
+        symbol, df_m1=df_m1, df_m15=None,
+        supabase_service=FakeSupabaseActivaConEvento()
+    )
+
+    micro_bos_choch = result.get("micro_bos_choch", "")
+    print(f"  INFO: micro_bos_choch={micro_bos_choch!r}")
+
+    assert_true(
+        micro_bos_choch not in ESTADOS_OPERATIVOS,
+        f"micro_bos_choch no es un estado operativo (got {micro_bos_choch!r})"
+    )
+    assert_true(
+        micro_bos_choch in {"BOS_ALCISTA", "BOS_BAJISTA", "CHOCH_ALCISTA", "CHOCH_BAJISTA", "--"}
+        or (micro_bos_choch.startswith("BOS_") or micro_bos_choch.startswith("CHOCH_") or micro_bos_choch == "--"),
+        f"micro_bos_choch es un evento estructural o '--' (got {micro_bos_choch!r})"
+    )
+    assert_true(
+        micro_bos_choch == "BOS_ALCISTA",
+        f"micro_bos_choch usa valor guardado en Supabase (esperado 'BOS_ALCISTA', got {micro_bos_choch!r})"
+    )
+
+
+# ============================================================
 # RUNNER
 # ============================================================
 
@@ -1167,6 +1234,7 @@ def run_all_tests():
         test_zona_pequeña_no_rechazada_por_min_zona_size,
         test_evento_antiguo_no_rechazado_staleness,
         test_barrida_no_es_obligatoria_para_zona,
+        test_micro_bos_choch_no_es_estado_operativo,
     ]
 
     print("\n" + "=" * 60)

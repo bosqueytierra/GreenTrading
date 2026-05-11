@@ -651,6 +651,17 @@ def analyze_symbol_smc_micro_impulso_engine(
             # ----------------------------------------------------------
             # MODO SEGUIMIENTO SMC_MICRO_IMPULSO
             # ----------------------------------------------------------
+            # micro_bos_choch debe reflejar el evento estructural M1 que originó
+            # la zona, no el estado operativo (ACTIVA/EN_ZONA/etc.).
+            # Se usa el valor guardado en Supabase (último_evento_m15, que el servicio
+            # mapea desde último_evento_m1 al crear el setup). Si no está disponible,
+            # se cae al evento M1 actual como fallback.
+            micro_evento_operativo = (
+                setup_activo.get("ultimo_evento_m15")
+                or ultimo_evento_m1_str
+                or "--"
+            )
+
             dir_op = direccion_operativa_por_indice(symbol)
             if not dir_op:
                 dir_op = "ALCISTA" if entrada > stoploss else "BAJISTA"
@@ -725,7 +736,7 @@ def analyze_symbol_smc_micro_impulso_engine(
                         zona_desde, zona_hasta, entrada, stoploss, tp_1_1,
                         estado_dashboard, estado_historial, score,
                         has_ob, has_fvg, has_barrida, has_desp,
-                        micro_bos_choch=estado_previo,
+                        micro_bos_choch=micro_evento_operativo,
                     )
                     _print_summary(result)
                     return result
@@ -868,7 +879,7 @@ def analyze_symbol_smc_micro_impulso_engine(
                 zona_desde, zona_hasta, entrada, stoploss, tp_1_1,
                 estado_dashboard, estado_historial, score,
                 has_ob, has_fvg, has_barrida, has_desp,
-                micro_bos_choch=estado_previo,
+                micro_bos_choch=micro_evento_operativo,
             )
             _print_summary(result)
             return result
