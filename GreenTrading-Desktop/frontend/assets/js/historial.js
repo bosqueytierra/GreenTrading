@@ -350,9 +350,6 @@ function updateRowCells(row, setup) {
 }
 
 /**
- * Create a table row for a setup
- */
-/**
  * Returns true if a setup record belongs to the SMC MICRO IMPULSO FILTRADO M15 strategy.
  * Checks both strategy_id and strategy_key to handle records saved with either convention.
  */
@@ -361,6 +358,9 @@ function isFiltradoM15Setup(setup) {
         || setup.strategy_key === 'microimpulso_filtrado_m15';
 }
 
+/**
+ * Create a table row for a setup
+ */
 function createTableRow(setup) {
     const tr = document.createElement('tr');
     tr.setAttribute('data-setup-id', setup.id);
