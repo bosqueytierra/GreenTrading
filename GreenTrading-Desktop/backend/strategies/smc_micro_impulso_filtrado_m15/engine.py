@@ -218,11 +218,11 @@ def _calcular_tp_sl_1_2(
 
     ALCISTA (Boom):
         sl = zona_desde
-        tp = zona_hasta + (zona_size * 2)
+        tp = zona_hasta + (zona_size * TP_RATIO)   # TP_RATIO=2 → ratio 1:2
 
     BAJISTA (Crash):
         sl = zona_hasta
-        tp = zona_desde - (zona_size * 2)
+        tp = zona_desde - (zona_size * TP_RATIO)   # TP_RATIO=2 → ratio 1:2
 
     Args:
         zona_desde: Límite inferior de la zona (low del OB).
@@ -434,13 +434,10 @@ def analyze_symbol_filtrado_m15(
         print(f"    OB: {ob['tipo']} desde={ob['desde']} hasta={ob['hasta']}")
 
         # PASO 7: micro FVG M1 (confirmación adicional — no bloquea)
+        fvg_tipo_esperado = "FVG_ALCISTA" if direccion_ev == "ALCISTA" else "FVG_BAJISTA"
         fvgs_validos = [
             f for f in fvgs_m1
-            if f["index"] <= ev_idx
-            and (
-                (direccion_ev == "ALCISTA" and f["tipo"] == "FVG_ALCISTA")
-                or (direccion_ev == "BAJISTA" and f["tipo"] == "FVG_BAJISTA")
-            )
+            if f["index"] <= ev_idx and f["tipo"] == fvg_tipo_esperado
         ]
         fvg = fvgs_validos[-1] if fvgs_validos else None
         if fvg:
