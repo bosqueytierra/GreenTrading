@@ -10,12 +10,14 @@ FILTRADO M15 delegates entirely to SMC MICRO IMPULSO normal and only adds:
 
 Architecture:
   1. Check M15 filter cheaply before any heavy computation.
-  2. If M15 passes: call analyze_symbol_smc_micro_impulso() with sync_to_supabase=False.
-     The base call runs the MICRO IMPULSO engine with Supabase access so the
-     fully-tracked state (ACTIVA / LLEGANDO_A_ZONA / EN_ZONA / PROFIT / TP / SL)
-     is returned — no independent state machine here.
-  3. Mirror all fields from the base result.  Recalculate TP to 1:2.
-  4. Sync the final result to the isolated FILTRADO history (strategy_id = STRATEGY_ID).
+  2. Read FILTRADO M15's own Supabase record (estado_previo for its own state machine).
+  3. If M15 passes: call analyze_symbol_smc_micro_impulso() with sync_to_supabase=False.
+     The base call is used for ZONE DETECTION only (zona, entrada, stoploss).
+     State transitions are computed independently using FILTRADO M15's own estado_previo.
+  4. Re-run state machine with FILTRADO M15's own estado_previo and current price.
+     This ensures SL/TP are detected based on FILTRADO M15's own Supabase state,
+     not on the SMC_MICRO_IMPULSO records (which are read-only from here and may be stale).
+  5. Sync the final result to the isolated FILTRADO history (strategy_id = STRATEGY_ID).
 
 ISOLATION:
   - Does NOT write to SMC_MICRO_IMPULSO Supabase records.
@@ -25,11 +27,19 @@ ISOLATION:
     completely blocked from any update_setup / create_setup on those records.
   - Only writes to SMC_MICRO_IMPULSO_FILTRADO_M15 records.
   - Zero contamination of SMC_M15_PRO, SMC_H1_M15_PRO, SMC_MICRO_IMPULSO.
+
+ROOT CAUSE FIX (SL/TP not closing in runtime):
+  The original code used the base engine's state output (which reads SMC_MICRO_IMPULSO
+  records as estado_previo). Those records are NEVER updated when called from FILTRADO M15
+  (writes are blocked), so the state machine in the base engine always sees stale estado_previo
+  (ACTIVA) and never computes SL/TP. The fix: FILTRADO M15 reads its OWN records for
+  estado_previo and runs calcular_transicion_estado independently.
 """
 
 import traceback
 from datetime import datetime, timezone
 
+from core.state_machine import calcular_transicion_estado
 from strategies.smc_micro_impulso_filtrado_m15.engine import (
     create_sin_setup_micro_impulso_filtrado_m15_response,
     _calcular_direccion_m15,
@@ -139,6 +149,9 @@ def sync_setup_filtrado_m15(result: dict) -> None:
       - NO toca registros de otras estrategias.
       - Para TP/SL: actualiza resultado, resultado_puntos y motivo_cierre.
 
+    Log diagnóstico [FILTRADO_M15 SYNC TRACE] se imprime SIEMPRE (incluyendo
+    en SKIP_DEBOUNCE) para permitir diagnóstico de pérdida de estados SL/TP.
+
     Args:
         result: Resultado del análisis con zona válida.
     """
@@ -178,6 +191,84 @@ def sync_setup_filtrado_m15(result: dict) -> None:
     }
 
     has_changes = _has_relevant_changes_filtrado_m15(symbol, critical_data)
+    force_sync = terminal_state and not has_changes
+
+    # ── Buscar setup activo ANTES del debounce — requerido para [FILTRADO_M15 SYNC TRACE] ──
+    existing_raw = None
+    if hasattr(supabase_service, "get_active_setup_by_symbol"):
+        existing_raw = supabase_service.get_active_setup_by_symbol(STRATEGY_ID, symbol)
+
+    # ── PAUSADA guard ─────────────────────────────────────────────────────────
+    # - En estado NO terminal: ignorar registro PAUSADA y crear uno nuevo para la
+    #   zona fresca (la zona fue pausada porque llegó una zona distinta).
+    # - En estado terminal TP/SL: cerrar registro PAUSADA solo si sus niveles de
+    #   entrada/stoploss coinciden con los del cierre entrante; de lo contrario
+    #   ignorar (no cerrar una zona vieja/distinta).
+    existing = existing_raw
+    pausada_mismatch = False
+    if existing and existing.get("estado") == "PAUSADA":
+        if terminal_state:
+            existing_entrada = existing.get("entrada")
+            existing_stoploss = existing.get("stoploss")
+            levels_match = (
+                existing_entrada is not None
+                and existing_stoploss is not None
+                and abs(float(existing_entrada) - float(incoming_entrada)) <= 0.01
+                and abs(float(existing_stoploss) - float(incoming_stoploss)) <= 0.01
+            )
+            if not levels_match:
+                print(
+                    f"  FILTRADO_M15 SYNC: existing PAUSADA id={existing.get('id')} "
+                    f"niveles no coinciden (entrada {existing_entrada} vs {incoming_entrada}, "
+                    f"stoploss {existing_stoploss} vs {incoming_stoploss}) -- ignorando"
+                )
+                existing = None
+                pausada_mismatch = True
+            else:
+                print(
+                    f"  FILTRADO_M15 SYNC: existing PAUSADA id={existing.get('id')} "
+                    f"niveles coinciden -- cerrando como {estado_actual}"
+                )
+        else:
+            print(
+                f"  FILTRADO_M15 SYNC: existing PAUSADA id={existing.get('id')} "
+                f"-- ignorando, se creara nuevo registro para zona fresca"
+            )
+            existing = None
+
+    # ── Determinar acción (para traza diagnóstica) ────────────────────────────
+    if not has_changes and not terminal_state:
+        action = "SKIP_DEBOUNCE"
+    elif existing:
+        action = "UPDATE_CLOSE" if terminal_state else "UPDATE_NORMAL"
+    elif terminal_state and pausada_mismatch:
+        action = "SKIP_PAUSADA_NO_MATCH"
+    elif terminal_state:
+        action = "SKIP_NO_EXISTING"
+    else:
+        action = "CREATE_NEW"
+
+    # ── [FILTRADO_M15 SYNC TRACE] SIEMPRE ────────────────────────────────────
+    _existing_for_log = existing if existing else existing_raw
+    print(f"\n[FILTRADO_M15 SYNC TRACE]")
+    print(f"  symbol: {symbol}")
+    print(f"  incoming_estado: {estado_actual}")
+    print(f"  incoming_estado_dashboard: {estado_dashboard_actual}")
+    print(f"  incoming_entrada: {incoming_entrada}")
+    print(f"  incoming_stoploss: {incoming_stoploss}")
+    print(f"  incoming_tp: {tp_val}")
+    print(f"  incoming_precio: {precio_actual}")
+    print(f"  terminal_state: {terminal_state}")
+    print(f"  force_sync: {force_sync}")
+    print(f"  existing_id: {_existing_for_log.get('id') if _existing_for_log else None}")
+    print(f"  existing_estado: {_existing_for_log.get('estado') if _existing_for_log else None}")
+    print(f"  existing_entrada: {_existing_for_log.get('entrada') if _existing_for_log else None}")
+    print(f"  existing_stoploss: {_existing_for_log.get('stoploss') if _existing_for_log else None}")
+    print(f"  existing_tp: {_existing_for_log.get('tp_1_1') if _existing_for_log else None}")
+    print(f"  action: {action}")
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # ── Aplicar debounce ──────────────────────────────────────────────────────
     if not has_changes and not terminal_state:
         print(f"  FILTRADO_M15 SYNC: Skip {symbol} -- sin cambios relevantes")
         return
@@ -209,62 +300,6 @@ def sync_setup_filtrado_m15(result: dict) -> None:
         "precio_actual": precio_actual,
     }
 
-    # Buscar setup activo existente (por símbolo — modo seguimiento)
-    existing = None
-    if hasattr(supabase_service, "get_active_setup_by_symbol"):
-        existing = supabase_service.get_active_setup_by_symbol(STRATEGY_ID, symbol)
-
-    # PAUSADA guard:
-    # - En estado NO terminal: ignorar registro PAUSADA y crear uno nuevo para la
-    #   zona fresca (la zona fue pausada porque llegó una zona distinta).
-    # - En estado terminal TP/SL: cerrar registro PAUSADA solo si sus niveles de
-    #   entrada/stoploss coinciden con los del cierre entrante; de lo contrario
-    #   ignorar (no cerrar una zona vieja/distinta).
-    if existing and existing.get("estado") == "PAUSADA":
-        if terminal_state:
-            # Para TP/SL: comprobar si los niveles coinciden con el registro PAUSADA
-            existing_entrada = existing.get("entrada")
-            existing_stoploss = existing.get("stoploss")
-            levels_match = (
-                existing_entrada is not None
-                and existing_stoploss is not None
-                and abs(float(existing_entrada) - float(incoming_entrada)) <= 0.01
-                and abs(float(existing_stoploss) - float(incoming_stoploss)) <= 0.01
-            )
-            if not levels_match:
-                print(
-                    f"  FILTRADO_M15 SYNC: existing PAUSADA id={existing.get('id')} "
-                    f"niveles no coinciden (entrada {existing_entrada} vs {incoming_entrada}, "
-                    f"stoploss {existing_stoploss} vs {incoming_stoploss}) -- ignorando"
-                )
-                existing = None
-            else:
-                print(
-                    f"  FILTRADO_M15 SYNC: existing PAUSADA id={existing.get('id')} "
-                    f"niveles coinciden -- cerrando como {estado_actual}"
-                )
-        else:
-            print(
-                f"  FILTRADO_M15 SYNC: existing PAUSADA id={existing.get('id')} "
-                f"-- ignorando, se creara nuevo registro para zona fresca"
-            )
-            existing = None
-
-    # ── DEBUG LOG ────────────────────────────────────────────────────────────
-    print(f"\n[FILTRADO_M15 CLOSE DEBUG]")
-    print(f"  symbol: {symbol}")
-    print(f"  incoming_estado: {estado_actual}")
-    print(f"  incoming_estado_dashboard: {estado_dashboard_actual}")
-    print(f"  incoming_entrada: {incoming_entrada}")
-    print(f"  incoming_stoploss: {incoming_stoploss}")
-    print(f"  incoming_tp: {tp_val}")
-    print(f"  incoming_precio: {precio_actual}")
-    print(f"  existing_id: {existing.get('id') if existing else None}")
-    print(f"  existing_estado: {existing.get('estado') if existing else None}")
-    print(f"  existing_entrada: {existing.get('entrada') if existing else None}")
-    print(f"  existing_stoploss: {existing.get('stoploss') if existing else None}")
-    # ─────────────────────────────────────────────────────────────────────────
-
     if existing:
         setup_id = existing["id"]
         updates = {
@@ -287,8 +322,6 @@ def sync_setup_filtrado_m15(result: dict) -> None:
                 updates["resultado_puntos"] = resultado_puntos
             updates["motivo_cierre"] = motivo_cierre
 
-        debug_action = "UPDATE_CLOSE" if terminal_state else "UPDATE"
-        print(f"  [FILTRADO_M15 CLOSE DEBUG] action={debug_action}")
         print(f"  FILTRADO_M15 SYNC: UPDATE id={setup_id}, estado={estado_actual}")
         res = supabase_service.update_setup(setup_id, updates)
         if res:
@@ -298,14 +331,11 @@ def sync_setup_filtrado_m15(result: dict) -> None:
     else:
         # Para estados terminales sin registro existente: no crear registro nuevo
         if terminal_state:
-            print(f"  [FILTRADO_M15 CLOSE DEBUG] action=SKIP -- no hay registro activo para cerrar")
             print(
                 f"  FILTRADO_M15 SYNC: SKIP {symbol} -- "
                 f"estado terminal {estado_actual} sin registro activo para cerrar"
             )
             return
-
-        print(f"  [FILTRADO_M15 CLOSE DEBUG] action=CREATE")
 
         # Guard: no recrear zonas ya cerradas con los mismos niveles
         closed_setup = None
@@ -370,15 +400,14 @@ def analyze_symbol_smc_micro_impulso_filtrado_m15(
     """
     Analiza un símbolo con la estrategia SMC MICRO IMPULSO FILTRADO M15.
 
-    Delega completamente en SMC MICRO IMPULSO normal para obtener el estado
-    completamente trackeado (ACTIVA / LLEGANDO_A_ZONA / EN_ZONA / PROFIT / TP / SL),
-    luego aplica el filtro M15 obligatorio y recalcula el TP a ratio 1:2.
+    Usa SMC MICRO IMPULSO normal para DETECCIÓN DE ZONA (zona, entrada, stoploss),
+    aplica el filtro M15 obligatorio, recalcula el TP a ratio 1:2, y luego computa
+    el estado (ACTIVA/EN_ZONA/PROFIT/TP/SL) usando el historial propio de
+    FILTRADO M15 (strategy_id = STRATEGY_ID) — no el de SMC_MICRO_IMPULSO.
 
-    Garantía: para cada símbolo donde M15 cumple, todos los campos operativos
-    (estado, zona_desde, zona_hasta, entrada, stoploss, score, ob, fvg, barrida,
-    desplazamiento, micro_bos_choch, precio_actual) son IDÉNTICOS a los de
-    /api/smc/micro-impulso/snapshot.  La única diferencia es el TP (1:2 aquí,
-    1:1 en MICRO IMPULSO normal).
+    Esto garantiza que el cierre TP/SL se detecta correctamente incluso cuando
+    el engine base lee registros SMC_MICRO_IMPULSO desactualizados (que no se
+    actualizan desde este flujo porque sync_to_supabase=False).
 
     Args:
         symbol: Symbol name (e.g. "Boom 1000 Index").
@@ -447,9 +476,26 @@ def analyze_symbol_smc_micro_impulso_filtrado_m15(
         print(f"  FILTRADO_M15: CUMPLE M15 {direccion_m15} == {direccion_indice} para {symbol}")
 
         # ------------------------------------------------------------------
-        # 4. Obtener resultado completamente trackeado de MICRO IMPULSO normal.
+        # 3b. Leer estado propio de FILTRADO M15 desde Supabase (estado_previo).
+        #     CRÍTICO: la máquina de estados de FILTRADO M15 debe usar su propio
+        #     historial (SMC_MICRO_IMPULSO_FILTRADO_M15), NO el de SMC_MICRO_IMPULSO.
+        #     El engine base lee SMC_MICRO_IMPULSO records que nunca se actualizan
+        #     desde este flujo (sync_to_supabase=False), por lo que están desactualizados
+        #     y no reflejan el estado real del trade FILTRADO M15.
+        # ------------------------------------------------------------------
+        existing_filtrado = None
+        filtrado_estado_previo = None
+        if supabase_service and hasattr(supabase_service, "get_active_setup_by_symbol"):
+            existing_filtrado = supabase_service.get_active_setup_by_symbol(STRATEGY_ID, symbol)
+            if existing_filtrado:
+                filtrado_estado_previo = existing_filtrado.get("estado")
+
+        print(f"  FILTRADO_M15 PROPIO: filtrado_estado_previo={filtrado_estado_previo}")
+
+        # ------------------------------------------------------------------
+        # 4. Obtener DETECCIÓN DE ZONA de MICRO IMPULSO normal (no su estado).
         #    sync_to_supabase=False activa el modo read-only:
-        #    - el engine PUEDE leer registros SMC_MICRO_IMPULSO (para tracking)
+        #    - el engine PUEDE leer registros SMC_MICRO_IMPULSO (zona detection)
         #    - el engine NO PUEDE escribir/actualizar esos registros
         #    → cero contaminación del historial SMC_MICRO_IMPULSO.
         # ------------------------------------------------------------------
@@ -459,24 +505,95 @@ def analyze_symbol_smc_micro_impulso_filtrado_m15(
 
         base_estado = base.get("estado", "SIN SETUP")
         if base_estado in ("SIN SETUP", "SIN_SETUP"):
-            print(f"  FILTRADO_M15: base MICRO IMPULSO sin setup para {symbol}")
-            return _sin_setup(
-                "SIN SETUP EN MICRO IMPULSO BASE",
-                direccion_indice=direccion_indice,
-                direccion_m15=direccion_m15,
-                cumple_m15=True,
-            )
+            # RESCUE: Si FILTRADO M15 tiene un trade activo post-zona (EN_ZONA/PROFIT),
+            # el engine base pudo haber invalidado su zona por cambio de contexto M1
+            # sin registrar el cierre. Usar los niveles guardados en FILTRADO M15 para
+            # detectar si SL/TP fue alcanzado.
+            if filtrado_estado_previo in ("EN_ZONA", "PROFIT") and existing_filtrado:
+                try:
+                    rescue_entrada = float(existing_filtrado.get("entrada") or 0)
+                    rescue_stoploss = float(existing_filtrado.get("stoploss") or 0)
+                    rescue_tp = float(existing_filtrado.get("tp_1_1") or 0)
+                    if rescue_entrada and rescue_stoploss and rescue_tp and price is not None:
+                        print(
+                            f"  FILTRADO_M15 RESCUE: base SIN_SETUP pero FILTRADO M15 tiene "
+                            f"{filtrado_estado_previo} activo -- usando niveles guardados: "
+                            f"entrada={rescue_entrada} sl={rescue_stoploss} tp={rescue_tp}"
+                        )
+                        # Construir resultado mínimo usando los niveles guardados para que
+                        # el estado machine (paso 6.5) pueda calcular SL/TP correctamente.
+                        dir_rescue = "ALCISTA" if rescue_entrada > rescue_stoploss else "BAJISTA"
+                        zona_madre_rescue = {
+                            "desde": min(rescue_entrada, rescue_stoploss),
+                            "hasta": max(rescue_entrada, rescue_stoploss),
+                        }
+                        base = {
+                            "estado": filtrado_estado_previo,
+                            "estado_dashboard": filtrado_estado_previo,
+                            "estado_historial": filtrado_estado_previo,
+                            "estado_final": filtrado_estado_previo,
+                            "entrada": rescue_entrada,
+                            "stoploss": rescue_stoploss,
+                            "tp_1_1": rescue_tp,
+                            "price": price,
+                            "zona_madre_m1": zona_madre_rescue,
+                            "micro_bos_choch": existing_filtrado.get("ultimo_evento_m15", "--"),
+                            "ob": "SI" if existing_filtrado.get("ob") else "NO",
+                            "fvg": "SI" if existing_filtrado.get("fvg") else "NO",
+                            "barrida": "SI" if existing_filtrado.get("barrida") else "NO",
+                            "desplazamiento_valido": "NO",
+                            "score": existing_filtrado.get("score", 0),
+                        }
+                        base_estado = filtrado_estado_previo
+                except (TypeError, ValueError) as e:
+                    print(f"  FILTRADO_M15 RESCUE ERROR: {e}")
+
+            if base_estado in ("SIN SETUP", "SIN_SETUP"):
+                print(f"  FILTRADO_M15: base MICRO IMPULSO sin setup para {symbol}")
+                return _sin_setup(
+                    "SIN SETUP EN MICRO IMPULSO BASE",
+                    direccion_indice=direccion_indice,
+                    direccion_m15=direccion_m15,
+                    cumple_m15=True,
+                )
 
         # ------------------------------------------------------------------
-        # 5. Extraer niveles de zona del resultado base
+        # 5. Extraer niveles de zona del resultado base.
+        #    POST-ZONA: si FILTRADO M15 ya está en EN_ZONA/PROFIT, bloquear los
+        #    niveles guardados para evitar deriva por cambio de zona en M1.
         # ------------------------------------------------------------------
         zona_madre = base.get("zona_madre_m1", {})
         zona_desde = float(zona_madre.get("desde", 0) or 0)
         zona_hasta = float(zona_madre.get("hasta", 0) or 0)
         zona_size = abs(zona_hasta - zona_desde)
 
-        entrada = base.get("entrada")
-        stoploss = base.get("stoploss")
+        if filtrado_estado_previo in ("EN_ZONA", "PROFIT") and existing_filtrado:
+            # Bloquear niveles del trade activo
+            try:
+                locked_entrada = float(existing_filtrado.get("entrada") or 0)
+                locked_stoploss = float(existing_filtrado.get("stoploss") or 0)
+                locked_tp = float(existing_filtrado.get("tp_1_1") or 0)
+                if locked_entrada and locked_stoploss and locked_tp:
+                    entrada = locked_entrada
+                    stoploss = locked_stoploss
+                    tp_1_2 = locked_tp
+                    tp_puntos = abs(tp_1_2 - locked_entrada)
+                    sl_puntos = abs(locked_stoploss - locked_entrada)
+                    print(
+                        f"  FILTRADO_M15 POST-ZONA LOCK: usando niveles guardados "
+                        f"entrada={entrada} sl={stoploss} tp={tp_1_2}"
+                    )
+                else:
+                    raise ValueError("niveles incompletos en registro guardado")
+            except (TypeError, ValueError) as e:
+                print(f"  FILTRADO_M15 POST-ZONA LOCK WARNING: {e} -- usando niveles del base")
+                entrada = base.get("entrada")
+                stoploss = base.get("stoploss")
+                tp_1_2 = None
+        else:
+            entrada = base.get("entrada")
+            stoploss = base.get("stoploss")
+            tp_1_2 = None
 
         if entrada is None or stoploss is None:
             print(f"  FILTRADO_M15: base sin entrada/stoploss para {symbol}")
@@ -490,21 +607,63 @@ def analyze_symbol_smc_micro_impulso_filtrado_m15(
         # ------------------------------------------------------------------
         # 6. Recalcular TP con ratio 1:2 (única diferencia operativa)
         # ------------------------------------------------------------------
-        tp_1_2 = _recalcular_tp_1_2(entrada, stoploss)
+        if tp_1_2 is None:
+            tp_1_2 = _recalcular_tp_1_2(entrada, stoploss)
         tp_puntos = abs(tp_1_2 - entrada)
         sl_puntos = abs(stoploss - entrada)
 
         # ------------------------------------------------------------------
-        # 7. Construir resultado FILTRADO M15:
-        #    todos los campos operativos vienen del resultado base ya trackeado,
-        #    solo se sobreescriben strategy_id/key, TP y campos de filtro M15.
+        # 6.5. Máquina de estados propia de FILTRADO M15.
+        #      Usa filtrado_estado_previo (leído de SMC_MICRO_IMPULSO_FILTRADO_M15)
+        #      y precio actual vs niveles operativos para computar el estado real.
+        #      ESTO REEMPLAZA el estado devuelto por el engine base, que usa
+        #      SMC_MICRO_IMPULSO records (siempre desactualizados desde aquí).
         # ------------------------------------------------------------------
-        estado = base.get("estado", "ACTIVA")
-        estado_dashboard = base.get("estado_dashboard", estado)
-        estado_historial = base.get("estado_historial", estado)
-        estado_final = base.get("estado_final", estado_historial)
+        dir_op_f = "ALCISTA" if float(entrada) > float(stoploss) else "BAJISTA"
+        if dir_op_f == "ALCISTA":
+            zona_desde_f = float(stoploss)
+            zona_hasta_f = float(entrada)
+        else:
+            zona_desde_f = float(entrada)
+            zona_hasta_f = float(stoploss)
 
-        precio_actual = base.get("price") or price
+        precio_actual_f = base.get("price") or price or 0.0
+        base_estado_dashboard = base.get("estado_dashboard", "ACTIVA")
+
+        estado_f, motivo_f = calcular_transicion_estado(
+            symbol=symbol,
+            estado_previo=filtrado_estado_previo,
+            estado_calculado=base_estado_dashboard,
+            precio_actual=float(precio_actual_f),
+            entrada=float(entrada),
+            stoploss=float(stoploss),
+            tp=float(tp_1_2),
+            zona_desde=zona_desde_f,
+            zona_hasta=zona_hasta_f,
+        )
+
+        print(f"\n[FILTRADO_M15 STATE_RECOMPUTE]")
+        print(f"  symbol: {symbol}")
+        print(f"  filtrado_estado_previo: {filtrado_estado_previo}")
+        print(f"  base_estado_dashboard (estado_calculado): {base_estado_dashboard}")
+        print(f"  base_estado (engine base): {base.get('estado')}")
+        print(f"  estado_f (FILTRADO M15 state machine): {estado_f}")
+        print(f"  motivo_f: {motivo_f}")
+        print(f"  precio_actual: {precio_actual_f}")
+        print(f"  entrada: {entrada}  sl: {stoploss}  tp: {tp_1_2}")
+
+        # Usar el estado computado por la máquina de estados de FILTRADO M15
+        estado = estado_f
+        estado_dashboard = base_estado_dashboard
+        estado_historial = estado_f
+        estado_final = estado_f
+
+        # ------------------------------------------------------------------
+        # 7. Construir resultado FILTRADO M15:
+        #    todos los campos operativos vienen del resultado base,
+        #    solo se sobreescriben strategy_id/key, TP, estado y campos M15.
+        # ------------------------------------------------------------------
+        precio_actual = precio_actual_f
         now = datetime.now(timezone.utc).isoformat()
         updated_at = base.get("updated_at", now)
 
@@ -561,6 +720,16 @@ def analyze_symbol_smc_micro_impulso_filtrado_m15(
             and result.get("entrada") is not None
             and result.get("stoploss") is not None
         ):
+            # [FILTRADO_M15 INPUT DEBUG] — confirma qué estado llega al sync
+            print(f"\n[FILTRADO_M15 INPUT DEBUG]")
+            print(f"  symbol: {symbol}")
+            print(f"  result.estado: {result.get('estado')}")
+            print(f"  result.estado_dashboard: {result.get('estado_dashboard')}")
+            print(f"  result.entrada: {result.get('entrada')}")
+            print(f"  result.stoploss: {result.get('stoploss')}")
+            print(f"  result.tp_1_1: {result.get('tp_1_1')}")
+            print(f"  result.precio_actual: {result.get('precio_actual')}")
+            print(f"  result.strategy_id: {STRATEGY_ID}")
             sync_setup_filtrado_m15(result)
 
         return result
