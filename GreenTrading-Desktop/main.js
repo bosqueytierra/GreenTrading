@@ -23,8 +23,8 @@ let snapshotMicroImpulsoFetchInProgress = false;
 // Independent concurrency guard for MICRO IMPULSO FILTRADO M15
 let snapshotMicroImpulsoFiltradoM15FetchInProgress = false;
 
-// Timeout for snapshot fetch (15 seconds - enough for 10 symbols + Supabase)
-const SNAPSHOT_FETCH_TIMEOUT_MS = 15000;
+// Timeout for snapshot fetch (60 seconds - allows full analysis across all 4 strategies)
+const SNAPSHOT_FETCH_TIMEOUT_MS = 60000;
 
 // Python backend configuration
 const PYTHON_BACKEND = {

@@ -43,7 +43,7 @@ const refreshTimers = {
 };
 
 // Intervalo de refresco
-const AUTO_REFRESH_INTERVAL = 1000;
+const AUTO_REFRESH_INTERVAL = 10000;
 
 // Backend base URL (same as historial.js)
 const BACKEND_BASE_URL = 'http://127.0.0.1:8765';
