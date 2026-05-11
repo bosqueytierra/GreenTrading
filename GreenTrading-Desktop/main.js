@@ -20,6 +20,8 @@ let snapshotFetchInProgress = false;
 let snapshotH1M15FetchInProgress = false;
 // Independent concurrency guard for MICRO IMPULSO
 let snapshotMicroImpulsoFetchInProgress = false;
+// Independent concurrency guard for MICRO IMPULSO FILTRADO M15
+let snapshotMicroImpulsoFiltradoM15FetchInProgress = false;
 
 // Timeout for snapshot fetch (15 seconds - enough for 10 symbols + Supabase)
 const SNAPSHOT_FETCH_TIMEOUT_MS = 15000;
@@ -455,6 +457,44 @@ ipcMain.handle('get-smc-micro-impulso-snapshot', async () => {
   } finally {
     clearTimeout(timeoutId);
     snapshotMicroImpulsoFetchInProgress = false;
+  }
+});
+
+/**
+ * IPC Handler: Get SMC MICRO IMPULSO FILTRADO M15 snapshot (PARTE 1 - ARQUITECTURA BASE)
+ */
+ipcMain.handle('get-smc-micro-impulso-filtrado-m15-snapshot', async () => {
+  if (snapshotMicroImpulsoFiltradoM15FetchInProgress) {
+    console.log('MICRO_IMPULSO_FILTRADO_M15 SNAPSHOT FETCH SKIPPED_ALREADY_RUNNING (main process)');
+    return { success: false, error: 'SNAPSHOT_ALREADY_RUNNING' };
+  }
+
+  snapshotMicroImpulsoFiltradoM15FetchInProgress = true;
+  console.log('MICRO_IMPULSO_FILTRADO_M15 SNAPSHOT FETCH START (main process)');
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), SNAPSHOT_FETCH_TIMEOUT_MS);
+
+  try {
+    const url = `http://${PYTHON_BACKEND.host}:${PYTHON_BACKEND.port}/api/smc/micro-impulso-filtrado-m15/snapshot`;
+
+    const response = await fetch(url, { signal: controller.signal });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    clearTimeout(timeoutId);
+    console.log(`MICRO_IMPULSO_FILTRADO_M15 SNAPSHOT FETCH OK (main process) - ${Array.isArray(data) ? data.length : '?'} rows`);
+    return { success: true, data };
+  } catch (error) {
+    const reason = error.name === 'AbortError' ? 'TIMEOUT' : error.message;
+    console.error(`MICRO_IMPULSO_FILTRADO_M15 SNAPSHOT FETCH ERROR (main process): ${reason}`);
+    return { success: false, error: reason };
+  } finally {
+    clearTimeout(timeoutId);
+    snapshotMicroImpulsoFiltradoM15FetchInProgress = false;
   }
 });
 

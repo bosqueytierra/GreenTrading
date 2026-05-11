@@ -59,6 +59,14 @@ contextBridge.exposeInMainWorld('api', {
    */
   getSmcMicroImpulsoSnapshot: () => {
     return ipcRenderer.invoke('get-smc-micro-impulso-snapshot');
+  },
+
+  /**
+   * Get SMC MICRO IMPULSO FILTRADO M15 snapshot (PARTE 1 - ARQUITECTURA BASE)
+   * @returns {Promise<Object>} Array of SMC MICRO IMPULSO FILTRADO M15 analysis snapshots or error
+   */
+  getSmcMicroImpulsoFiltradoM15Snapshot: () => {
+    return ipcRenderer.invoke('get-smc-micro-impulso-filtrado-m15-snapshot');
   }
 });
 

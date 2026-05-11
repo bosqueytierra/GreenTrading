@@ -1,42 +1,45 @@
-console.log("DASHBOARD_JS_VERSION: FASE4_MULTI_STRATEGY_V1");
+console.log("DASHBOARD_JS_VERSION: FASE4_MULTI_STRATEGY_V2");
 
 /**
  * GreenTrading Desktop - Dashboard JavaScript
- * FASE 4: Multi-strategy UI (SMC_M15_PRO + SMC_H1_M15_PRO + SMC_MICRO_IMPULSO)
+ * FASE 4 v2: Multi-strategy UI (SMC_M15_PRO + SMC_H1_M15_PRO + SMC_MICRO_IMPULSO + SMC_MICRO_IMPULSO_FILTRADO_M15)
  *
  * Arquitectura:
  *  - Cache independiente por estrategia
  *  - Auto-refresh independiente por endpoint
  *  - Cambio instantáneo entre tabs (sin esperar fetch)
- *  - "TODAS": combina las tres estrategias + columna ESTRATEGIA
+ *  - "TODAS": combina las cuatro estrategias + columna ESTRATEGIA
  */
 
 // ============================================================
 // ESTADO GLOBAL
 // ============================================================
 
-// Tab activa: 'm15pro' | 'h1m15pro' | 'microimpulso' | 'all'
+// Tab activa: 'm15pro' | 'h1m15pro' | 'microimpulso' | 'microimpulso_filtrado_m15' | 'all'
 let activeStrategy = 'm15pro';
 
 // Caches independientes por estrategia
 const strategyCache = {
     m15pro: [],
     h1m15pro: [],
-    microimpulso: []
+    microimpulso: [],
+    microimpulso_filtrado_m15: []
 };
 
 // Guards de concurrencia (uno por endpoint, independientes)
 const fetchInProgress = {
     m15pro: false,
     h1m15pro: false,
-    microimpulso: false
+    microimpulso: false,
+    microimpulso_filtrado_m15: false
 };
 
 // Timers de auto-refresh independientes
 const refreshTimers = {
     m15pro: null,
     h1m15pro: null,
-    microimpulso: null
+    microimpulso: null,
+    microimpulso_filtrado_m15: null
 };
 
 // Intervalo de refresco
@@ -47,16 +50,17 @@ const AUTO_REFRESH_INTERVAL = 1000;
 // ============================================================
 
 async function initDashboard() {
-    console.log('🚀 FASE4: Initializing multi-strategy dashboard...');
+    console.log('🚀 FASE4 v2: Initializing multi-strategy dashboard...');
 
     setupTabListeners();
     setupRefreshButton();
 
-    // Carga inicial de las tres estrategias en paralelo
+    // Carga inicial de las cuatro estrategias en paralelo
     await Promise.all([
         fetchStrategy('m15pro'),
         fetchStrategy('h1m15pro'),
-        fetchStrategy('microimpulso')
+        fetchStrategy('microimpulso'),
+        fetchStrategy('microimpulso_filtrado_m15')
     ]);
 
     // Render inicial según tab activa
@@ -66,8 +70,9 @@ async function initDashboard() {
     startAutoRefresh('m15pro');
     startAutoRefresh('h1m15pro');
     startAutoRefresh('microimpulso');
+    startAutoRefresh('microimpulso_filtrado_m15');
 
-    console.log('✅ FASE4: Dashboard initialized');
+    console.log('✅ FASE4 v2: Dashboard initialized');
 }
 
 // ============================================================
@@ -117,6 +122,8 @@ async function fetchStrategy(strategy) {
             result = await window.api.getSmcH1M15ProSnapshot();
         } else if (strategy === 'microimpulso') {
             result = await window.api.getSmcMicroImpulsoSnapshot();
+        } else if (strategy === 'microimpulso_filtrado_m15') {
+            result = await window.api.getSmcMicroImpulsoFiltradoM15Snapshot();
         } else {
             console.error(`fetchStrategy: unknown strategy '${strategy}'`);
             return;
@@ -175,7 +182,8 @@ function setupRefreshButton() {
             await Promise.all([
                 fetchStrategy('m15pro'),
                 fetchStrategy('h1m15pro'),
-                fetchStrategy('microimpulso')
+                fetchStrategy('microimpulso'),
+                fetchStrategy('microimpulso_filtrado_m15')
             ]);
             renderCurrentTab();
             updateLastUpdateTime();
@@ -202,16 +210,24 @@ function renderCurrentTab() {
         renderTwoTableView(strategyCache.microimpulso, 'microimpulso');
         if (statusEl) statusEl.textContent = `${strategyCache.microimpulso.length} símbolos`;
 
+    } else if (activeStrategy === 'microimpulso_filtrado_m15') {
+        renderTwoTableView(strategyCache.microimpulso_filtrado_m15, 'microimpulso_filtrado_m15');
+        if (statusEl) statusEl.textContent = `${strategyCache.microimpulso_filtrado_m15.length} símbolos`;
+
     } else {
-        // TODAS: combina las tres estrategias
+        // TODAS: combina las cuatro estrategias
         const combined = [
             ...strategyCache.m15pro.map(s => ({ ...s, _estrategia: 'm15pro' })),
             ...strategyCache.h1m15pro.map(s => ({ ...s, _estrategia: 'h1m15pro' })),
-            ...strategyCache.microimpulso.map(s => ({ ...s, _estrategia: 'microimpulso' }))
+            ...strategyCache.microimpulso.map(s => ({ ...s, _estrategia: 'microimpulso' })),
+            ...strategyCache.microimpulso_filtrado_m15.map(s => ({ ...s, _estrategia: 'microimpulso_filtrado_m15' }))
         ];
         renderAllStrategiesView(combined);
-        const count = strategyCache.m15pro.length + strategyCache.h1m15pro.length + strategyCache.microimpulso.length;
-        if (statusEl) statusEl.textContent = `${count} símbolos (${strategyCache.m15pro.length} M15 + ${strategyCache.h1m15pro.length} H1+M15 + ${strategyCache.microimpulso.length} Micro)`;
+        const count = strategyCache.m15pro.length + strategyCache.h1m15pro.length
+            + strategyCache.microimpulso.length + strategyCache.microimpulso_filtrado_m15.length;
+        const detail = `${strategyCache.m15pro.length} M15 + ${strategyCache.h1m15pro.length} H1+M15`
+            + ` + ${strategyCache.microimpulso.length} Micro + ${strategyCache.microimpulso_filtrado_m15.length} MicroFiltrado`;
+        if (statusEl) statusEl.textContent = `${count} símbolos (${detail})`;
     }
 
     updateLastUpdateTime();
@@ -271,6 +287,13 @@ function setTableHeaders(strategy) {
             'SCORE', 'OB', 'FVG', 'BARRIDA', 'DESPLAZAMIENTO',
             'ESTADO', 'PRECIO', 'ACTUALIZACIÓN'
         ];
+    } else if (strategy === 'microimpulso_filtrado_m15') {
+        // SMC MICRO IMPULSO FILTRADO M15: columnas propias (sin H1, sin zona madre M15)
+        headers = [
+            'ÍNDICE', 'M15 DIR', 'EVENTO M1',
+            'ZONA MICRO', 'SCORE', 'OB', 'FVG', 'BARRIDA', 'DESPLAZAMIENTO',
+            'ESTADO', 'MOTIVO'
+        ];
     } else if (strategy === 'all') {
         headers = ['ESTRATEGIA', ...baseHeaders];
     } else {
@@ -299,8 +322,8 @@ function renderTable(tableBodyId, data, strategy, showEstrategia) {
 
     // Column count for colspan in empty/loading rows
     // m15pro: 12 cols, h1m15pro: 14 cols (adds TP RATIO + ALIN. H1),
-    // microimpulso: 11 cols, all: 13 (adds ESTRATEGIA)
-    const colCount = showEstrategia ? 13 : (strategy === 'h1m15pro' ? 14 : (strategy === 'microimpulso' ? 11 : 12));
+    // microimpulso: 11 cols, microimpulso_filtrado_m15: 11 cols, all: 13 (adds ESTRATEGIA)
+    const colCount = showEstrategia ? 13 : (strategy === 'h1m15pro' ? 14 : (strategy === 'microimpulso' || strategy === 'microimpulso_filtrado_m15' ? 11 : 12));
 
     if (data.length === 0) {
         tbody.innerHTML = `
@@ -399,6 +422,43 @@ function createTableRow(snapshot, strategy, showEstrategia) {
     }
 
     // ----------------------------------------------------------------
+    // Vista específica SMC MICRO IMPULSO FILTRADO M15
+    // Columnas: ÍNDICE | M15 DIR | EVENTO M1 | ZONA MICRO | SCORE |
+    //           OB | FVG | BARRIDA | DESPLAZAMIENTO | ESTADO | MOTIVO
+    // Sin H1, sin zona madre M15, sin precio separado (está en zona micro)
+    // ----------------------------------------------------------------
+    if (strategy === 'microimpulso_filtrado_m15') {
+        const dirM15 = snapshot.direccion_m15 || '--';
+        const eventoM1 = snapshot.micro_bos_choch || '--';
+        const zonaCell = formatZonaMadre(
+            snapshot.zona_desde || snapshot.zona_hasta
+                ? { desde: snapshot.zona_desde || 0, hasta: snapshot.zona_hasta || 0 }
+                : null,
+            entrada,
+            stoploss,
+            symbolShort
+        );
+        const desp = snapshot.desplazamiento || '--';
+        const motivoStr = snapshot.motivo || '--';
+
+        return `
+            <tr class="${rowClass}">
+                <td><span class="symbol-name">${symbolShort}</span></td>
+                <td><span class="trend-badge">${dirM15}</span></td>
+                <td><span class="event-label">${eventoM1}</span></td>
+                <td>${zonaCell}</td>
+                <td>${scoreBadge}</td>
+                <td><span class="indicator-badge">${ob || '--'}</span></td>
+                <td><span class="indicator-badge">${fvg || '--'}</span></td>
+                <td><span class="indicator-badge">${barrida || '--'}</span></td>
+                <td><span class="indicator-badge">${desp}</span></td>
+                <td>${estadoBadge}</td>
+                <td><span class="motivo-label">${motivoStr}</span></td>
+            </tr>
+        `;
+    }
+
+    // ----------------------------------------------------------------
     // Vista H1+M15 PRO
     // ----------------------------------------------------------------
     if (strategy === 'h1m15pro') {
@@ -435,7 +495,7 @@ function createTableRow(snapshot, strategy, showEstrategia) {
     // so they render correctly without breaking the shared column layout.
     // ----------------------------------------------------------------
     const zonaToUse = _estrategia === 'microimpulso' ? zona_madre_m1 : zona_madre_m15;
-    const eventoToUse = _estrategia === 'microimpulso'
+    const eventoToUse = (_estrategia === 'microimpulso' || _estrategia === 'microimpulso_filtrado_m15')
         ? (micro_bos_choch || ultimo_evento_m1 || '--')
         : (ultimo_evento_m15 || '--');
     const zonaCell = formatZonaMadre(zonaToUse, entrada, stoploss, symbolShort);
@@ -469,6 +529,9 @@ function formatEstrategiaBadge(estrategia) {
     }
     if (estrategia === 'microimpulso') {
         return '<span class="estrategia-badge estrategia-microimpulso">MICRO IMPULSO</span>';
+    }
+    if (estrategia === 'microimpulso_filtrado_m15') {
+        return '<span class="estrategia-badge estrategia-microimpulso-filtrado">MICRO FILTRADO M15</span>';
     }
     return '<span class="estrategia-badge estrategia-h1m15">H1+M15 PRO</span>';
 }

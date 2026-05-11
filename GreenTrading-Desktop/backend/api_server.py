@@ -59,6 +59,17 @@ except ImportError:
     analyze_symbol_smc_micro_impulso = None
     create_sin_setup_micro_impulso_response = None
 
+# Import SMC MICRO IMPULSO FILTRADO M15 service
+try:
+    from smc_micro_impulso_filtrado_m15_service import (
+        analyze_symbol_smc_micro_impulso_filtrado_m15,
+        create_sin_setup_micro_impulso_filtrado_m15_response,
+    )
+except ImportError:
+    print("WARNING: SMC MICRO IMPULSO FILTRADO M15 service not available")
+    analyze_symbol_smc_micro_impulso_filtrado_m15 = None
+    create_sin_setup_micro_impulso_filtrado_m15_response = None
+
 # Import Supabase service
 try:
     import supabase_service
@@ -710,6 +721,101 @@ async def get_smc_micro_impulso_snapshot():
 
     total_ms = int((time.time() - snapshot_start) * 1000)
     print(f"MICRO_IMPULSO SNAPSHOT TOTAL: {total_ms}ms, {len(snapshots)} rows")
+    return snapshots
+
+
+@app.get("/api/smc/micro-impulso-filtrado-m15/snapshot")
+async def get_smc_micro_impulso_filtrado_m15_snapshot():
+    """
+    PARTE 1 — ARQUITECTURA BASE: SMC MICRO IMPULSO FILTRADO M15 snapshot.
+
+    Estrategia independiente con filtro direccional M15 obligatorio:
+    - M15: filtro direccional (lógica completa en Parte 2).
+    - M1: núcleo operativo (lógica completa en Parte 2).
+    - H1: NO se usa.
+    - strategy_key = microimpulso_filtrado_m15.
+
+    Parte 1: devuelve los 10 índices con estado SIN SETUP.
+
+    Returns:
+        list: Array de SMC MICRO IMPULSO FILTRADO M15 snapshots.
+    """
+    print("MICRO_IMPULSO_FILTRADO_M15 SNAPSHOT ENDPOINT HIT")
+
+    if not mt5_initialized:
+        if not init_mt5():
+            raise HTTPException(
+                status_code=503,
+                detail="MT5 not connected. Please ensure MT5 is running."
+            )
+
+    def _filtrado_m15_minimal_snapshot(symbol, price=None):
+        """Respuesta mínima SIN SETUP cuando el servicio no está disponible."""
+        now = datetime.now(timezone.utc).isoformat()
+        return {
+            "symbol": symbol,
+            "estrategia": "SMC MICRO IMPULSO FILTRADO M15",
+            "strategy_key": "microimpulso_filtrado_m15",
+            "price": price,
+            "estado": "SIN SETUP",
+            "motivo": "ARQUITECTURA BASE - LÓGICA PENDIENTE",
+            "updated_at": now,
+        }
+
+    if analyze_symbol_smc_micro_impulso_filtrado_m15 is None or create_sin_setup_micro_impulso_filtrado_m15_response is None:
+        print("WARNING: SMC MICRO IMPULSO FILTRADO M15 service not available, returning placeholder data")
+        snapshots = []
+        for symbol in DASHBOARD_SYMBOLS:
+            m1_candle = read_candle_data(symbol, 'M1')
+            price = m1_candle.get('close') if m1_candle else None
+            snapshots.append(
+                create_sin_setup_micro_impulso_filtrado_m15_response(symbol, price)
+                if create_sin_setup_micro_impulso_filtrado_m15_response
+                else _filtrado_m15_minimal_snapshot(symbol, price)
+            )
+        return snapshots
+
+    snapshots = []
+    snapshot_start = time.time()
+
+    try:
+        for symbol in DASHBOARD_SYMBOLS:
+            symbol_start = time.time()
+            print(f"MICRO_IMPULSO_FILTRADO_M15 SYMBOL START: {symbol}")
+            try:
+                # M15 como filtro direccional; M1 como núcleo operativo (Parte 2)
+                df_m1 = read_candles_dataframe(symbol, 'M1', count=300)
+                df_m15 = read_candles_dataframe(symbol, 'M15', count=100)
+
+                smc_result = analyze_symbol_smc_micro_impulso_filtrado_m15(symbol, df_m1, df_m15)
+
+                if smc_result.get('price') is None:
+                    m1_candle = read_candle_data(symbol, 'M1')
+                    smc_result['price'] = m1_candle.get('close') if m1_candle else None
+
+                snapshots.append(smc_result)
+                symbol_ms = int((time.time() - symbol_start) * 1000)
+                print(f"MICRO_IMPULSO_FILTRADO_M15 SYMBOL DONE: {symbol} {symbol_ms}ms")
+
+            except Exception as e:
+                symbol_ms = int((time.time() - symbol_start) * 1000)
+                print(f"MICRO_IMPULSO_FILTRADO_M15 SYMBOL ERROR: {symbol} {symbol_ms}ms - {e}")
+                traceback.print_exc()
+                try:
+                    m1_candle = read_candle_data(symbol, 'M1')
+                    price = m1_candle.get('close') if m1_candle else None
+                    snapshots.append(create_sin_setup_micro_impulso_filtrado_m15_response(symbol, price))
+                except Exception as fallback_e:
+                    print(f"MICRO_IMPULSO_FILTRADO_M15 Error creating fallback for {symbol}: {fallback_e}")
+                    snapshots.append(_filtrado_m15_minimal_snapshot(symbol))
+    except Exception as outer_e:
+        print(f"MICRO_IMPULSO_FILTRADO_M15 CRITICAL ERROR in snapshot loop: {outer_e}")
+        traceback.print_exc()
+        if not snapshots:
+            return []
+
+    total_ms = int((time.time() - snapshot_start) * 1000)
+    print(f"MICRO_IMPULSO_FILTRADO_M15 SNAPSHOT TOTAL: {total_ms}ms, {len(snapshots)} rows")
     return snapshots
 
 
