@@ -491,10 +491,19 @@ function createTableRow(snapshot, strategy, showEstrategia) {
     // In the "all" view, all rows share the same 12-column base format
     // (ÍNDICE, TENDENCIA H1, TENDENCIA M15, ÚLTIMO EVENTO M15, ZONA MADRE M15,
     //  SCORE, OB, FVG, BARRIDA, ESTADO, PRECIO, ACTUALIZACIÓN + ESTRATEGIA prefix).
-    // Microimpulso rows map their M1-specific fields to the closest base columns
-    // so they render correctly without breaking the shared column layout.
+    // Both micro-impulso strategies map their M1-specific fields to the closest
+    // base columns so they render correctly without breaking the shared layout.
     // ----------------------------------------------------------------
-    const zonaToUse = _estrategia === 'microimpulso' ? zona_madre_m1 : zona_madre_m15;
+    let zonaToUse;
+    if (_estrategia === 'microimpulso') {
+        zonaToUse = zona_madre_m1;
+    } else if (_estrategia === 'microimpulso_filtrado_m15') {
+        zonaToUse = (snapshot.zona_desde || snapshot.zona_hasta)
+            ? { desde: snapshot.zona_desde || 0, hasta: snapshot.zona_hasta || 0 }
+            : null;
+    } else {
+        zonaToUse = zona_madre_m15;
+    }
     const eventoToUse = (_estrategia === 'microimpulso' || _estrategia === 'microimpulso_filtrado_m15')
         ? (micro_bos_choch || ultimo_evento_m1 || '--')
         : (ultimo_evento_m15 || '--');
