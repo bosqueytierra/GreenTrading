@@ -343,7 +343,7 @@ def analyze_symbol_filtrado_m15(
     direccion_indice = direccion_operativa_por_indice(symbol)
     if not direccion_indice:
         print(f"  SIN_SETUP: {symbol} no es Boom ni Crash")
-        return _sin_setup("SÍMBOLO NO CLASIFICADO")
+        return _sin_setup("SIMBOLO NO CLASIFICADO")
 
     print(f"  direccion_indice: {direccion_indice}")
 
@@ -365,7 +365,7 @@ def analyze_symbol_filtrado_m15(
         motivo_no_cumple = (
             f"M15={direccion_m15} != INDICE={direccion_indice}"
             if direccion_m15 != "--"
-            else "DIRECCIÓN M15 INDETERMINADA"
+            else "DIRECCION M15 INDETERMINADA"
         )
         print(f"  NO CUMPLE DIRECCION M15: {motivo_no_cumple}")
         return _sin_setup(
@@ -489,7 +489,7 @@ def analyze_symbol_filtrado_m15(
     if not zona_encontrada:
         print(f"  SIN_SETUP: ningun candidato produjo zona micro valida")
         return _sin_setup(
-            "SIN ZONA MICRO VÁLIDA EN M1",
+            "SIN ZONA MICRO VALIDA EN M1",
             direccion_indice=direccion_indice,
             direccion_m15=direccion_m15,
             cumple_m15=True,
