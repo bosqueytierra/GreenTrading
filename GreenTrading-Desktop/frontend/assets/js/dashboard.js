@@ -323,9 +323,19 @@ function renderTable(tableBodyId, data, strategy, showEstrategia) {
         return;
     }
 
-    // m15pro: 12 cols, h1m15pro: 14 cols (adds TP RATIO + ALIN. H1),
-    // microimpulso: 11 cols, microimpulso_filtrado_m15: 12 cols (PRECIO + ACTUALIZACIÓN), all: 13 (adds ESTRATEGIA)
-    const colCount = showEstrategia ? 13 : (strategy === 'h1m15pro' ? 14 : (strategy === 'microimpulso' ? 11 : (strategy === 'microimpulso_filtrado_m15' ? 12 : 12)));
+    // Column count for colspan in empty/loading rows
+    let colCount;
+    if (showEstrategia) {
+        colCount = 13;                           // all strategies: + ESTRATEGIA col
+    } else if (strategy === 'h1m15pro') {
+        colCount = 14;                           // + TP RATIO + ALIN. H1
+    } else if (strategy === 'microimpulso') {
+        colCount = 11;
+    } else if (strategy === 'microimpulso_filtrado_m15') {
+        colCount = 12;                           // PRECIO + ACTUALIZACIÓN (no MOTIVO)
+    } else {
+        colCount = 12;                           // m15pro default
+    }
 
     if (data.length === 0) {
         tbody.innerHTML = `

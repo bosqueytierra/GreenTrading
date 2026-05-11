@@ -450,7 +450,9 @@ def analyze_symbol_smc_micro_impulso_filtrado_m15(
             "ob": base.get("ob", "NO"),
             "fvg": base.get("fvg", "NO"),
             "barrida": base.get("barrida", "NO"),
-            # MICRO IMPULSO usa "desplazamiento_valido"; FILTRADO usa "desplazamiento"
+            # MICRO IMPULSO normal uses the field name "desplazamiento_valido" (SI/NO).
+            # FILTRADO M15 (and its Supabase schema) uses "desplazamiento" (SI/NO).
+            # Both hold the same value; this explicit mapping bridges the name gap.
             "desplazamiento": base.get("desplazamiento_valido", "NO"),
             "estado": estado,
             "estado_dashboard": estado_dashboard,
