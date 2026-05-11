@@ -115,8 +115,11 @@ async function fetchStrategy(strategy) {
             result = await window.api.getSmcM15ProSnapshot();
         } else if (strategy === 'h1m15pro') {
             result = await window.api.getSmcH1M15ProSnapshot();
-        } else {
+        } else if (strategy === 'microimpulso') {
             result = await window.api.getSmcMicroImpulsoSnapshot();
+        } else {
+            console.error(`fetchStrategy: unknown strategy '${strategy}'`);
+            return;
         }
 
         if (!result.success) {
@@ -375,7 +378,7 @@ function createTableRow(snapshot, strategy, showEstrategia) {
     if (strategy === 'microimpulso') {
         const zonaCell = formatZonaMadre(zona_madre_m1, entrada, stoploss, symbolShort);
         // micro_bos_choch muestra BOS/CHOCH o "--"; nunca el estado
-        const microBosChochStr = micro_bos_choch || '--';
+        const microBosChochStr = (micro_bos_choch != null && micro_bos_choch !== '') ? micro_bos_choch : '--';
         const desp = desplazamiento_valido || '--';
 
         return `
@@ -425,7 +428,11 @@ function createTableRow(snapshot, strategy, showEstrategia) {
 
     // ----------------------------------------------------------------
     // Vista M15 PRO (default) y TODAS (all)
-    // Para microimpulso en vista "all": mapear campos al formato base
+    // In the "all" view, all rows share the same 12-column base format
+    // (ÍNDICE, TENDENCIA H1, TENDENCIA M15, ÚLTIMO EVENTO M15, ZONA MADRE M15,
+    //  SCORE, OB, FVG, BARRIDA, ESTADO, PRECIO, ACTUALIZACIÓN + ESTRATEGIA prefix).
+    // Microimpulso rows map their M1-specific fields to the closest base columns
+    // so they render correctly without breaking the shared column layout.
     // ----------------------------------------------------------------
     const zonaToUse = _estrategia === 'microimpulso' ? zona_madre_m1 : zona_madre_m15;
     const eventoToUse = _estrategia === 'microimpulso'
