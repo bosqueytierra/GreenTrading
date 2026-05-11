@@ -243,19 +243,25 @@ def analyze_symbol_smc_micro_impulso(
     symbol: str,
     df_m1: pd.DataFrame,
     df_m15: pd.DataFrame = None,
+    sync_to_supabase: bool = True,
 ) -> dict:
     """
     Fachada pública para análisis SMC_MICRO_IMPULSO.
 
     Flujo:
     1. Delegar al engine SMCMicroImpulsoEngine.
-    2. Si hay zona válida: sincronizar con Supabase (strategy_id='SMC_MICRO_IMPULSO').
+    2. Si hay zona válida y sync_to_supabase=True: sincronizar con Supabase
+       (strategy_id='SMC_MICRO_IMPULSO').
     3. Retornar payload sin modificar.
 
     Args:
         symbol: Symbol name.
         df_m1: M1 candles DataFrame (núcleo operativo).
         df_m15: M15 candles DataFrame (opcional, solo informativo).
+        sync_to_supabase: When False, skips the service-level Supabase sync.
+            The engine still uses Supabase internally for state tracking.
+            Set to False when delegating from FILTRADO M15 to avoid double
+            writes to the SMC_MICRO_IMPULSO history.
 
     Returns:
         dict con resultado SMC_MICRO_IMPULSO.
@@ -272,7 +278,8 @@ def analyze_symbol_smc_micro_impulso(
     )
 
     if (
-        result.get("estado") not in ("SIN SETUP", "SIN_SETUP")
+        sync_to_supabase
+        and result.get("estado") not in ("SIN SETUP", "SIN_SETUP")
         and result.get("entrada") is not None
         and result.get("stoploss") is not None
     ):
