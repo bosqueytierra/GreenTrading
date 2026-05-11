@@ -186,6 +186,10 @@ def detectar_desplazamiento_impulsivo_m1(
             net_desplazamiento_ok = close_final < close_evento
 
     # Válido si rango > 0 Y (al menos min_velas en dirección O movimiento neto correcto).
+    # Lógica OR: basta cumplir UNO de los dos criterios (plus rango > 0 como base).
+    # Esto hace la validación más permisiva para la estrategia FULL AGRESIVA:
+    #   - Si hay >= min_velas velas en la dirección del impulso: válido.
+    #   - O si el precio neto se movió en la dirección correcta (close_final vs close_evento): válido.
     # MIN_ZONA_SIZE ya no es filtro duro — solo se usa como referencia en log.
     valido = rango > 0 and (velas_favor >= min_velas or net_desplazamiento_ok)
 

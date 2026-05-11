@@ -1052,8 +1052,8 @@ def test_zona_pequeña_no_rechazada_por_min_zona_size():
         tamaño = abs(zona["zona_hasta"] - zona["zona_desde"])
         print(f"  INFO: zona creada, tamaño={round(tamaño, 4)}, MIN_ZONA_SIZE={MIN_ZONA_SIZE}")
         assert_true(
-            tamaño < MIN_ZONA_SIZE or tamaño >= MIN_ZONA_SIZE,
-            "Zona aceptada independientemente de su tamaño vs MIN_ZONA_SIZE"
+            zona.get("es_util", False),
+            "Zona aceptada (pequeña o grande) cuando es_util=True — tamaño no bloquea"
         )
     else:
         print("  INFO: Sin zona (patrón sintético puede no generar estructura suficiente)")
