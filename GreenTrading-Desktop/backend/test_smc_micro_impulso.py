@@ -1184,8 +1184,7 @@ def test_micro_bos_choch_no_es_estado_operativo():
         f"micro_bos_choch no es un estado operativo (got {micro_bos_choch!r})"
     )
     assert_true(
-        micro_bos_choch in {"BOS_ALCISTA", "BOS_BAJISTA", "CHOCH_ALCISTA", "CHOCH_BAJISTA", "--"}
-        or (micro_bos_choch.startswith("BOS_") or micro_bos_choch.startswith("CHOCH_") or micro_bos_choch == "--"),
+        micro_bos_choch in {"BOS_ALCISTA", "BOS_BAJISTA", "CHOCH_ALCISTA", "CHOCH_BAJISTA", "--"},
         f"micro_bos_choch es un evento estructural o '--' (got {micro_bos_choch!r})"
     )
     assert_true(
