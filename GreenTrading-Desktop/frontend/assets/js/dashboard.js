@@ -45,6 +45,9 @@ const refreshTimers = {
 // Intervalo de refresco
 const AUTO_REFRESH_INTERVAL = 1000;
 
+// Backend base URL (same as historial.js)
+const BACKEND_BASE_URL = 'http://127.0.0.1:8765';
+
 // ============================================================
 // INIT
 // ============================================================
@@ -272,17 +275,14 @@ function renderFiltradoM15Metrics(snapshots) {
     _fetchFiltradoM15HistoricalMetrics();
 }
 
-const _mf15_fetch_debounce = { timer: null };
+const _mf15_fetch_in_progress = { active: false };
 
 function _fetchFiltradoM15HistoricalMetrics() {
-    // Debounce: only fetch once every 5 seconds to avoid hammering the API
-    if (_mf15_fetch_debounce.timer) return;
-    _mf15_fetch_debounce.timer = setTimeout(() => {
-        _mf15_fetch_debounce.timer = null;
-    }, 5000);
+    // Guard: skip if a fetch is already in flight
+    if (_mf15_fetch_in_progress.active) return;
+    _mf15_fetch_in_progress.active = true;
 
-    const BACKEND = 'http://127.0.0.1:8765';
-    fetch(`${BACKEND}/api/setups/summary?strategy_id=SMC_MICRO_IMPULSO_FILTRADO_M15`)
+    fetch(`${BACKEND_BASE_URL}/api/setups/summary?strategy_id=SMC_MICRO_IMPULSO_FILTRADO_M15`)
         .then(r => r.json())
         .then(result => {
             if (!result.success) return;
@@ -303,7 +303,8 @@ function _fetchFiltradoM15HistoricalMetrics() {
             const sub = document.getElementById('mf15-winrate-sub');
             if (sub) sub.textContent = total > 0 ? `${totalTp}TP / ${totalSl}SL` : '';
         })
-        .catch(() => { /* silencioso — datos históricos opcionales */ });
+        .catch(() => { /* silencioso — datos históricos opcionales */ })
+        .finally(() => { _mf15_fetch_in_progress.active = false; });
 }
 
 // ============================================================
