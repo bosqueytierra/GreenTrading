@@ -62,10 +62,14 @@ class _ReadOnlySupabaseProxy:
     _WRITE_METHODS = frozenset({"update_setup", "create_setup", "upsert_setup", "delete_setup"})
 
     def __init__(self, svc):
+        if svc is None:
+            raise ValueError("_ReadOnlySupabaseProxy: svc must not be None")
         self._svc = svc
 
     def __getattr__(self, name: str):
-        real_attr = getattr(self._svc, name)
+        # Check write methods FIRST so we never make an unnecessary getattr
+        # on the real service and never raise AttributeError for a write method
+        # that may not exist on the underlying service object.
         if name in self._WRITE_METHODS:
             def _noop(*args, **kwargs):
                 print(
@@ -74,7 +78,7 @@ class _ReadOnlySupabaseProxy:
                 )
                 return None
             return _noop
-        return real_attr
+        return getattr(self._svc, name)
 
     def __bool__(self):
         return bool(self._svc)
