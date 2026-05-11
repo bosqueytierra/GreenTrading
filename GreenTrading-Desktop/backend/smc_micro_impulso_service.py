@@ -206,20 +206,12 @@ def sync_setup_to_supabase_micro_impulso(analysis_result: dict) -> None:
         print(f"  decision: {decision}")
 
         if closed_setup:
-            # Zona ya cerrada — resetear display a SIN_SETUP
-            analysis_result["zona_madre_m1"] = {"desde": 0, "hasta": 0}
-            analysis_result["entrada"] = None
-            analysis_result["stoploss"] = None
-            analysis_result["tp_1_1"] = None
-            analysis_result["score"] = 0
-            analysis_result["ob"] = "NO"
-            analysis_result["fvg"] = "NO"
-            analysis_result["barrida"] = "NO"
-            analysis_result["desplazamiento_valido"] = "NO"
-            analysis_result["estado_dashboard"] = "SIN_SETUP"
-            analysis_result["estado_historial"] = "SIN_SETUP"
-            analysis_result["estado_final"] = "SIN_SETUP"
-            analysis_result["estado"] = "SIN SETUP"
+            # Zona ya cerrada — resetear display a SIN_SETUP usando la función canónica
+            sin_setup = create_sin_setup_micro_impulso_response(
+                symbol, analysis_result.get("price")
+            )
+            for key, val in sin_setup.items():
+                analysis_result[key] = val
             _setup_cache_micro_impulso[symbol] = {
                 "estado": "SIN_SETUP",
                 "entrada": None,

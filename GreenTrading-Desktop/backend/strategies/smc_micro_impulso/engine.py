@@ -261,10 +261,11 @@ def crear_zona_micro_impulso(
 
     # Verificar que el último evento no está demasiado obsoleto
     ultimo_idx = eventos_filtrados[-1]["index"]
-    if (len(df_m1) - 1 - ultimo_idx) > MAX_EVENTO_STALENESS_M1:
+    velas_antiguo = _velas_desde_evento(df_m1, ultimo_idx)
+    if velas_antiguo > MAX_EVENTO_STALENESS_M1:
         print(
             f"\nMICRO_IMPULSO: último evento M1 demasiado antiguo "
-            f"(hace {len(df_m1) - 1 - ultimo_idx} velas > {MAX_EVENTO_STALENESS_M1}). Zona rechazada."
+            f"(hace {velas_antiguo} velas > {MAX_EVENTO_STALENESS_M1}). Zona rechazada."
         )
         return None
 
@@ -375,6 +376,31 @@ def crear_zona_micro_impulso(
 # =============================================================================
 # OPERATIONAL LEVELS — TP 1:1
 # =============================================================================
+
+def _velas_desde_evento(df: pd.DataFrame, event_idx: int) -> int:
+    """Calcula cuántas velas han pasado desde el evento indicado."""
+    return (len(df) - 1) - event_idx
+
+
+def _is_same_zone(
+    entrada_a: float,
+    stoploss_a: float,
+    zona_desde_a: float,
+    zona_hasta_a: float,
+    entrada_b: float,
+    stoploss_b: float,
+    zona_desde_b: float,
+    zona_hasta_b: float,
+    precision: int = 2,
+) -> bool:
+    """Compara dos zonas con tolerancia de `precision` decimales."""
+    return (
+        round(entrada_a, precision) == round(entrada_b, precision)
+        and round(stoploss_a, precision) == round(stoploss_b, precision)
+        and round(zona_desde_a, precision) == round(zona_desde_b, precision)
+        and round(zona_hasta_a, precision) == round(zona_hasta_b, precision)
+    )
+
 
 def calcular_niveles_micro_impulso(zona: dict, direccion_operativa: str) -> dict:
     """
@@ -721,7 +747,7 @@ def analyze_symbol_smc_micro_impulso_engine(
                 contexto_fresco = False
                 if eventos_alineados_m1:
                     ultimo_evento_alineado_idx = eventos_alineados_m1[-1]["index"]
-                    velas_desde_evento = (len(df_m1) - 1) - ultimo_evento_alineado_idx
+                    velas_desde_evento = _velas_desde_evento(df_m1, ultimo_evento_alineado_idx)
                     contexto_fresco = velas_desde_evento <= MAX_EVENTO_STALENESS_M1
                     print(f"\n=== MICRO_IMPULSO_CONTEXT_STALENESS_CHECK ===")
                     print(f"  symbol: {symbol}")
@@ -766,11 +792,9 @@ def analyze_symbol_smc_micro_impulso_engine(
                     z_desde_nueva = float(zona_fresca.get("zona_desde", 0))
                     z_hasta_nueva = float(zona_fresca.get("zona_hasta", 0))
 
-                    misma_zona = (
-                        round(entrada_nueva, 2) == round(entrada, 2)
-                        and round(stoploss_nueva, 2) == round(stoploss, 2)
-                        and round(z_desde_nueva, 2) == round(zona_desde, 2)
-                        and round(z_hasta_nueva, 2) == round(zona_hasta, 2)
+                    misma_zona = _is_same_zone(
+                        entrada_nueva, stoploss_nueva, z_desde_nueva, z_hasta_nueva,
+                        entrada, stoploss, zona_desde, zona_hasta,
                     )
                     zona_cambio = not misma_zona
 
