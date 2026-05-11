@@ -48,7 +48,8 @@ MAX_EVENTO_STALENESS_M1 = 50  # velas M1 (~50 min)
 # Minimum number of candles in the impulsive displacement window.
 DESPLAZAMIENTO_VENTANA = 5
 # Minimum directional candles required for a valid displacement.
-DESPLAZAMIENTO_MIN_VELAS = 3
+# Set to 1: estrategia FULL AGRESIVA — basta con una vela a favor o movimiento neto correcto.
+DESPLAZAMIENTO_MIN_VELAS = 1
 # Minimum zone size in price points; zones smaller than this are rejected.
 MIN_ZONA_SIZE = 1.0
 # Lookback for local M1 sweep detection (fewer candles than M15).
@@ -173,12 +174,26 @@ def detectar_desplazamiento_impulsivo_m1(
     velas_favor = int(mask.sum())
     rango = float(tramo["high"].max() - tramo["low"].min()) if len(tramo) > 0 else 0.0
 
-    valido = velas_favor >= min_velas and rango >= MIN_ZONA_SIZE
+    # Validación por desplazamiento neto como alternativa a min_velas.
+    # ALCISTA: close_final > close_evento; BAJISTA: close_final < close_evento.
+    close_evento = float(df_m1.iloc[idx]["close"]) if idx < len(df_m1) else None
+    close_final = float(tramo.iloc[-1]["close"]) if len(tramo) > 0 else None
+    net_desplazamiento_ok = False
+    if close_evento is not None and close_final is not None:
+        if direccion == "ALCISTA":
+            net_desplazamiento_ok = close_final > close_evento
+        else:
+            net_desplazamiento_ok = close_final < close_evento
+
+    # Válido si rango > 0 Y (al menos min_velas en dirección O movimiento neto correcto).
+    # MIN_ZONA_SIZE ya no es filtro duro — solo se usa como referencia en log.
+    valido = rango > 0 and (velas_favor >= min_velas or net_desplazamiento_ok)
 
     print(f"\nDESPLAZAMIENTO_IMPULSIVO_M1:")
     print(f"  evento_index: {idx}, direccion: {direccion}")
     print(f"  velas_analizadas: {len(tramo)}, velas_favor: {velas_favor}, min_velas: {min_velas}")
-    print(f"  rango: {round(rango, 4)}, MIN_ZONA_SIZE: {MIN_ZONA_SIZE}")
+    print(f"  rango: {round(rango, 4)}, MIN_ZONA_SIZE (ref): {MIN_ZONA_SIZE}")
+    print(f"  net_desplazamiento_ok: {net_desplazamiento_ok}")
     print(f"  valido: {valido}")
 
     return {"valido": valido, "velas_favor": velas_favor, "rango": rango}
@@ -259,15 +274,15 @@ def crear_zona_micro_impulso(
     if not eventos_filtrados:
         return None
 
-    # Verificar que el último evento no está demasiado obsoleto
+    # Verificar que el último evento no está demasiado obsoleto (solo warning, no rechaza)
     ultimo_idx = eventos_filtrados[-1]["index"]
     velas_antiguo = _velas_desde_evento(df_m1, ultimo_idx)
     if velas_antiguo > MAX_EVENTO_STALENESS_M1:
         print(
-            f"\nMICRO_IMPULSO: último evento M1 demasiado antiguo "
-            f"(hace {velas_antiguo} velas > {MAX_EVENTO_STALENESS_M1}). Zona rechazada."
+            f"\nMICRO_IMPULSO: último evento M1 antiguo "
+            f"(hace {velas_antiguo} velas > {MAX_EVENTO_STALENESS_M1}). "
+            f"[WARNING solo — estrategia AGRESIVA no rechaza por staleness]"
         )
-        return None
 
     # Intentar crear zona desde el último evento válido hacia atrás
     for ultimo_evento in reversed(eventos_filtrados):
@@ -310,13 +325,13 @@ def crear_zona_micro_impulso(
             print(f"\nMICRO_IMPULSO: sin OB ni FVG para evento idx={ultimo_evento['index']}. Probando anterior.")
             continue
 
-        # Rechazar zona demasiado pequeña
+        # Zona pequeña: solo warning, no rechaza (estrategia AGRESIVA)
         if abs(zona_hasta - zona_desde) < MIN_ZONA_SIZE:
             print(
-                f"\nMICRO_IMPULSO: zona demasiado pequeña "
-                f"({round(abs(zona_hasta - zona_desde), 4)} < {MIN_ZONA_SIZE}). Probando anterior."
+                f"\nMICRO_IMPULSO: zona pequeña "
+                f"({round(abs(zona_hasta - zona_desde), 4)} < {MIN_ZONA_SIZE}). "
+                f"[WARNING solo — estrategia AGRESIVA acepta zonas pequeñas]"
             )
-            continue
 
         zona = {
             "direccion": direccion,
@@ -726,41 +741,6 @@ def analyze_symbol_smc_micro_impulso_engine(
                     print(f"\n=== TRACKED_ZONE_INVALIDATED_PRE_TOUCH (MICRO_IMPULSO) ===")
                     print(f"  symbol: {symbol}, nuevo_estado: DESCARTADA")
                     print(f"  motivo: zona ya no está del lado correcto del precio")
-                    print(f"==========================================================\n")
-
-                    if supabase_svc and setup_activo and setup_activo.get("id"):
-                        supabase_svc.update_setup(setup_activo["id"], {"estado": "DESCARTADA"})
-
-                    result = _create_sin_setup(
-                        precio_actual, tendencia_m15_str, ultimo_evento_m1_str,
-                        "NO_CUMPLE_MICRO_IMPULSO",
-                    )
-                    _print_summary(result)
-                    return result
-
-                # Verificar staleness del contexto micro (último evento M1 reciente)
-                eventos_alineados_m1 = [
-                    e for e in eventos_m1
-                    if (dir_op == "ALCISTA" and ("ALCISTA" in e["evento"])) or
-                       (dir_op == "BAJISTA" and ("BAJISTA" in e["evento"]))
-                ]
-                contexto_fresco = False
-                if eventos_alineados_m1:
-                    ultimo_evento_alineado_idx = eventos_alineados_m1[-1]["index"]
-                    velas_desde_evento = _velas_desde_evento(df_m1, ultimo_evento_alineado_idx)
-                    contexto_fresco = velas_desde_evento <= MAX_EVENTO_STALENESS_M1
-                    print(f"\n=== MICRO_IMPULSO_CONTEXT_STALENESS_CHECK ===")
-                    print(f"  symbol: {symbol}")
-                    print(f"  ultimo_evento_alineado_idx: {ultimo_evento_alineado_idx}")
-                    print(f"  velas_desde_evento: {velas_desde_evento}")
-                    print(f"  MAX_EVENTO_STALENESS_M1: {MAX_EVENTO_STALENESS_M1}")
-                    print(f"  contexto_fresco: {contexto_fresco}")
-                    print(f"=============================================\n")
-
-                if not contexto_fresco:
-                    print(f"\n=== TRACKED_ZONE_INVALIDATED_PRE_TOUCH (MICRO_IMPULSO) ===")
-                    print(f"  symbol: {symbol}, nuevo_estado: DESCARTADA")
-                    print(f"  motivo: contexto micro M1 obsoleto (sin eventos alineados recientes)")
                     print(f"==========================================================\n")
 
                     if supabase_svc and setup_activo and setup_activo.get("id"):
