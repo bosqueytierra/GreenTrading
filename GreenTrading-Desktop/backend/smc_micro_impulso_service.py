@@ -41,6 +41,46 @@ _setup_cache_micro_impulso: dict = {}
 
 
 # =============================================================================
+# READ-ONLY SUPABASE PROXY
+# =============================================================================
+
+class _ReadOnlySupabaseProxy:
+    """
+    Wraps the real Supabase service and passes all read methods through
+    unchanged, but silently no-ops any write methods.
+
+    Used when the MICRO IMPULSO engine is invoked from FILTRADO M15 so that
+    the engine can still read the currently-tracked SMC_MICRO_IMPULSO state
+    from Supabase (enabling correct ACTIVA/EN_ZONA/PROFIT mirroring) while
+    being completely prevented from creating or mutating SMC_MICRO_IMPULSO
+    records as a side-effect of the FILTRADO M15 call.
+
+    Blocked write methods (silently return None):
+      update_setup, create_setup, upsert_setup, delete_setup
+    """
+
+    _WRITE_METHODS = frozenset({"update_setup", "create_setup", "upsert_setup", "delete_setup"})
+
+    def __init__(self, svc):
+        self._svc = svc
+
+    def __getattr__(self, name: str):
+        real_attr = getattr(self._svc, name)
+        if name in self._WRITE_METHODS:
+            def _noop(*args, **kwargs):
+                print(
+                    f"  [MICRO_IMPULSO READONLY_PROXY] Blocked {name}() "
+                    f"— called from FILTRADO M15 read-only mode, no write to SMC_MICRO_IMPULSO"
+                )
+                return None
+            return _noop
+        return real_attr
+
+    def __bool__(self):
+        return bool(self._svc)
+
+
+# =============================================================================
 # SMART SYNC / DEBOUNCE
 # =============================================================================
 
@@ -258,22 +298,34 @@ def analyze_symbol_smc_micro_impulso(
         symbol: Symbol name.
         df_m1: M1 candles DataFrame (núcleo operativo).
         df_m15: M15 candles DataFrame (opcional, solo informativo).
-        sync_to_supabase: When False, skips the service-level Supabase sync.
-            The engine still uses Supabase internally for state tracking.
-            Set to False when delegating from FILTRADO M15 to avoid double
-            writes to the SMC_MICRO_IMPULSO history.
+        sync_to_supabase: When False, skips the service-level Supabase sync
+            AND passes a read-only proxy to the engine so the engine can still
+            read the tracked SMC_MICRO_IMPULSO state (for state mirroring) but
+            cannot write/update SMC_MICRO_IMPULSO records as a side-effect.
+            Set to False when delegating from FILTRADO M15 to guarantee zero
+            contamination of SMC_MICRO_IMPULSO history.
 
     Returns:
         dict con resultado SMC_MICRO_IMPULSO.
     """
     engine = SMCMicroImpulsoEngine()
 
+    # When sync_to_supabase=False (called from FILTRADO M15), use a read-only
+    # proxy so the engine can still read the tracked SMC_MICRO_IMPULSO state
+    # from Supabase (for correct state mirroring) but cannot write to those
+    # records as a side-effect of the FILTRADO M15 call.
+    engine_svc = (
+        _ReadOnlySupabaseProxy(supabase_service)
+        if not sync_to_supabase and supabase_service
+        else supabase_service
+    )
+
     result = engine.analyze(
         symbol=symbol,
         df_h1=None,
         df_m15=df_m15,
         df_m1=df_m1,
-        supabase_service=supabase_service,
+        supabase_service=engine_svc,
         create_sin_setup_response=create_sin_setup_micro_impulso_response,
     )
 

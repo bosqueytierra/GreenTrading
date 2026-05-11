@@ -18,7 +18,11 @@ Architecture:
   4. Sync the final result to the isolated FILTRADO history (strategy_id = STRATEGY_ID).
 
 ISOLATION:
-  - Does NOT write to SMC_MICRO_IMPULSO Supabase records (sync_to_supabase=False).
+  - Does NOT write to SMC_MICRO_IMPULSO Supabase records.
+    sync_to_supabase=False activates a read-only proxy inside
+    analyze_symbol_smc_micro_impulso(): the engine can READ tracked state
+    from SMC_MICRO_IMPULSO records (for correct state mirroring) but is
+    completely blocked from any update_setup / create_setup on those records.
   - Only writes to SMC_MICRO_IMPULSO_FILTRADO_M15 records.
   - Zero contamination of SMC_M15_PRO, SMC_H1_M15_PRO, SMC_MICRO_IMPULSO.
 """
@@ -365,9 +369,10 @@ def analyze_symbol_smc_micro_impulso_filtrado_m15(
 
         # ------------------------------------------------------------------
         # 4. Obtener resultado completamente trackeado de MICRO IMPULSO normal.
-        #    sync_to_supabase=False evita escrituras dobles al historial
-        #    SMC_MICRO_IMPULSO (el engine interno sigue usando Supabase para
-        #    leer y actualizar el estado trackeado correctamente).
+        #    sync_to_supabase=False activa el modo read-only:
+        #    - el engine PUEDE leer registros SMC_MICRO_IMPULSO (para tracking)
+        #    - el engine NO PUEDE escribir/actualizar esos registros
+        #    → cero contaminación del historial SMC_MICRO_IMPULSO.
         # ------------------------------------------------------------------
         base = analyze_symbol_smc_micro_impulso(
             symbol, df_m1, df_m15, sync_to_supabase=False
