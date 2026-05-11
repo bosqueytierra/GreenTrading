@@ -287,7 +287,8 @@ def sync_setup_filtrado_m15(result: dict) -> None:
                 updates["resultado_puntos"] = resultado_puntos
             updates["motivo_cierre"] = motivo_cierre
 
-        print(f"  [FILTRADO_M15 CLOSE DEBUG] action=UPDATE_CLOSE" if terminal_state else f"  [FILTRADO_M15 CLOSE DEBUG] action=UPDATE")
+        debug_action = "UPDATE_CLOSE" if terminal_state else "UPDATE"
+        print(f"  [FILTRADO_M15 CLOSE DEBUG] action={debug_action}")
         print(f"  FILTRADO_M15 SYNC: UPDATE id={setup_id}, estado={estado_actual}")
         res = supabase_service.update_setup(setup_id, updates)
         if res:
