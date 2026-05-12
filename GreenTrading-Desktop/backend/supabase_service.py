@@ -408,6 +408,102 @@ def get_closed_setup_by_levels(
         return None
 
 
+_FILTRADO_M15_STRATEGY_ID = "SMC_MICRO_IMPULSO_FILTRADO_M15"
+_FILTRADO_M15_OPEN_STATES = ["ACTIVA", "LLEGANDO_A_ZONA", "EN_ZONA", "PROFIT"]
+_FILTRADO_M15_LEVEL_TOLERANCE = 0.01
+
+
+def get_open_filtrado_m15_setup(
+    symbol: str,
+    entrada: Optional[float] = None,
+    stoploss: Optional[float] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Find the open SMC_MICRO_IMPULSO_FILTRADO_M15 setup for a symbol.
+
+    ISOLATED: only searches strategy_id='SMC_MICRO_IMPULSO_FILTRADO_M15'
+    with estado in ('ACTIVA', 'LLEGANDO_A_ZONA', 'EN_ZONA', 'PROFIT').
+
+    NEVER returns TP, SL, DESCARTADA or PAUSADA records.
+
+    Priority:
+      1. If entrada and stoploss are provided: match by levels with tolerance
+         (_FILTRADO_M15_LEVEL_TOLERANCE = 0.01).
+      2. Otherwise: return the most recent record ordered by
+         updated_at desc, created_at desc, limit 1.
+
+    This helper is exclusively for FILTRADO M15 trade tracking and must NOT
+    be used by other strategies.  It does NOT modify get_active_setup or
+    get_active_setup_by_symbol — those remain unchanged.
+
+    Args:
+        symbol: Symbol name.
+        entrada: Optional entry price for level-based matching.
+        stoploss: Optional stop loss price for level-based matching.
+
+    Returns:
+        Matching setup dict, or None if not found.
+    """
+    client = get_client()
+    if not client:
+        print(f"SUPABASE ERROR: Cannot query open FILTRADO_M15 setup - client not initialized")
+        return None
+
+    try:
+        print(f"SUPABASE: Querying open FILTRADO_M15 setup for {symbol}")
+
+        base_query = (
+            client.table("green_trading_setups")
+            .select("*")
+            .eq("strategy_id", _FILTRADO_M15_STRATEGY_ID)
+            .eq("symbol", symbol)
+            .in_("estado", _FILTRADO_M15_OPEN_STATES)
+        )
+
+        if entrada is not None and stoploss is not None:
+            e = round(float(entrada), 2)
+            s = round(float(stoploss), 2)
+            tol = _FILTRADO_M15_LEVEL_TOLERANCE
+            print(f"  mode: by levels - entrada={e} stoploss={s} tol={tol}")
+            result = (
+                base_query
+                .gte("entrada", e - tol)
+                .lte("entrada", e + tol)
+                .gte("stoploss", s - tol)
+                .lte("stoploss", s + tol)
+                .order("updated_at", desc=True)
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+        else:
+            print(f"  mode: most recent")
+            result = (
+                base_query
+                .order("updated_at", desc=True)
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+
+        if result.data:
+            setup = result.data[0]
+            print(f"SUPABASE OK: open FILTRADO_M15 setup encontrado para {symbol}")
+            print(f"  estado: {setup.get('estado')}")
+            print(f"  setup_id: {setup.get('id')}")
+            print(f"  entrada: {setup.get('entrada')}")
+            print(f"  stoploss: {setup.get('stoploss')}")
+            print(f"  tp_1_1: {setup.get('tp_1_1')}")
+            return setup
+        else:
+            print(f"SUPABASE: No open FILTRADO_M15 setup encontrado para {symbol}")
+            return None
+    except Exception as e:
+        print(f"SUPABASE ERROR: Error getting open FILTRADO_M15 setup for {symbol}: {e}")
+        traceback.print_exc()
+        return None
+
+
 def get_setup_history(
     symbol: Optional[str] = None,
     estado: Optional[str] = None,

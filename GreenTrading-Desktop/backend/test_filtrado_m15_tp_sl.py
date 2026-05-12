@@ -10,13 +10,21 @@ Casos:
   1. CASO SL  — registro ACTIVA → update a SL con resultado/motivo_cierre.
   2. CASO TP  — registro ACTIVA → update a TP con resultado/motivo_cierre.
   3. DEBOUNCE — aunque _has_relevant_changes devuelva False, TP/SL actualiza.
-  4. PAUSADA_COINCIDE — TP sobre registro PAUSADA con niveles iguales → update.
-  5. PAUSADA_NO_COINCIDE — TP sobre registro PAUSADA con niveles distintos → SKIP.
+  4. PAUSADA_NOT_FOUND_BY_NEW_HELPER — PAUSADA ya no es devuelta por get_open_filtrado_m15_setup
+                             → TP sin open record → SKIP (no update, no create).
+  5. PAUSADA_NO_COINCIDE — mismo resultado: no open record → SKIP.
   6. TERMINAL_SIN_REGISTRO — SL sin registro activo → SKIP, no crea nuevo.
   7. LLEGANDO_A_ZONA — registro en LLEGANDO_A_ZONA se cierra como SL.
   8. updates NO contiene estado_historial ni estado_final (columnas inexistentes).
   9. updates SÍ contiene resultado, resultado_puntos, motivo_cierre para TP/SL.
  10. py_compile OK para smc_micro_impulso_filtrado_m15_service.py.
+ 11. LLEGANDO_A_ZONA → EN_ZONA.
+ 12. Estado no terminal (ACTIVA → LLEGANDO_A_ZONA).
+ 13. EN_ZONA persiste aunque engine base devuelva SIN_SETUP (escenario real de bug).
+ 14. get_open_filtrado_m15_setup es llamado; get_active_setup_by_symbol NO.
+ 15. get_open_filtrado_m15_setup acepta ACTIVA/LLEGANDO_A_ZONA/EN_ZONA/PROFIT;
+     nunca devuelve TP/SL/DESCARTADA/PAUSADA (validado por helper).
+ 16. EN_ZONA update: niveles entrada/stoploss/tp se mantienen (no sobreescribe).
 """
 
 import sys
@@ -66,14 +74,22 @@ def assert_not_in(val, container, msg):
 class FakeSupabaseService:
     """Fake Supabase service that records calls and simulates DB state."""
 
-    def __init__(self, active_setup_by_symbol=None, closed_setup=None):
+    def __init__(self, active_setup_by_symbol=None, closed_setup=None,
+                 open_filtrado_setup=None):
         self._active_setup_by_symbol = active_setup_by_symbol
         self._closed_setup = closed_setup
+        # open_filtrado_setup: returned by get_open_filtrado_m15_setup
+        # Only includes ACTIVA/LLEGANDO_A_ZONA/EN_ZONA/PROFIT records.
+        self._open_filtrado_setup = open_filtrado_setup
         self.calls = []
 
     def get_active_setup_by_symbol(self, strategy_id, symbol):
         self.calls.append(("get_active_setup_by_symbol", strategy_id, symbol))
         return self._active_setup_by_symbol
+
+    def get_open_filtrado_m15_setup(self, symbol, entrada=None, stoploss=None):
+        self.calls.append(("get_open_filtrado_m15_setup", symbol, entrada, stoploss))
+        return self._open_filtrado_setup
 
     def get_closed_setup_by_levels(self, strategy_id, symbol, entrada, stoploss, tp):
         self.calls.append(("get_closed_setup_by_levels", strategy_id, symbol))
@@ -177,7 +193,7 @@ def test_sl_closes_activa_record():
         "stoploss": 90.0,
         "tp_1_1": 120.0,
     }
-    fake = FakeSupabaseService(active_setup_by_symbol=existing)
+    fake = FakeSupabaseService(open_filtrado_setup=existing)
     _inject_fake_supabase(fake)
     _clear_cache()
 
@@ -210,7 +226,7 @@ def test_tp_closes_activa_record():
         "stoploss": 90.0,
         "tp_1_1": 120.0,
     }
-    fake = FakeSupabaseService(active_setup_by_symbol=existing)
+    fake = FakeSupabaseService(open_filtrado_setup=existing)
     _inject_fake_supabase(fake)
     _clear_cache()
 
@@ -243,7 +259,7 @@ def test_debounce_bypass_for_terminal_state():
         "stoploss": 90.0,
         "tp_1_1": 120.0,
     }
-    fake = FakeSupabaseService(active_setup_by_symbol=existing)
+    fake = FakeSupabaseService(open_filtrado_setup=existing)
     _inject_fake_supabase(fake)
 
     symbol = "Boom 1000 Index"
@@ -268,51 +284,37 @@ def test_debounce_bypass_for_terminal_state():
     assert_equal(updates.get("estado"), "TP", "updates['estado'] = 'TP' con debounce bypass")
 
 
-def test_pausada_with_matching_levels_gets_closed():
-    """Test 4: TP sobre registro PAUSADA con niveles iguales → update."""
-    print("\n--- test_pausada_with_matching_levels_gets_closed ---")
+def test_pausada_not_found_by_new_helper():
+    """Test 4 (nuevo comportamiento): get_open_filtrado_m15_setup NUNCA devuelve PAUSADA.
+    Cuando el único registro en Supabase es PAUSADA, el helper devuelve None.
+    TP sin open record → SKIP (no update, no create).
+    """
+    print("\n--- test_pausada_not_found_by_new_helper ---")
 
-    existing = {
-        "id": "setup-pausada-match",
-        "estado": "PAUSADA",
-        "entrada": 100.0,
-        "stoploss": 90.0,
-        "tp_1_1": 120.0,
-    }
-    fake = FakeSupabaseService(active_setup_by_symbol=existing)
+    # El helper devuelve None porque PAUSADA no está en los estados abiertos permitidos.
+    fake = FakeSupabaseService(open_filtrado_setup=None)
     _inject_fake_supabase(fake)
     _clear_cache()
 
     result = _make_result(estado="TP", estado_dashboard="TP", precio_actual=121.0)
     svc_mod.sync_setup_filtrado_m15(result)
 
-    updates_calls = fake.update_calls()
-    assert_equal(len(updates_calls), 1, "update_setup llamado sobre registro PAUSADA con niveles coincidentes")
-    _, called_id, updates = updates_calls[0]
-    assert_equal(called_id, "setup-pausada-match", "update sobre el id PAUSADA correcto")
-    assert_equal(updates.get("estado"), "TP", "updates['estado'] = 'TP'")
-    assert_equal(updates.get("resultado"), "TP", "updates['resultado'] = 'TP'")
+    assert_equal(len(fake.update_calls()), 0, "update_setup NO llamado (sin open record para PAUSADA)")
+    assert_equal(len(fake.create_calls()), 0, "create_setup NO llamado (estado terminal sin registro)")
 
 
 def test_pausada_with_different_levels_skips():
-    """Test 5: TP sobre registro PAUSADA con niveles distintos → SKIP, no create."""
+    """Test 5: sin open record (PAUSADA nunca retornada) → SKIP igual que antes."""
     print("\n--- test_pausada_with_different_levels_skips ---")
 
-    existing = {
-        "id": "setup-pausada-mismatch",
-        "estado": "PAUSADA",
-        "entrada": 200.0,   # niveles completamente distintos
-        "stoploss": 180.0,
-        "tp_1_1": 240.0,
-    }
-    fake = FakeSupabaseService(active_setup_by_symbol=existing)
+    fake = FakeSupabaseService(open_filtrado_setup=None)
     _inject_fake_supabase(fake)
     _clear_cache()
 
     result = _make_result(estado="TP", estado_dashboard="TP", precio_actual=121.0)
     svc_mod.sync_setup_filtrado_m15(result)
 
-    assert_equal(len(fake.update_calls()), 0, "update_setup NO llamado (PAUSADA con niveles distintos)")
+    assert_equal(len(fake.update_calls()), 0, "update_setup NO llamado")
     assert_equal(len(fake.create_calls()), 0, "create_setup NO llamado (estado terminal sin registro)")
 
 
@@ -320,7 +322,7 @@ def test_terminal_without_existing_record_skips():
     """Test 6: SL sin registro activo → SKIP, no crear registro nuevo."""
     print("\n--- test_terminal_without_existing_record_skips ---")
 
-    fake = FakeSupabaseService(active_setup_by_symbol=None)
+    fake = FakeSupabaseService(open_filtrado_setup=None)
     _inject_fake_supabase(fake)
     _clear_cache()
 
@@ -342,7 +344,7 @@ def test_llegando_a_zona_closes_as_sl():
         "stoploss": 90.0,
         "tp_1_1": 120.0,
     }
-    fake = FakeSupabaseService(active_setup_by_symbol=existing)
+    fake = FakeSupabaseService(open_filtrado_setup=existing)
     _inject_fake_supabase(fake)
     _clear_cache()
 
@@ -368,7 +370,7 @@ def test_updates_no_invalid_columns():
         "stoploss": 90.0,
         "tp_1_1": 120.0,
     }
-    fake = FakeSupabaseService(active_setup_by_symbol=existing)
+    fake = FakeSupabaseService(open_filtrado_setup=existing)
     _inject_fake_supabase(fake)
     _clear_cache()
 
@@ -393,7 +395,7 @@ def test_updates_has_resultado_fields_for_tp_sl():
         "stoploss": 90.0,
         "tp_1_1": 120.0,
     }
-    fake = FakeSupabaseService(active_setup_by_symbol=existing)
+    fake = FakeSupabaseService(open_filtrado_setup=existing)
     _inject_fake_supabase(fake)
     _clear_cache()
 
@@ -414,7 +416,7 @@ def test_updates_has_resultado_fields_for_tp_sl():
     assert_true(rp is not None and rp < 0, f"resultado_puntos es negativo para SL (got {rp})")
 
     # Ahora TP: debe ser positivo
-    fake2 = FakeSupabaseService(active_setup_by_symbol={
+    fake2 = FakeSupabaseService(open_filtrado_setup={
         "id": "setup-resultado-2",
         "estado": "ACTIVA",
         "entrada": 100.0,
@@ -463,7 +465,7 @@ def test_llegando_a_zona_to_en_zona():
         "zona_desde": 90.0,
         "zona_hasta": 100.0,
     }
-    fake = FakeSupabaseService(active_setup_by_symbol=existing)
+    fake = FakeSupabaseService(open_filtrado_setup=existing)
     _inject_fake_supabase(fake)
     _clear_cache()
 
@@ -503,7 +505,7 @@ def test_non_terminal_state_still_works():
         "stoploss": 90.0,
         "tp_1_1": 120.0,
     }
-    fake = FakeSupabaseService(active_setup_by_symbol=existing)
+    fake = FakeSupabaseService(open_filtrado_setup=existing)
     _inject_fake_supabase(fake)
     _clear_cache()
 
@@ -518,6 +520,179 @@ def test_non_terminal_state_still_works():
     assert_not_in("motivo_cierre", updates, "updates NO contiene motivo_cierre para estado no-terminal")
 
 
+def test_en_zona_persists_when_base_returns_sin_setup():
+    """
+    Test 13 — CASO DEL BUG: EN_ZONA persiste aunque engine base devuelva SIN_SETUP.
+
+    Supabase fake: registro existente con estado=EN_ZONA y niveles:
+      entrada=5941.95, stoploss=5930.72, tp_1_1=5964.42.
+
+    El service recibe resultado con estado=EN_ZONA (ya procesado por rescue path)
+    y precio_actual=5989.34 (precio fuera de zona pero trade sigue vivo).
+
+    Esperado:
+    - update_setup sobre el mismo id (id="setup-en-zona-real")
+    - estado = EN_ZONA
+    - estado_dashboard = EN_ZONA
+    - NO crea registro nuevo
+    - NO devuelve SIN_SETUP (el llamador no pierde el trade)
+    - entrada, stoploss, tp se preservan en los niveles correctos
+    """
+    print("\n--- test_en_zona_persists_when_base_returns_sin_setup ---")
+
+    existing = {
+        "id": "setup-en-zona-real",
+        "estado": "EN_ZONA",
+        "entrada": 5941.95,
+        "stoploss": 5930.72,
+        "tp_1_1": 5964.42,
+    }
+    # open_filtrado_setup devuelve el registro EN_ZONA (helper correcto)
+    fake = FakeSupabaseService(open_filtrado_setup=existing)
+    _inject_fake_supabase(fake)
+    _clear_cache("Boom 1000 Index")
+
+    # El service recibe estado=EN_ZONA (rescue path lo reconstruyó desde Supabase)
+    result = _make_result(
+        symbol="Boom 1000 Index",
+        estado="EN_ZONA",
+        estado_dashboard="EN_ZONA",
+        entrada=5941.95,
+        stoploss=5930.72,
+        tp_1_1=5964.42,
+        precio_actual=5989.34,
+    )
+    svc_mod.sync_setup_filtrado_m15(result)
+
+    updates_calls = fake.update_calls()
+    # Debe haber un update (no skip, no create)
+    assert_equal(len(updates_calls), 1, "update_setup llamado: trade EN_ZONA rescatado")
+
+    _, called_id, updates = updates_calls[0]
+    assert_equal(called_id, "setup-en-zona-real", "update sobre el id correcto")
+    assert_equal(updates.get("estado"), "EN_ZONA", "estado=EN_ZONA mantenido")
+    assert_equal(updates.get("estado_dashboard"), "EN_ZONA", "estado_dashboard=EN_ZONA")
+    assert_equal(len(fake.create_calls()), 0, "create_setup NO llamado")
+    assert_not_in("resultado", updates, "NO contiene resultado (no es terminal)")
+
+
+def test_get_open_filtrado_m15_setup_is_called_not_by_symbol():
+    """
+    Test 14: sync_setup_filtrado_m15 llama a get_open_filtrado_m15_setup y
+    NO llama a get_active_setup_by_symbol (helper antiguo).
+    """
+    print("\n--- test_get_open_filtrado_m15_setup_is_called_not_by_symbol ---")
+
+    existing = {
+        "id": "setup-call-check-1",
+        "estado": "PROFIT",
+        "entrada": 100.0,
+        "stoploss": 90.0,
+        "tp_1_1": 120.0,
+    }
+    fake = FakeSupabaseService(open_filtrado_setup=existing)
+    _inject_fake_supabase(fake)
+    _clear_cache()
+
+    result = _make_result(estado="PROFIT", estado_dashboard="PROFIT")
+    svc_mod.sync_setup_filtrado_m15(result)
+
+    open_calls = [c for c in fake.calls if c[0] == "get_open_filtrado_m15_setup"]
+    assert_true(len(open_calls) >= 1, "get_open_filtrado_m15_setup fue llamado")
+
+    by_symbol_calls = [c for c in fake.calls if c[0] == "get_active_setup_by_symbol"]
+    assert_equal(len(by_symbol_calls), 0, "get_active_setup_by_symbol NO fue llamado")
+
+
+def test_helper_open_states_filter():
+    """
+    Test 15: get_open_filtrado_m15_setup solo devuelve estados abiertos.
+
+    Verifica que el FakeSupabaseService correctamente represente el contrato
+    del helper: ACTIVA/LLEGANDO_A_ZONA/EN_ZONA/PROFIT son válidos; cuando
+    open_filtrado_setup=None el servicio trata el trade como inexistente.
+
+    También valida directamente la lista _FILTRADO_M15_OPEN_STATES en
+    supabase_service.py.
+    """
+    print("\n--- test_helper_open_states_filter ---")
+
+    import supabase_service as supa_mod
+
+    OPEN_STATES = ["ACTIVA", "LLEGANDO_A_ZONA", "EN_ZONA", "PROFIT"]
+    CLOSED_STATES = ["TP", "SL", "DESCARTADA", "PAUSADA"]
+
+    for s in OPEN_STATES:
+        assert_in(s, supa_mod._FILTRADO_M15_OPEN_STATES,
+                  f"{s} debe estar en _FILTRADO_M15_OPEN_STATES")
+
+    for s in CLOSED_STATES:
+        assert_not_in(s, supa_mod._FILTRADO_M15_OPEN_STATES,
+                      f"{s} NO debe estar en _FILTRADO_M15_OPEN_STATES")
+
+    # Verificar que cuando fake devuelve None (PAUSADA/TP/SL no encontrado),
+    # el sync no actualiza nada para estado terminal (SKIP_NO_EXISTING).
+    fake = FakeSupabaseService(open_filtrado_setup=None)
+    _inject_fake_supabase(fake)
+    _clear_cache()
+
+    for closed in ["TP", "SL"]:
+        fake.calls.clear()
+        result = _make_result(estado=closed, estado_dashboard=closed)
+        svc_mod.sync_setup_filtrado_m15(result)
+        assert_equal(len(fake.update_calls()), 0,
+                     f"update NO llamado para {closed} sin open record")
+        assert_equal(len(fake.create_calls()), 0,
+                     f"create NO llamado para {closed} sin open record")
+
+
+def test_en_zona_update_preserves_levels():
+    """
+    Test 16: update de EN_ZONA no sobreescribe entrada/stoploss/tp del registro.
+
+    Los updates de estado no-terminal solo deben modificar:
+    estado, estado_dashboard, precio_actual.
+    Los niveles (entrada, stoploss, tp_1_1) se preservan en Supabase
+    (no se incluyen en el dict de updates).
+    """
+    print("\n--- test_en_zona_update_preserves_levels ---")
+
+    existing = {
+        "id": "setup-levels-preserve-1",
+        "estado": "LLEGANDO_A_ZONA",
+        "entrada": 5941.95,
+        "stoploss": 5930.72,
+        "tp_1_1": 5964.42,
+    }
+    fake = FakeSupabaseService(open_filtrado_setup=existing)
+    _inject_fake_supabase(fake)
+    _clear_cache()
+
+    result = _make_result(
+        estado="EN_ZONA",
+        estado_dashboard="EN_ZONA",
+        entrada=5941.95,
+        stoploss=5930.72,
+        tp_1_1=5964.42,
+        precio_actual=5939.00,
+    )
+    svc_mod.sync_setup_filtrado_m15(result)
+
+    updates_calls = fake.update_calls()
+    assert_equal(len(updates_calls), 1, "update_setup llamado")
+    _, _, updates = updates_calls[0]
+
+    # Los campos de niveles NO deben aparecer en updates (se preservan en DB)
+    assert_not_in("entrada", updates, "updates NO sobreescribe 'entrada'")
+    assert_not_in("stoploss", updates, "updates NO sobreescribe 'stoploss'")
+    assert_not_in("tp_1_1", updates, "updates NO sobreescribe 'tp_1_1'")
+
+    # Solo campos de estado y precio
+    assert_in("estado", updates, "updates contiene 'estado'")
+    assert_in("estado_dashboard", updates, "updates contiene 'estado_dashboard'")
+    assert_in("precio_actual", updates, "updates contiene 'precio_actual'")
+
+
 # ─── Runner ───────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -529,7 +704,7 @@ if __name__ == "__main__":
     test_sl_closes_activa_record()
     test_tp_closes_activa_record()
     test_debounce_bypass_for_terminal_state()
-    test_pausada_with_matching_levels_gets_closed()
+    test_pausada_not_found_by_new_helper()
     test_pausada_with_different_levels_skips()
     test_terminal_without_existing_record_skips()
     test_llegando_a_zona_closes_as_sl()
@@ -537,6 +712,10 @@ if __name__ == "__main__":
     test_updates_has_resultado_fields_for_tp_sl()
     test_llegando_a_zona_to_en_zona()
     test_non_terminal_state_still_works()
+    test_en_zona_persists_when_base_returns_sin_setup()
+    test_get_open_filtrado_m15_setup_is_called_not_by_symbol()
+    test_helper_open_states_filter()
+    test_en_zona_update_preserves_levels()
 
     print("\n" + "=" * 60)
     print(f"RESULTADO: {_passed} pasados, {_failed} fallados de {_passed + _failed} total")
@@ -544,3 +723,4 @@ if __name__ == "__main__":
 
     if _failed > 0:
         sys.exit(1)
+
