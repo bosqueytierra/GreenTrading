@@ -437,6 +437,61 @@ def test_updates_has_resultado_fields_for_tp_sl():
     assert_true(rp2 is not None and rp2 > 0, f"resultado_puntos es positivo para TP (got {rp2})")
 
 
+def test_llegando_a_zona_to_en_zona():
+    """
+    Test obligatorio: LLEGANDO_A_ZONA → EN_ZONA.
+
+    Supabase fake tiene registro con estado=LLEGANDO_A_ZONA y niveles completos.
+    El engine recibe resultado con estado=EN_ZONA y precio dentro de zona (99).
+
+    Esperado:
+    - update_setup sobre el mismo id
+    - estado = EN_ZONA
+    - estado_dashboard = EN_ZONA
+    - entrada, stoploss, tp_1_1 se mantienen en el registro
+    - no create_setup
+    - no SIN_SETUP
+    """
+    print("\n--- test_llegando_a_zona_to_en_zona ---")
+
+    existing = {
+        "id": "setup-llegando-enzona-1",
+        "estado": "LLEGANDO_A_ZONA",
+        "entrada": 100.0,
+        "stoploss": 90.0,
+        "tp_1_1": 120.0,
+        "zona_desde": 90.0,
+        "zona_hasta": 100.0,
+    }
+    fake = FakeSupabaseService(active_setup_by_symbol=existing)
+    _inject_fake_supabase(fake)
+    _clear_cache()
+
+    # precio_actual=99 está dentro de la zona (90 ≤ 99 ≤ 100) → EN_ZONA
+    result = _make_result(
+        estado="EN_ZONA",
+        estado_dashboard="EN_ZONA",
+        precio_actual=99.0,
+        entrada=100.0,
+        stoploss=90.0,
+        tp_1_1=120.0,
+        zona_desde=90.0,
+        zona_hasta=100.0,
+    )
+    svc_mod.sync_setup_filtrado_m15(result)
+
+    updates_calls = fake.update_calls()
+    assert_equal(len(updates_calls), 1, "update_setup llamado exactamente 1 vez")
+
+    _, called_id, updates = updates_calls[0]
+    assert_equal(called_id, "setup-llegando-enzona-1", "update sobre el mismo id (no nuevo)")
+    assert_equal(updates.get("estado"), "EN_ZONA", "estado actualizado a EN_ZONA")
+    assert_equal(updates.get("estado_dashboard"), "EN_ZONA", "estado_dashboard = EN_ZONA")
+    assert_equal(len(fake.create_calls()), 0, "create_setup NO llamado (no nuevo registro)")
+    assert_not_in("resultado", updates, "NO contiene resultado (no es terminal)")
+    assert_not_in("motivo_cierre", updates, "NO contiene motivo_cierre (no es terminal)")
+
+
 def test_non_terminal_state_still_works():
     """Sanity: estado no terminal (ACTIVA → LLEGANDO_A_ZONA) sigue actualizando."""
     print("\n--- test_non_terminal_state_still_works ---")
@@ -480,6 +535,7 @@ if __name__ == "__main__":
     test_llegando_a_zona_closes_as_sl()
     test_updates_no_invalid_columns()
     test_updates_has_resultado_fields_for_tp_sl()
+    test_llegando_a_zona_to_en_zona()
     test_non_terminal_state_still_works()
 
     print("\n" + "=" * 60)
