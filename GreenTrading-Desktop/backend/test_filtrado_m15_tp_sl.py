@@ -455,7 +455,7 @@ def test_llegando_a_zona_to_en_zona():
     print("\n--- test_llegando_a_zona_to_en_zona ---")
 
     existing = {
-        "id": "setup-llegando-enzona-1",
+        "id": "setup-llegando-en-zona-1",
         "estado": "LLEGANDO_A_ZONA",
         "entrada": 100.0,
         "stoploss": 90.0,
@@ -484,7 +484,7 @@ def test_llegando_a_zona_to_en_zona():
     assert_equal(len(updates_calls), 1, "update_setup llamado exactamente 1 vez")
 
     _, called_id, updates = updates_calls[0]
-    assert_equal(called_id, "setup-llegando-enzona-1", "update sobre el mismo id (no nuevo)")
+    assert_equal(called_id, "setup-llegando-en-zona-1", "update sobre el mismo id (no nuevo)")
     assert_equal(updates.get("estado"), "EN_ZONA", "estado actualizado a EN_ZONA")
     assert_equal(updates.get("estado_dashboard"), "EN_ZONA", "estado_dashboard = EN_ZONA")
     assert_equal(len(fake.create_calls()), 0, "create_setup NO llamado (no nuevo registro)")

@@ -687,6 +687,9 @@ def analyze_symbol_smc_micro_impulso_filtrado_m15(
         # estado_dashboard espeja estado_f: el dashboard debe mostrar el estado real del trade,
         # no el estado_dashboard crudo del engine base (que usa registros SMC_MICRO_IMPULSO
         # desactualizados y puede discrepar del seguimiento de FILTRADO M15).
+        # Nota: estado_f no puede ser SIN_SETUP aquí porque la guarda de las líneas previas
+        # devuelve _sin_setup() anticipadamente cuando el engine base retorna SIN_SETUP y
+        # la ruta de rescate no puede reconstruir niveles válidos.
         estado = estado_f
         estado_dashboard = estado_f
         estado_historial = estado_f
