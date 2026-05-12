@@ -505,11 +505,13 @@ def analyze_symbol_smc_micro_impulso_filtrado_m15(
 
         base_estado = base.get("estado", "SIN SETUP")
         if base_estado in ("SIN SETUP", "SIN_SETUP"):
-            # RESCUE: Si FILTRADO M15 tiene un trade activo post-zona (EN_ZONA/PROFIT),
-            # el engine base pudo haber invalidado su zona por cambio de contexto M1
-            # sin registrar el cierre. Usar los niveles guardados en FILTRADO M15 para
-            # detectar si SL/TP fue alcanzado.
-            if filtrado_estado_previo in ("EN_ZONA", "PROFIT") and existing_filtrado:
+            # RESCUE: Si FILTRADO M15 tiene un trade activo en cualquier estado pre o post zona
+            # (ACTIVA, LLEGANDO_A_ZONA, EN_ZONA, PROFIT), el engine base pudo haber invalidado
+            # su zona por cambio de contexto M1 sin registrar el cierre.
+            # REGLA DE ORO: una vez creada la operación, el seguimiento depende del registro
+            # propio de Supabase, no de si el engine base sigue encontrando zona nueva.
+            # Usar los niveles guardados en FILTRADO M15 para continuar el seguimiento.
+            if filtrado_estado_previo in ("ACTIVA", "LLEGANDO_A_ZONA", "EN_ZONA", "PROFIT") and existing_filtrado:
                 try:
                     rescue_entrada = float(existing_filtrado.get("entrada") or 0)
                     rescue_stoploss = float(existing_filtrado.get("stoploss") or 0)
@@ -652,9 +654,44 @@ def analyze_symbol_smc_micro_impulso_filtrado_m15(
         print(f"  precio_actual: {precio_actual_f}")
         print(f"  entrada: {entrada}  sl: {stoploss}  tp: {tp_1_2}")
 
-        # Usar el estado computado por la máquina de estados de FILTRADO M15
+        # [FILTRADO_M15 ZONE_ENTRY DEBUG] — log obligatorio para ACTIVA/LLEGANDO_A_ZONA
+        # Permite diagnosticar si el precio entró a la zona y qué acción se tomó.
+        if filtrado_estado_previo in ("ACTIVA", "LLEGANDO_A_ZONA"):
+            entra_en_zona = (
+                (dir_op_f == "ALCISTA" and float(stoploss) <= float(precio_actual_f) <= float(entrada)) or
+                (dir_op_f == "BAJISTA" and float(entrada) <= float(precio_actual_f) <= float(stoploss))
+            )
+            if not existing_filtrado:
+                zone_action = "SKIP_LOST_EXISTING"
+            elif estado_f == "EN_ZONA":
+                zone_action = "UPDATE_TO_EN_ZONA"
+            elif estado_f in ("SIN_SETUP", "SIN SETUP"):
+                zone_action = "RETURN_SIN_SETUP_BUG"
+            else:
+                zone_action = "KEEP_LLEGANDO"
+            print(f"\n[FILTRADO_M15 ZONE_ENTRY DEBUG]")
+            print(f"  symbol: {symbol}")
+            print(f"  existing_id: {existing_filtrado.get('id') if existing_filtrado else None}")
+            print(f"  existing_estado: {filtrado_estado_previo}")
+            print(f"  existing_entrada: {existing_filtrado.get('entrada') if existing_filtrado else None}")
+            print(f"  existing_stoploss: {existing_filtrado.get('stoploss') if existing_filtrado else None}")
+            print(f"  existing_tp: {existing_filtrado.get('tp_1_1') if existing_filtrado else None}")
+            print(f"  existing_zona_desde: {existing_filtrado.get('zona_desde', zona_desde_f) if existing_filtrado else None}")
+            print(f"  existing_zona_hasta: {existing_filtrado.get('zona_hasta', zona_hasta_f) if existing_filtrado else None}")
+            print(f"  precio_actual: {precio_actual_f}")
+            print(f"  entra_en_zona_true: {entra_en_zona}")
+            print(f"  estado_nuevo: {estado_f}")
+            print(f"  action: {zone_action}")
+
+        # Usar el estado computado por la máquina de estados de FILTRADO M15.
+        # estado_dashboard espeja estado_f: el dashboard debe mostrar el estado real del trade,
+        # no el estado_dashboard crudo del engine base (que usa registros SMC_MICRO_IMPULSO
+        # desactualizados y puede discrepar del seguimiento de FILTRADO M15).
+        # Nota: estado_f no puede ser SIN_SETUP aquí porque la guarda de las líneas previas
+        # devuelve _sin_setup() anticipadamente cuando el engine base retorna SIN_SETUP y
+        # la ruta de rescate no puede reconstruir niveles válidos.
         estado = estado_f
-        estado_dashboard = base_estado_dashboard
+        estado_dashboard = estado_f
         estado_historial = estado_f
         estado_final = estado_f
 
