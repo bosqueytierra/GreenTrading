@@ -446,7 +446,7 @@ def get_open_filtrado_m15_setup(
     """
     client = get_client()
     if not client:
-        print(f"SUPABASE ERROR: Cannot query open filtrado m15 setup - client not initialized")
+        print(f"SUPABASE ERROR: Cannot query open FILTRADO_M15 setup - client not initialized")
         return None
 
     try:
@@ -499,7 +499,7 @@ def get_open_filtrado_m15_setup(
             print(f"SUPABASE: No open FILTRADO_M15 setup encontrado para {symbol}")
             return None
     except Exception as e:
-        print(f"SUPABASE ERROR: Error getting open filtrado m15 setup for {symbol}: {e}")
+        print(f"SUPABASE ERROR: Error getting open FILTRADO_M15 setup for {symbol}: {e}")
         traceback.print_exc()
         return None
 

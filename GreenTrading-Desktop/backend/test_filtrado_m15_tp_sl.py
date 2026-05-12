@@ -10,7 +10,7 @@ Casos:
   1. CASO SL  — registro ACTIVA → update a SL con resultado/motivo_cierre.
   2. CASO TP  — registro ACTIVA → update a TP con resultado/motivo_cierre.
   3. DEBOUNCE — aunque _has_relevant_changes devuelva False, TP/SL actualiza.
-  4. PAUSADA_NUEVA_HELPER — PAUSADA ya no es devuelta por get_open_filtrado_m15_setup
+  4. PAUSADA_NOT_FOUND_BY_NEW_HELPER — PAUSADA ya no es devuelta por get_open_filtrado_m15_setup
                              → TP sin open record → SKIP (no update, no create).
   5. PAUSADA_NO_COINCIDE — mismo resultado: no open record → SKIP.
   6. TERMINAL_SIN_REGISTRO — SL sin registro activo → SKIP, no crea nuevo.
