@@ -194,9 +194,14 @@ def sync_setup_filtrado_m15(result: dict) -> None:
     force_sync = terminal_state and not has_changes
 
     # ── Buscar setup activo ANTES del debounce — requerido para [FILTRADO_M15 SYNC TRACE] ──
+    # Usa get_open_filtrado_m15_setup con niveles: solo devuelve ACTIVA/LLEGANDO_A_ZONA/EN_ZONA/PROFIT.
+    # NUNCA devuelve PAUSADA, TP, SL, DESCARTADA — evita que registros incorrectos
+    # interfieran con el seguimiento del trade vivo.
     existing_raw = None
-    if hasattr(supabase_service, "get_active_setup_by_symbol"):
-        existing_raw = supabase_service.get_active_setup_by_symbol(STRATEGY_ID, symbol)
+    if hasattr(supabase_service, "get_open_filtrado_m15_setup"):
+        existing_raw = supabase_service.get_open_filtrado_m15_setup(
+            symbol, entrada=incoming_entrada, stoploss=incoming_stoploss
+        )
 
     # ── PAUSADA guard ─────────────────────────────────────────────────────────
     # - En estado NO terminal: ignorar registro PAUSADA y crear uno nuevo para la
@@ -482,11 +487,16 @@ def analyze_symbol_smc_micro_impulso_filtrado_m15(
         #     El engine base lee SMC_MICRO_IMPULSO records que nunca se actualizan
         #     desde este flujo (sync_to_supabase=False), por lo que están desactualizados
         #     y no reflejan el estado real del trade FILTRADO M15.
+        #
+        #     Usa get_open_filtrado_m15_setup (sin niveles → más reciente) que SOLO
+        #     devuelve ACTIVA/LLEGANDO_A_ZONA/EN_ZONA/PROFIT.  Nunca devuelve PAUSADA,
+        #     TP, SL ni DESCARTADA, evitando la pérdida de seguimiento por registros
+        #     incorrectos devueltos por get_active_setup_by_symbol.
         # ------------------------------------------------------------------
         existing_filtrado = None
         filtrado_estado_previo = None
-        if supabase_service and hasattr(supabase_service, "get_active_setup_by_symbol"):
-            existing_filtrado = supabase_service.get_active_setup_by_symbol(STRATEGY_ID, symbol)
+        if supabase_service and hasattr(supabase_service, "get_open_filtrado_m15_setup"):
+            existing_filtrado = supabase_service.get_open_filtrado_m15_setup(symbol)
             if existing_filtrado:
                 filtrado_estado_previo = existing_filtrado.get("estado")
 
