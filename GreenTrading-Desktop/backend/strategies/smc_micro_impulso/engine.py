@@ -463,6 +463,63 @@ def calcular_niveles_micro_impulso(zona: dict, direccion_operativa: str) -> dict
 
 
 # =============================================================================
+# DIAGNOSTIC LOG — [MICRO_BASE STATE DEBUG]
+# =============================================================================
+
+def _log_micro_base_state_debug(result: dict) -> None:
+    """
+    [MICRO_BASE STATE DEBUG] — log diagnóstico obligatorio.
+
+    Loguea el estado final calculado para cada símbolo, las condiciones
+    de SL/TP en precio, y los niveles operativos.  Permite confirmar si la
+    base está marcando SL/TP correctamente antes de que FILTRADO M15 lo lea.
+    """
+    sym = result.get("symbol", "?")
+    entrada = result.get("entrada")
+    stoploss = result.get("stoploss")
+    tp_1_1 = result.get("tp_1_1")
+    precio = result.get("price")
+    estado_calc = result.get("estado_dashboard", "?")
+
+    if entrada is not None and stoploss is not None:
+        try:
+            direccion = "ALCISTA" if float(entrada) > float(stoploss) else "BAJISTA"
+        except (TypeError, ValueError):
+            direccion = "?"
+    else:
+        direccion = "?"
+
+    sl_cond = False
+    tp_cond = False
+    if precio is not None and stoploss is not None and tp_1_1 is not None:
+        try:
+            p = float(precio)
+            sl = float(stoploss)
+            tp = float(tp_1_1)
+            if direccion == "ALCISTA":
+                sl_cond = p <= sl
+                tp_cond = p >= tp
+            elif direccion == "BAJISTA":
+                sl_cond = p >= sl
+                tp_cond = p <= tp
+        except (TypeError, ValueError):
+            pass
+
+    print(f"\n[MICRO_BASE STATE DEBUG]")
+    print(f"  symbol: {sym}")
+    print(f"  strategy_id: {STRATEGY_ID}")
+    print(f"  entrada: {entrada}")
+    print(f"  stoploss: {stoploss}")
+    print(f"  tp_1_1: {tp_1_1}")
+    print(f"  precio_actual: {precio}")
+    print(f"  direccion: {direccion}")
+    print(f"  estado_calculado: {estado_calc}")
+    print(f"  estado_dashboard_calculado: {estado_calc}")
+    print(f"  sl_condition_true: {sl_cond}")
+    print(f"  tp_condition_true: {tp_cond}")
+
+
+# =============================================================================
 # RESULT BUILDER
 # =============================================================================
 
@@ -738,6 +795,7 @@ def analyze_symbol_smc_micro_impulso_engine(
                         has_ob, has_fvg, has_barrida, has_desp,
                         micro_bos_choch=micro_evento_operativo,
                     )
+                    _log_micro_base_state_debug(result)
                     _print_summary(result)
                     return result
 
@@ -881,6 +939,7 @@ def analyze_symbol_smc_micro_impulso_engine(
                 has_ob, has_fvg, has_barrida, has_desp,
                 micro_bos_choch=micro_evento_operativo,
             )
+            _log_micro_base_state_debug(result)
             _print_summary(result)
             return result
 
@@ -972,6 +1031,7 @@ def analyze_symbol_smc_micro_impulso_engine(
             has_ob, has_fvg, has_barrida, has_desp,
             micro_bos_choch=micro_bos_choch,
         )
+        _log_micro_base_state_debug(result)
         _print_summary(result)
         return result
 
